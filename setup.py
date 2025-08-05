@@ -41,9 +41,9 @@ from distutils.core import setup
 import setuptools  # noqa
 
 try:
-    from PKBrokers import VERSION
+    from pkbrokers.kite import VERSION
 except:
-    VERSION = "0.01"
+    VERSION = "0.1"
     pass
 
 __USERNAME__ = "pkjmesra"

@@ -26,33 +26,30 @@
 import websockets
 import asyncio
 import json
-import logging
 from datetime import datetime, timezone
 import sqlite3
 import threading
 import queue
 from queue import Queue
 import time
+import dateutil
 import pytz
 from urllib.parse import quote
 import base64
 import os
 import struct
 from collections import namedtuple
+from PKDevTools.classes import Archiver
+from PKDevTools.classes.log import default_logger
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('zerodha_ws.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = default_logger()
+DEFAULT_PATH = Archiver.get_user_data_dir()
+
 PING_INTERVAL = 30
 # Optimal batch size depends on your tick frequency
 OPTIMAL_BATCH_SIZE = 200  # Adjust based on testing
+OPTIMAL_TOKEN_BATCH_SIZE = 500 # Zerodha allows max 500 instruments in one batch
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
 OTHER_INDICES = [264969,263433,260105,257545,261641,262921,257801,261897,261385,259849,263945,263689,262409,261129,263177,260873,256777,266249,289545,274185,274441,275977,278793,279305,291593,289801,281353,281865]
@@ -92,8 +89,75 @@ def convert_datetime(text: str) -> datetime:
 sqlite3.register_adapter(datetime, adapt_datetime)
 sqlite3.register_converter("DATETIME", convert_datetime)
 
+class TickMonitor:
+    def __init__(self, token_batches=[], db_path: str=os.path.join(DEFAULT_PATH,'ticks.db')):
+        self.db_path = db_path
+        self.local = threading.local() # This creates thread-local storage
+        self.lock = threading.Lock()
+        self.last_alert_time = 0
+        self.alert_interval = 60  # seconds
+        self.subscribed_tokens = token_batches
+
+    async def _get_stale_instruments(self, token_batch: list[int], stale_minutes: int = 1) -> list[int]:
+        """
+        Find instruments without recent updates
+        
+        Args:
+            token_batch: List of instrument tokens to monitor
+            stale_minutes: Threshold in minutes (default: 1)
+        
+        Returns:
+            List of stale instrument tokens
+        """
+        if not token_batch:
+            return []
+        
+        placeholders = ','.join(['?'] * len(token_batch))
+        query = f'''
+            SELECT t.instrument_token
+            FROM ticks t
+            LEFT JOIN instrument_last_update u 
+            ON t.instrument_token = u.instrument_token
+            WHERE t.instrument_token IN ({placeholders})
+            AND (
+                u.last_updated IS NULL OR 
+                strftime('%s','now') - strftime('%s',u.last_updated) > ? * 60
+            )
+        '''
+        try:
+            with sqlite3.connect(os.path.join(DEFAULT_PATH,'ticks.db'), timeout=30) as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, (*token_batch, stale_minutes))
+                return [row[0] for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(e)
+        
+    async def monitor_stale_updates(self):
+        """Continuous monitoring with batch processing"""
+        token_batches = self.subscribed_tokens
+        stale = await self._check_stale_instruments(token_batches)
+        if stale:
+            await self._handle_stale_instruments(stale)
+            
+    async def _check_stale_instruments(self, token_batches: list[list[int]]):
+        """Check all batches for stale instruments"""
+        stale_instruments = []
+        for batch in token_batches:
+            stale = await self._get_stale_instruments(batch)
+            stale_instruments.extend(stale)
+        
+        if stale_instruments and time.time() - self.last_alert_time > self.alert_interval:
+            logger.warn(f"Stale instruments detected ({len(stale_instruments)}): {stale_instruments}")
+            self.last_alert_time = time.time()
+            return stale_instruments
+        return []
+    
+    async def _handle_stale_instruments(self, stale):
+        logger.warn(f"Following instruments ({len(stale)}) have stale updates:\n{stale}")
+
+    
 class ThreadSafeDatabase:
-    def __init__(self, db_path='ticks.db'):
+    def __init__(self, db_path=os.path.join(DEFAULT_PATH,'ticks.db')):
         self.db_path = db_path
         self.local = threading.local() # This creates thread-local storage
         self.lock = threading.Lock()
@@ -154,6 +218,34 @@ class ThreadSafeDatabase:
             ''')
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_instrument ON ticks(instrument_token);
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS instrument_last_update (
+                    instrument_token INTEGER PRIMARY KEY,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('''
+                CREATE TRIGGER IF NOT EXISTS update_timestamp_insert
+                AFTER INSERT ON ticks
+                FOR EACH ROW
+                BEGIN
+                    INSERT INTO instrument_last_update (instrument_token, last_updated)
+                    VALUES (NEW.instrument_token, CURRENT_TIMESTAMP)
+                    ON CONFLICT(instrument_token) DO UPDATE 
+                    SET last_updated = CURRENT_TIMESTAMP;
+                END;
+            ''')
+            cursor.execute('''
+                CREATE TRIGGER IF NOT EXISTS update_timestamp_update
+                AFTER UPDATE ON ticks
+                FOR EACH ROW
+                BEGIN
+                    INSERT INTO instrument_last_update (instrument_token, last_updated)
+                    VALUES (NEW.instrument_token, CURRENT_TIMESTAMP)
+                    ON CONFLICT(instrument_token) DO UPDATE 
+                    SET last_updated = CURRENT_TIMESTAMP;
+                END;
             ''')
             cursor.execute('PRAGMA journal_mode=WAL')
             cursor.execute('PRAGMA synchronous = NORMAL')
@@ -445,7 +537,7 @@ class ZerodhaWebSocketParser:
             # Unpack mandatory fields
             instrument_token, last_price = struct.unpack('>ii', packet[:8])
             last_price /= 100  # Convert from paise to rupees
-
+            logger.debug(f"Tick:{instrument_token}")
             # Initialize with default values
             data = {
                 'instrument_token': instrument_token,
@@ -564,10 +656,10 @@ class ZerodhaWebSocketParser:
         except Exception as e:
             logger.error(f"Error parsing packet: {e}")
             return None
-
+        
 class ZerodhaWebSocketClient:
     
-    def __init__(self, enctoken, user_id, api_key="kitefront"):
+    def __init__(self, enctoken, user_id, api_key="kitefront", token_batches=[]):
         self.enctoken = enctoken
         self.user_id = user_id
         self.api_key = api_key
@@ -578,6 +670,10 @@ class ZerodhaWebSocketClient:
         self.extra_headers = self._build_headers()
         self.last_message_time = time.time()
         self.last_heartbeat = time.time()
+        self.token_batches = token_batches
+        self.token_timestamp = 0
+        self.ws_tasks = []
+        self.index_subscribed = True
 
     def _build_websocket_url(self):
         """Construct the WebSocket URL with proper parameters"""
@@ -612,12 +708,29 @@ class ZerodhaWebSocketClient:
             'Sec-WebSocket-Extensions': 'permessage-deflate; client_max_window_bits'
         }
     
+    def _build_tokens(self):
+        import os
+        from dotenv import dotenv_values
+        from pkbrokers.kite.instruments import KiteInstruments
+        local_secrets = dotenv_values(".env.dev")
+        API_KEY = "kitefront"
+        ACCESS_TOKEN = os.environ.get("KTOKEN",local_secrets.get("KTOKEN","You need your Kite token"))
+        self.enctoken = ACCESS_TOKEN
+        kite = KiteInstruments(api_key=API_KEY, access_token=ACCESS_TOKEN)
+        equities_count=kite.get_instrument_count()
+        if equities_count == 0:
+            kite.sync_instruments(force_fetch=True)
+        equities=kite.get_equities(column_names='instrument_token')
+        tokens = kite.get_instrument_tokens(equities=equities)
+        self.token_batches = [tokens[i:i+OPTIMAL_TOKEN_BATCH_SIZE] for i in range(0, len(tokens), OPTIMAL_TOKEN_BATCH_SIZE)]
+
     async def _subscribe_instruments(self, websocket, token_batches, subscribe_all_indices = False):
         """Subscribe to instruments with rate limiting"""
-        for batch in token_batches:
-            if self.stop_event.is_set():
-                break
-            
+        if self.stop_event.is_set():
+            return
+        
+        if not self.index_subscribed:
+            self.index_subscribed = True
             # Subscribe to Nifty 50 index
             logger.debug(f"Sending NIFTY_50 subscribe and mode messages")
             await websocket.send(json.dumps({"a":"subscribe","v":NIFTY_50}))
@@ -632,6 +745,10 @@ class ZerodhaWebSocketClient:
                 logger.debug(f"Sending OTHER_INDICES subscribe and mode messages")
                 await websocket.send(json.dumps({"a":"subscribe","v":OTHER_INDICES}))
                 await websocket.send(json.dumps({"a":"mode","v":["full",OTHER_INDICES]}))
+
+        for batch in token_batches:
+            if self.stop_event.is_set():
+                break
 
             subscribe_msg = {
                 "a": "subscribe",
@@ -648,7 +765,7 @@ class ZerodhaWebSocketClient:
                 "a":"mode",
                 "v":["full",batch]
             }
-            logger.debug(f"Sending subscribe message: {subscribe_msg}")
+            logger.debug(f"Batch size: {len(batch)}. Sending subscribe message: {subscribe_msg}")
             await websocket.send(json.dumps(subscribe_msg))
 
             logger.debug(f"Sending mode message: {mode_msg}")
@@ -662,7 +779,7 @@ class ZerodhaWebSocketClient:
             await websocket.send(json.dumps({"a": "ping"}))
             self.last_heartbeat = time.time()
 
-    async def _connect_websocket(self):
+    async def _connect_websocket(self, token_batch=[]):
         """Establish and maintain WebSocket connection"""
 
         while not self.stop_event.is_set():
@@ -673,8 +790,8 @@ class ZerodhaWebSocketClient:
                     ping_interval=PING_INTERVAL,
                     ping_timeout=10,
                     close_timeout=5,
-                    compression=None, #"deflate" # Disable compression for debugging (None instead of deflate)
-                    max_size=2**24  # 16MB max message size
+                    compression="deflate", # Disable compression for debugging (None instead of deflate)
+                    max_size=2**17  # 128KB max message size
                 ) as websocket:
                     logger.info("WebSocket connected successfully")
                     
@@ -690,9 +807,12 @@ class ZerodhaWebSocketClient:
                             if data.get('type') in ['instruments_meta', 'app_code']:
                                 initial_messages.append(data)
                                 logger.debug(f"Received initial message: {data}")
+                                self._process_text_message(data=data)
                         await asyncio.sleep(1)
                     # Subscribe to instruments (example tokens)
-                    await self._subscribe_instruments(websocket, token_batches)
+                    if len(self.token_batches) == 0:
+                        self._build_tokens()
+                    await self._subscribe_instruments(websocket, self.token_batches if len(token_batch) == 0 else token_batch)
                     
                     # Heartbeat every 30 seconds
                     self.last_heartbeat = time.time()
@@ -705,7 +825,7 @@ class ZerodhaWebSocketClient:
                 if e.code == 1000:
                     logger.info("Normal closure, reconnecting...")
                 elif e.code == 1011:
-                    logger.warning("(unexpected error) keepalive ping timeout, reconnecting...")
+                    logger.warn("(unexpected error) keepalive ping timeout, reconnecting...")
                 await asyncio.sleep(5)
             except websockets.exceptions.InvalidStatusCode as e:
                 logger.error(f"Connection failed with status {e.status_code}")
@@ -715,8 +835,12 @@ class ZerodhaWebSocketClient:
                     logger.error("- Access Token")
                     logger.error("- User ID")
                     logger.error("- Token expiration (tokens expire daily)")
-                    client.stop()
+                    self.stop()
                     return
+                elif e.status_code in [401, 403]:
+                    # the token must have expired
+                    await self._refresh_token()
+
                 await asyncio.sleep(5)
             except Exception as e:
                 logger.error(f"WebSocket connection error: {str(e)}. Reconnecting in 5 seconds...")
@@ -748,7 +872,7 @@ class ZerodhaWebSocketClient:
                         data = json.loads(message)
                         self._process_text_message(data)
                     except json.JSONDecodeError:
-                        logger.warning(f"Invalid JSON message: {message}")
+                        logger.warn(f"Invalid JSON message: {message}")
                 
             except asyncio.TimeoutError:
                 await websocket.ping()
@@ -789,7 +913,7 @@ class ZerodhaWebSocketClient:
         try:
             # Minimum packet is 8 bytes (instrument_token + ltp)
             if len(packet) < 8:
-                logger.warning(f"Packet too short: {len(packet)} bytes")
+                logger.warn(f"Packet too short: {len(packet)} bytes")
                 return None
 
             # Unpack common fields (first 8 bytes)
@@ -945,9 +1069,22 @@ class ZerodhaWebSocketClient:
         elif message_type == 'message':
             logger.info(f"Server message: {data.get('data')}")
         elif message_type == 'instruments_meta':
+            # We don't use it. So we can safely ignore.
+            # count
+            # Represents the total number of instruments available in the market.
+            # Example: "count": 86481 means there are 86,481 instruments in the current dataset.
+            # This helps clients verify whether they have the complete list of instruments.
+            # 2. eTag (Entity Tag)
+            # Acts as a version identifier for the instrument metadata.
+            # Example: "etag": "W/\"68907d60-55bf\"" is a weak ETag (indicated by W/) used for caching and change detection.
+            # Purpose:
+            # Clients can compare the eTag with a previously stored value to check if the instrument list has been updated.
+            # If the eTag changes, it means the instrument metadata has been modified (e.g., new listings, delistings, or changes in instrument details).
             logger.debug(f"Instruments metadata update: {data.get('data')}")
         elif message_type == 'app_code':
             logger.debug(f"App code update: {data}")
+            self.token_timestamp = dateutil.parser.isoparse(data.get("timestamp",""))
+            self._refresh_token()
         else:
             logger.debug(f"Unknown message type: {data}")
 
@@ -973,16 +1110,16 @@ class ZerodhaWebSocketClient:
                     # Convert to optimized format
                     processed = {
                         'instrument_token': tick.instrument_token,
-                        'timestamp': datetime.fromtimestamp(tick.exchange_timestamp).replace(tzinfo=pytz.timezone("Asia/Kolkata")), # Explicit IST
-                        'last_price': tick.last_price,
-                        'day_volume': tick.day_volume,
-                        'oi': tick.oi,
-                        'buy_quantity': tick.buy_quantity,
-                        'sell_quantity': tick.sell_quantity,
-                        'high_price': tick.high_price,
-                        'low_price': tick.low_price,
-                        'open_price': tick.open_price,
-                        'prev_day_close': tick.prev_day_close
+                        'timestamp': datetime.fromtimestamp(tick.exchange_timestamp, tz=pytz.timezone("Asia/Kolkata")), # Explicit IST
+                        'last_price': tick.last_price if tick.last_price is not None else 0,
+                        'day_volume': tick.day_volume if tick.day_volume is not None else 0,
+                        'oi': tick.oi if tick.oi is not None else 0,
+                        'buy_quantity': tick.buy_quantity if tick.buy_quantity is not None else 0,
+                        'sell_quantity': tick.sell_quantity if tick.sell_quantity is not None else 0,
+                        'high_price': tick.high_price if tick.high_price is not None else 0,
+                        'low_price': tick.low_price if tick.low_price is not None else 0,
+                        'open_price': tick.open_price if tick.open_price is not None else 0,
+                        'prev_day_close': tick.prev_day_close if tick.prev_day_close is not None else 0
                     }
                     
                     # Add depth if available
@@ -1025,11 +1162,15 @@ class ZerodhaWebSocketClient:
         if batch:
             self._flush_to_db(batch)
 
-    async def _refresh_token(self):
+    async def _refresh_token(self, force=False):
         """Refresh expired access token"""
-        if time.time() - self.token_timestamp > 86400:  # 24 hours
+        if force or (time.time() - self.token_timestamp > 86400):  # 24 hours
             logger.info("Refreshing access token")
             # Implement your token refresh logic here
+            from pkbrokers.kite.authenticator import KiteAuthenticator
+            auth = KiteAuthenticator()
+            encToken = auth.get_enctoken()
+            self.enctoken = encToken
             self.ws_url = self._build_websocket_url()
 
     async def _connection_monitor(self):
@@ -1039,12 +1180,12 @@ class ZerodhaWebSocketClient:
                 self.last_message_time = time.time()
             
             if time.time() - self.last_message_time > 60:
-                logger.warning("No messages received in last 60 seconds")
+                logger.warn("No messages received in last 60 seconds")
             await asyncio.sleep(10)
 
     async def _monitor_performance(self):
         """Monitor system performance"""
-        conn = sqlite3.connect('ticks.db', timeout=30)
+        conn = sqlite3.connect(os.path.join(DEFAULT_PATH,'ticks.db'), timeout=30)
         while not self.stop_event.is_set():
             # Track processing rate
             cursor = conn.cursor()
@@ -1061,7 +1202,17 @@ class ZerodhaWebSocketClient:
             )
             
             await asyncio.sleep(60)
-        
+
+    async def _monitor_stale_instruments(self):
+        """Monitor stale instruments"""
+        if len(self.token_batches) == 0:
+            self._build_tokens()
+        tick_monitor = TickMonitor(token_batches = self.token_batches)
+        while not self.stop_event.is_set():
+            # Track processing rate
+            await tick_monitor.monitor_stale_updates()
+            await asyncio.sleep(60)
+
     def _flush_to_db(self, batch):
         """Bulk insert ticks to database"""
         try:
@@ -1078,8 +1229,13 @@ class ZerodhaWebSocketClient:
         asyncio.set_event_loop(self.loop)
         
         # Start WebSocket and other tasks
-        self.ws_task = self.loop.create_task(self._connect_websocket())
+        self.ws_tasks = []
+        for token_batch in self.token_batches:
+            task = self.loop.create_task(self._connect_websocket([token_batch]))
+            self.ws_tasks.append(task)
+
         self.monitor_task = self.loop.create_task(self._monitor_performance())
+        self.monitor_stale_task = self.loop.create_task(self._monitor_stale_instruments())
         self.conn_monitor_task = self.loop.create_task(self._connection_monitor())
         
         # Start processing thread (still needs to be thread)
@@ -1104,7 +1260,10 @@ class ZerodhaWebSocketClient:
         self.db_conn.close_all()
 
         # Cancel all tasks
-        for task in [self.ws_task, self.monitor_task, self.conn_monitor_task]:
+        for task in self.ws_tasks:
+            if task and not task.done():
+                task.cancel()
+        for task in [self.monitor_task, self.conn_monitor_task, self.monitor_stale_task]:
             if task and not task.done():
                 task.cancel()
         
@@ -1116,12 +1275,51 @@ class ZerodhaWebSocketClient:
         if hasattr(self, 'processor_thread'):
             self.processor_thread.join(timeout=5)
         
-        self.db_conn.close()
         logger.info("Shutdown complete")
 
-# Usage with your credentials
+class KiteTokenWatcher:
+    def __init__(self, tokens=[]):
+        # Split into batches of OPTIMAL_TOKEN_BATCH_SIZE (Zerodha's recommended chunk size)
+        self.token_batches = [tokens[i:i+OPTIMAL_TOKEN_BATCH_SIZE] for i in range(0, len(tokens), OPTIMAL_TOKEN_BATCH_SIZE)]
+    
+    def watch(self):
+        import os
+        from pkbrokers.kite.instruments import KiteInstruments
+        from pkbrokers.kite.ticks import ZerodhaWebSocketClient
+        from dotenv import dotenv_values
+        if len(self.token_batches) == 0:
+            local_secrets = dotenv_values(".env.dev")
+            API_KEY = "kitefront"
+            ACCESS_TOKEN = os.environ.get("KTOKEN",local_secrets.get("KTOKEN","You need your Kite token")),
+            kite = KiteInstruments(api_key=API_KEY, access_token=ACCESS_TOKEN)
+            equities_count=kite.get_instrument_count()
+            if equities_count == 0:
+                kite.sync_instruments(force_fetch=True)
+            equities=kite.get_equities(column_names='instrument_token')
+            tokens = kite.get_instrument_tokens(equities=equities)
+            tokens = NIFTY_50 + BSE_SENSEX + tokens
+            self.token_batches = [tokens[i:i+OPTIMAL_TOKEN_BATCH_SIZE] for i in range(0, len(tokens), OPTIMAL_TOKEN_BATCH_SIZE)]
+
+        client = ZerodhaWebSocketClient(
+            enctoken=os.environ.get("KTOKEN",local_secrets.get("KTOKEN","You need your Kite token")),
+            user_id=os.environ.get("KUSER",local_secrets.get("KUSER","You need your Kite user")),
+            token_batches=self.token_batches
+        )
+        
+        try:
+            client.start()
+        except KeyboardInterrupt:
+            client.stop()
+"""
+# Example usage
 if __name__ == "__main__":
-    tokens = [3329,7707649,5633,6401,912129,3861249,4451329,8705,361473,325121,41729,49409,5166593,54273,60417,67329,70401,2076161,1510401,3848705,4268801,3712257,87297,579329,94977,98049,101121,103425,108033,2714625,2911489,131329,134657,140033,320001,3905025,3812865,160001,163073,524545,177665,1215745,4376065,486657,1946369,6247169]
+    from pkbrokers.kite.instruments import KiteInstruments
+    from dotenv import dotenv_values
+    local_secrets = dotenv_values(".env.dev")
+    API_KEY = "kitefront"
+    ACCESS_TOKEN = os.environ.get("KTOKEN",local_secrets.get("KTOKEN","You need your Kite token")),
+    kite = KiteInstruments(api_key=API_KEY, access_token=ACCESS_TOKEN)
+    tokens = kite.get_instrument_tokens(equities=kite.get_equities(column_names='instrument_token'))
     # Load instrument tokens from CSV/API
     # with open('instruments.csv') as f:
     #     instruments = pd.read_csv(f)
@@ -1176,3 +1374,19 @@ if __name__ == "__main__":
 # from datetime import datetime
 # token_time = datetime.fromtimestamp(int(your_access_token.split('.')[0]))
 # print(f"Token was generated at: {token_time}")
+
+import os
+if __name__ == "__main__":
+    from PKDevTools.classes import log
+    log.setup_custom_logger(
+        "pkscreener",
+        log.logging.INFO,
+        trace=False,
+        log_file_path="PKBrokers-log.txt",
+        filter=None,
+    )
+    os.environ["PKDevTools_Default_Log_Level"] = str(log.logging.INFO)
+    from pkbrokers.kite.ticks import KiteTokenWatcher
+    watcher = KiteTokenWatcher()
+    watcher.watch()
+"""

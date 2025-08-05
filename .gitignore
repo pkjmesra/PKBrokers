@@ -7,7 +7,8 @@ __pycache__/
 .vscode/
 *.xlsx
 *last_screened_*.pkl
-results/*stock_data_*.pkl
+pkbrokers/*.txt
+pkbrokers/*.md
 *.spec
 .DS_Store
 Help
@@ -42,3 +43,4 @@ kite/*.txt
 *.sh
 .github/
 *.cache
+*.log
