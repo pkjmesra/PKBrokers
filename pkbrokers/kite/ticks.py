@@ -1287,8 +1287,8 @@ class KiteTokenWatcher:
         from pkbrokers.kite.instruments import KiteInstruments
         from pkbrokers.kite.ticks import ZerodhaWebSocketClient
         from dotenv import dotenv_values
+        local_secrets = dotenv_values(".env.dev")
         if len(self.token_batches) == 0:
-            local_secrets = dotenv_values(".env.dev")
             API_KEY = "kitefront"
             ACCESS_TOKEN = os.environ.get("KTOKEN",local_secrets.get("KTOKEN","You need your Kite token")),
             kite = KiteInstruments(api_key=API_KEY, access_token=ACCESS_TOKEN)
