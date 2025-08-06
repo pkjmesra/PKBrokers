@@ -659,7 +659,8 @@ class ZerodhaWebSocketParser:
         
 class ZerodhaWebSocketClient:
     
-    def __init__(self, enctoken, user_id, api_key="kitefront", token_batches=[]):
+    def __init__(self, enctoken, user_id, api_key="kitefront", token_batches=[], watcher_queue=None):
+        self.watcher_queue = watcher_queue
         self.enctoken = enctoken
         self.user_id = user_id
         self.api_key = api_key
@@ -865,6 +866,8 @@ class ZerodhaWebSocketClient:
                         ticks = ZerodhaWebSocketParser.parse_binary_message(message)
                         for tick in ticks:
                             self.data_queue.put(tick)
+                            if self.watcher_queue is not None:
+                                self.watcher_queue.put(tick)
                 elif isinstance(message, str):
                     logger.debug(f"Receiving Postbacks or other updates.")
                     # Handle text messages (postbacks and updates)
@@ -1271,6 +1274,10 @@ class ZerodhaWebSocketClient:
         if hasattr(self, 'loop'):
             self.loop.stop()
         
+        if hasattr(self, 'watcher_queue'):
+            if self.watcher_queue is not None:
+                self.watcher_queue = None
+                
         # Wait for processor thread
         if hasattr(self, 'processor_thread'):
             self.processor_thread.join(timeout=5)
@@ -1278,7 +1285,8 @@ class ZerodhaWebSocketClient:
         logger.info("Shutdown complete")
 
 class KiteTokenWatcher:
-    def __init__(self, tokens=[]):
+    def __init__(self, tokens=[], watcher_queue=None):
+        self.watcher_queue = watcher_queue
         # Split into batches of OPTIMAL_TOKEN_BATCH_SIZE (Zerodha's recommended chunk size)
         self.token_batches = [tokens[i:i+OPTIMAL_TOKEN_BATCH_SIZE] for i in range(0, len(tokens), OPTIMAL_TOKEN_BATCH_SIZE)]
     
@@ -1303,7 +1311,8 @@ class KiteTokenWatcher:
         client = ZerodhaWebSocketClient(
             enctoken=os.environ.get("KTOKEN",local_secrets.get("KTOKEN","You need your Kite token")),
             user_id=os.environ.get("KUSER",local_secrets.get("KUSER","You need your Kite user")),
-            token_batches=self.token_batches
+            token_batches=self.token_batches,
+            watcher_queue=self.watcher_queue
         )
         
         try:

@@ -34,7 +34,7 @@ import requests
 import pyotp
 from typing import Dict, Optional
 from kiteconnect import KiteConnect
-
+from pkbrokers.envupdater import EnvUpdater, env_update_context
 class KiteAuthenticator:
     """
     Handles authentication with Zerodha's Kite Connect API
@@ -168,6 +168,10 @@ class KiteAuthenticator:
             
             access_token = self._extract_enctoken(self.access_token_response.headers.get("Set-Cookie"))
             os.environ["KTOKEN"] = access_token
+
+            with env_update_context(".env.dev") as updater:
+                updater.update_values({"KTOKEN": access_token})
+                updater.reload_env()
             return access_token
             
         except requests.exceptions.RequestException as e:
