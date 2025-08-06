@@ -1,28 +1,28 @@
 # -*- coding: utf-8 -*-
-# """
-#     The MIT License (MIT)
+"""
+    The MIT License (MIT)
 
-#     Copyright (c) 2023 pkjmesra
+    Copyright (c) 2023 pkjmesra
 
-#     Permission is hereby granted, free of charge, to any person obtaining a copy
-#     of this software and associated documentation files (the "Software"), to deal
-#     in the Software without restriction, including without limitation the rights
-#     to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-#     copies of the Software, and to permit persons to whom the Software is
-#     furnished to do so, subject to the following conditions:
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
 
-#     The above copyright notice and this permission notice shall be included in all
-#     copies or substantial portions of the Software.
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
 
-#     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-#     IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-#     FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-#     AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-#     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-#     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-#     SOFTWARE.
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
 
-# """
+"""
 """
 Spyder Editor
 
@@ -96,9 +96,9 @@ try:
 except ImportError:
     bdist_wheel = None
 
-package_files_To_Install = ["LICENSE","README.md","requirements.txt",f"docs{os.sep}LICENSE-Others",
-                            f"Disclaimer.txt",f"screenshots{os.sep}logos{os.sep}LogoWM.png"]
-package_files = [__PACKAGENAME__ + ".ini","courbd.ttf"]
+package_files_To_Install = ["LICENSE","README.md","requirements.txt",
+                            f"Disclaimer.txt"]
+package_files = []
 package_dir = os.path.join(os.getcwd(),__PACKAGENAME__)
 if os.path.exists(package_dir):
     for file in package_files_To_Install:
@@ -132,8 +132,7 @@ setup(
     zip_safe=False,
     entry_points="""
 	[console_scripts]
-	pkbrokers=pkbrokers.kite:pkscreenercli
-	pkkite=pkbrokers.kite:pkscreenercli
+	pkkite=pkbrokers.kite.examples.pkkite:pkkite
 	""",
     download_url="https://github.com/"
     + __USERNAME__
