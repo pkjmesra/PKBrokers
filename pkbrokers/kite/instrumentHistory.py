@@ -23,13 +23,14 @@
     SOFTWARE.
 
 """
+import os
 import requests
 import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Union
 from urllib.parse import urlencode
 from threading import Lock
-
+from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
 class KiteTickerHistory:
     """
@@ -53,7 +54,7 @@ class KiteTickerHistory:
     RATE_LIMIT = 3  # requests per second
     RATE_LIMIT_WINDOW = 1.0  # seconds
     
-    def __init__(self, enctoken: str, user_id: str, access_token_response: requests.Response):
+    def __init__(self, enctoken: str=None, user_id: str=None, access_token_response: requests.Response=None):
         """
         Initialize with authentication token and cookies
         
@@ -62,6 +63,13 @@ class KiteTickerHistory:
             user_id: Zerodha user ID (e.g., 'YourUserId')
             access_token_response: Cookies/headers from access_token_response (along with Set-Cookie headers)
         """
+        from dotenv import dotenv_values
+        local_secrets = dotenv_values(".env.dev")
+    
+        if enctoken is None or len(enctoken) == 0:
+            enctoken=os.environ.get("KTOKEN",local_secrets.get("KTOKEN","You need your Kite token")),
+        if user_id is None or len(user_id) == 0:
+            user_id=os.environ.get("KUSER",local_secrets.get("KUSER","You need your Kite user"))
         self.enctoken = enctoken
         self.user_id = user_id
         self.session = requests.Session()
@@ -132,6 +140,12 @@ class KiteTickerHistory:
         Raises:
             requests.exceptions.RequestException: After all retries fail
         """
+        if instrument_token is None or len(str(instrument_token)) == 0:
+            raise ValueError("instrument_token is a MUST have to work for this API")
+        if from_date is None or len(from_date) == 0:
+            from_date = PKDateUtilities.YmdStringFromDate(PKDateUtilities.currentDateTime() - datetime.timedelta(days=365))
+        if to_date is None or len(to_date) == 0:
+            to_date = PKDateUtilities.YmdStringFromDate(PKDateUtilities.currentDateTime())
         params = {
             'user_id': self.user_id,
             'oi': '1' if oi else '0',
@@ -187,6 +201,12 @@ class KiteTickerHistory:
         Returns:
             Dictionary mapping instrument tokens to their historical data
         """
+        if instruments is None or len(instruments) == 0:
+            raise ValueError("list of instruments is a MUST have to work for this API")
+        if from_date is None or len(from_date) == 0:
+            from_date = PKDateUtilities.YmdStringFromDate(PKDateUtilities.currentDateTime() - datetime.timedelta(days=365))
+        if to_date is None or len(to_date) == 0:
+            to_date = PKDateUtilities.YmdStringFromDate(PKDateUtilities.currentDateTime())
         results = {}
         batch_size = min(batch_size, self.RATE_LIMIT)  # Never exceed rate limit
         for i in range(0, len(instruments), batch_size):
@@ -225,8 +245,8 @@ history = KiteTickerHistory(
 # Single request (automatically rate limited)
 data = history.get_historical_data(
     instrument_token=1793,
-    from_date="2023-08-06",
-    to_date="2025-08-05",
+    from_date="2024-08-10",
+    to_date="2025-08-11",
     interval="day"
 )
 

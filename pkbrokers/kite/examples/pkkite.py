@@ -47,6 +47,7 @@ argParser.add_argument(
 )
 argParser.add_argument(
     "--history",
+    action="store_true",
     help="Get history data for all NSE stocks.",
     required=False,
 )
@@ -130,6 +131,24 @@ def kite_auth():
 
 def kite_history():
     print("History data goes here.")
+    from pkbrokers.kite.authenticator import KiteAuthenticator
+    from pkbrokers.kite.instrumentHistory import KiteTickerHistory
+    authenticator = KiteAuthenticator()
+    enctoken = authenticator.get_enctoken()
+
+    # Create history client with the full response object
+    history = KiteTickerHistory(
+        enctoken=enctoken,
+        access_token_response=authenticator.access_token_response
+    )
+
+    data = history.get_historical_data(
+        instrument_token=1793,
+        from_date="2025-08-10",
+        to_date="2025-08-11",
+        interval="day"
+    )
+    print(data)
 
 def setupLogger(logLevel=LOG_LEVEL):
     log.setup_custom_logger(
@@ -152,6 +171,10 @@ def pkkite():
     if args.ticks:
         setupLogger()
         kite_ticks()
+    
+    if args.history:
+        kite_history()
+
     print("You can use like this :\npkkite --auth\nor\npkkite --ticks")
 
 if __name__ == "__main__":

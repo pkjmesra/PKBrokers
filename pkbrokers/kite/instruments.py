@@ -355,6 +355,14 @@ class KiteInstruments:
                 for row in cursor.fetchall()
             ]
 
+    def get_or_fetch_instrument_tokens(self,all_columns=False):
+        equities_count=self.get_instrument_count()
+        if equities_count == 0:
+            self.sync_instruments(force_fetch=True)
+        equities=self.get_equities(column_names='instrument_token' if not all_columns else 'instrument_token,tradingsymbol,name')
+        tokens = self.get_instrument_tokens(equities=equities)
+        return tokens
+
     def get_instrument_tokens(self, equities: List[Dict]) -> List[int]:
         """
         Safely extracts instrument tokens with validation
