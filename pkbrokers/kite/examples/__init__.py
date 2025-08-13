@@ -22,4 +22,3 @@ The MIT License (MIT)
     SOFTWARE.
 
 """
-

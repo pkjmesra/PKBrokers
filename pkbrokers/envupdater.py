@@ -1,35 +1,34 @@
 # -*- coding: utf-8 -*-
 """
-    The MIT License (MIT)
+The MIT License (MIT)
 
-    Copyright (c) 2023 pkjmesra
+Copyright (c) 2023 pkjmesra
 
-    Permission is hereby granted, free of charge, to any person obtaining a copy
-    of this software and associated documentation files (the "Software"), to deal
-    in the Software without restriction, including without limitation the rights
-    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is
-    furnished to do so, subject to the following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-    The above copyright notice and this permission notice shall be included in all
-    copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 """
-import os
-from pathlib import Path
-import re
-from typing import Dict, Optional
 
 # Use context manager for critical updates
 from contextlib import contextmanager
+from pathlib import Path
+from typing import Dict, Optional
+
 
 @contextmanager
 def env_update_context(env_path):
@@ -41,6 +40,7 @@ def env_update_context(env_path):
         # Restore on failure
         updater._write_content(backup)
         raise
+
 
 class EnvUpdater:
     def __init__(self, env_path: str = ".env.dev"):
@@ -56,21 +56,21 @@ class EnvUpdater:
     def update_values(self, updates: Dict[str, str], quote_strings: bool = True):
         """
         Update or add multiple environment variables
-        
+
         Args:
             updates: Dictionary of {key: value} pairs
             quote_strings: Whether to add quotes around string values
         """
         current_content = self._read_current_content()
         new_content = []
-        
+
         # Process existing lines
         updated_keys = set()
         for line in current_content.splitlines():
             if not line.strip() or line.startswith("#"):
                 new_content.append(line)
                 continue
-                
+
             key, _ = self._parse_line(line)
             if key in updates:
                 new_value = self._format_value(updates[key], quote_strings)
@@ -78,16 +78,16 @@ class EnvUpdater:
                 updated_keys.add(key)
             else:
                 new_content.append(line)
-        
+
         # Add new keys
         for key, value in updates.items():
             if key not in updated_keys:
                 new_value = self._format_value(value, quote_strings)
                 new_content.append(f"{key}={new_value}")
-        
+
         # Write back to file
         self._write_content("\n".join(new_content))
-        
+
     def _parse_line(self, line: str) -> Optional[tuple]:
         """Extract key/value from .env.dev line"""
         line = line.strip()
@@ -124,4 +124,5 @@ class EnvUpdater:
     def reload_env(self):
         """Reload environment variables"""
         from dotenv import load_dotenv
+
         load_dotenv(self.dev_path, override=True)

@@ -22,6 +22,7 @@ The MIT License (MIT)
     SOFTWARE.
 
 """
+
 # This version must never be changed in full other than the first two components
 # if at all required. The last two components of the version are assigned by the
 # CI/CD pipeline. Only, ever update major.minor. Don't update other parts ever.
@@ -29,4 +30,4 @@ The MIT License (MIT)
 # required for the package as well as this file, ReadMe.txt file as well as
 # commit the changes into the main/checked-out branch.
 # major.minor.dateOfRelease.pipelineJobNumber
-VERSION = '0.1'
+VERSION = "0.1"

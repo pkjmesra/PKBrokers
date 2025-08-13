@@ -4,8 +4,10 @@ black
 coverage==7.5.1
 coveralls
 distro
+flake8
 isort
 mistletoe
+autopep8
 pep517
 pip
 pip-chill
