@@ -211,7 +211,7 @@ jobs:
           coverage html -i
           coverage xml -i
           curl -s https://codecov.io/bash | bash
-          coveralls --service=github
+          # coveralls --service=github
           # coverage run --source=${package_name} --branch -m pytest --cov=pkbrokers test/
           # coveralls --service=github
         env:
