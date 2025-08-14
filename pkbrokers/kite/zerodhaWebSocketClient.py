@@ -116,6 +116,12 @@ class ZerodhaWebSocketClient:
 
     def _build_websocket_url(self):
         """Construct the WebSocket URL with proper parameters"""
+        if self.api_key is None or len(self.api_key) == 0:
+            raise ValueError("API Key must not be blank")
+        if self.user_id is None or len(self.user_id) == 0:
+            raise ValueError("user_id must not be blank")
+        if self.enctoken is None or len(self.enctoken) == 0:
+            raise ValueError("enctoken must not be blank")
         base_params = {
             "api_key": self.api_key,
             "user_id": self.user_id,
@@ -154,11 +160,17 @@ class ZerodhaWebSocketClient:
 
         from pkbrokers.kite.instruments import KiteInstruments
 
-        local_secrets = dotenv_values(".env.dev")
         API_KEY = "kitefront"
-        ACCESS_TOKEN = os.environ.get(
-            "KTOKEN", local_secrets.get("KTOKEN", "You need your Kite token")
-        )
+        ACCESS_TOKEN = ""
+        try:
+            local_secrets = dotenv_values(".env.dev")
+            ACCESS_TOKEN = os.environ.get(
+                "KTOKEN", local_secrets.get("KTOKEN", "You need your Kite token")
+            )
+        except BaseException:
+            raise ValueError(
+                ".env.dev file missing in the project root folder or values not set.\nYou need your Kite token."
+            )
         self.enctoken = ACCESS_TOKEN
         kite = KiteInstruments(api_key=API_KEY, access_token=ACCESS_TOKEN)
         equities_count = kite.get_instrument_count()
@@ -273,27 +285,29 @@ class ZerodhaWebSocketClient:
                     await self._message_loop(websocket)
 
             except websockets.exceptions.ConnectionClosedError as e:
-                logger.error(f"Connection closed: {e.code} - {e.reason}")
-                if e.code == 1000:
-                    logger.info("Normal closure, reconnecting...")
-                elif e.code == 1011:
-                    logger.warn(
-                        "(unexpected error) keepalive ping timeout, reconnecting..."
-                    )
+                if hasattr(e, "code"):
+                    logger.error(f"Connection closed: {e.code} - {e.reason}")
+                    if e.code == 1000:
+                        logger.info("Normal closure, reconnecting...")
+                    elif e.code == 1011:
+                        logger.warn(
+                            "(unexpected error) keepalive ping timeout, reconnecting..."
+                        )
                 await asyncio.sleep(5)
             except websockets.exceptions.InvalidStatusCode as e:
-                logger.error(f"Connection failed with status {e.status_code}")
-                if e.status_code == 400:
-                    logger.error("Authentication failed. Please check your:")
-                    logger.error("- API Key")
-                    logger.error("- Access Token")
-                    logger.error("- User ID")
-                    logger.error("- Token expiration (tokens expire daily)")
-                    self.stop()
-                    return
-                elif e.status_code in [401, 403]:
-                    # the token must have expired
-                    await self._refresh_token()
+                if hasattr(e, "status_code"):
+                    logger.error(f"Connection failed with status {e.status_code}")
+                    if e.status_code == 400:
+                        logger.error("Authentication failed. Please check your:")
+                        logger.error("- API Key")
+                        logger.error("- Access Token")
+                        logger.error("- User ID")
+                        logger.error("- Token expiration (tokens expire daily)")
+                        self.stop()
+                        return
+                    elif e.status_code in [401, 403]:
+                        # the token must have expired
+                        self._refresh_token()
 
                 await asyncio.sleep(5)
             except Exception as e:
@@ -476,7 +490,7 @@ class ZerodhaWebSocketClient:
                 offset += 4
 
             # Market depth (64-184 bytes)
-            if len(packet) >= 184:
+            if len(packet) >= 74:
                 depth = {"bid": [], "ask": []}
 
                 # Parse 5 bid entries (64-124)
@@ -496,7 +510,7 @@ class ZerodhaWebSocketClient:
                     else:
                         break
 
-                # Parse 5 ask entries (124-184)
+                # Parse 5 ask entries (124-164)
                 for _ in range(5):
                     if len(packet) >= offset + 10:
                         quantity, price, orders = struct.unpack_from(
@@ -549,7 +563,9 @@ class ZerodhaWebSocketClient:
             logger.debug(f"Instruments metadata update: {data.get('data')}")
         elif message_type == "app_code":
             logger.debug(f"App code update: {data}")
-            self.token_timestamp = dateutil.parser.isoparse(data.get("timestamp", ""))
+            self.token_timestamp = dateutil.parser.isoparse(
+                data.get("timestamp", datetime.now().isoformat())
+            )
             self._refresh_token()
         else:
             logger.debug(f"Unknown message type: {data}")
@@ -654,7 +670,7 @@ class ZerodhaWebSocketClient:
         if batch:
             self._flush_to_db(batch)
 
-    async def _refresh_token(self, force=False):
+    def _refresh_token(self, force=False):
         """Refresh expired access token"""
         if force or (time.time() - self.token_timestamp > 86400):  # 24 hours
             logger.info("Refreshing access token")
