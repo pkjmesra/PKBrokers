@@ -28,11 +28,11 @@ on:
   # schedule:
   #   #   # Nightly at 1:32 A.M. UTC
   #   - cron: "32 1 */1 * *"
-  # push:
-  #   branches:
-  #     - main
-  #     # Release branches of the format 0.45.20240910.554 
-  #     - "[0-9]+.[0-9]+.[0-9]+.[0-9]"
+  push:
+    branches:
+      - main
+      # Release branches of the format 0.45.20240910.554 
+      - "[0-9]+.[0-9]+.[0-9]+.[0-9]"
   pull_request:
     branches:
       - main
@@ -219,6 +219,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         continue-on-error: False
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: pkjmesra/PKBrokers
   # Delete_Workflow_Run:
   #   runs-on: ubuntu-latest
   #   needs: [Build]
