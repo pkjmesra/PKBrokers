@@ -248,7 +248,7 @@ class KiteTickerHistory:
                 except Exception as e:
                     results[instrument] = {
                         "status": "failed",
-                        "data": {"candles": []},
+                        "data": {"candles": [0, 0, 0, 0, 0]},
                         "error": str(e),
                     }
 

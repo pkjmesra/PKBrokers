@@ -119,7 +119,7 @@ def _process_ticks():
 
 
 def kite_ticks():
-    from pkbrokers.kite.ticks import KiteTokenWatcher
+    from pkbrokers.kite.kiteTokenWatcher import KiteTokenWatcher
 
     global _watcher_queue
     _watcher_queue = Queue(maxsize=10000)
@@ -157,22 +157,21 @@ def kite_auth():
 
 
 def kite_history():
-    print("History data goes here.")
     from pkbrokers.kite.authenticator import KiteAuthenticator
     from pkbrokers.kite.instrumentHistory import KiteTickerHistory
+    from pkbrokers.kite.instruments import KiteInstruments
 
     authenticator = KiteAuthenticator()
     enctoken = authenticator.get_enctoken()
-
+    instruments = KiteInstruments(api_key="kitefront", access_token=enctoken)
+    tokens = instruments.get_or_fetch_instrument_tokens(all_columns=True)
     # Create history client with the full response object
     history = KiteTickerHistory(
         enctoken=enctoken, access_token_response=authenticator.access_token_response
     )
 
-    data = history.get_historical_data(
-        instrument_token=1793,
-        from_date="2025-08-10",
-        to_date="2025-08-11",
+    data = history.get_multiple_instruments(
+        instruments=tokens,
         interval="day",
     )
     print(data)
