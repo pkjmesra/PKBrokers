@@ -348,6 +348,10 @@ class ZerodhaWebSocketClient:
 
             except asyncio.TimeoutError:
                 await websocket.ping()
+            except websockets.exceptions.ConnectionClosedError as e:
+                if hasattr(e, "code"):
+                    logger.error(f"Connection closed: {e.code} - {e.reason}")
+                break
             except Exception as e:
                 logger.error(f"Message processing error: {str(e)}")
                 break
