@@ -26,12 +26,17 @@ SOFTWARE.
 
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from threading import Lock
 from typing import Dict, List, Union
 
+import libsql
 import requests
+from PKDevTools.classes.Environment import PKEnvironment
+from PKDevTools.classes.log import default_logger
 from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+
+logger = default_logger()
 
 
 class KiteTickerHistory:
@@ -40,6 +45,7 @@ class KiteTickerHistory:
     - Proper cookie handling from access_token_response
     - Strict rate limiting (3 requests/second)
     - Batch processing with automatic retries
+    - SQLite database integration for caching
 
     Usage:
         authenticator = KiteAuthenticator()
@@ -102,6 +108,47 @@ class KiteTickerHistory:
         # Copy all cookies from the auth response
         self.session.cookies.update(access_token_response.cookies)
 
+        # Initialize database connection
+        self.db_conn = libsql.connect(
+            database=PKEnvironment().TDU, auth_token=PKEnvironment().TAT
+        )
+
+        # Create table if not exists
+        self._initialize_database()
+
+    def _initialize_database(self):
+        """Create the instrument_history table if it doesn't exist"""
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS instrument_history (
+            instrument_token INTEGER NOT NULL,
+            timestamp TEXT NOT NULL,
+            open REAL NOT NULL,
+            high REAL NOT NULL,
+            low REAL NOT NULL,
+            close REAL NOT NULL,
+            volume INTEGER NOT NULL,
+            oi INTEGER,
+            interval TEXT NOT NULL,
+            date TEXT GENERATED ALWAYS AS ((substr(timestamp, 1, 10))) STORED,
+            PRIMARY KEY (instrument_token, timestamp, interval)
+        );
+        """
+        self.db_conn.execute(create_table_query)
+        create_date_index = "CREATE INDEX IF NOT EXISTS idx_instrument_history_date ON instrument_history(date)"
+        self.db_conn.execute(create_date_index)
+
+        create_unique_index = "CREATE INDEX IF NOT EXISTS idx_instrument_history_token_timestamp_interval_date ON instrument_history (instrument_token, timestamp, interval, date)"
+        self.db_conn.execute(create_unique_index)
+
+        create_token_index = "CREATE INDEX IF NOT EXISTS idx_instrument_history_token ON instrument_history (instrument_token)"
+        self.db_conn.execute(create_token_index)
+
+        idx_instrument_history_timestamp = "CREATE INDEX IF NOT EXISTS idx_instrument_history_timestamp ON instrument_history (timestamp)"
+        self.db_conn.execute(idx_instrument_history_timestamp)
+
+        create_interval_index = "CREATE INDEX IF NOT EXISTS idx_instrument_history_interval ON instrument_history (interval);"
+        self.db_conn.execute(create_interval_index)
+
     def _rate_limit(self):
         """Enforce strict rate limiting (3 requests/second)"""
         with self.lock:
@@ -117,93 +164,206 @@ class KiteTickerHistory:
             return date.strftime("%Y-%m-%d")
         return date
 
+    def _save_to_database(self, instrument_token: int, data: Dict, interval: str):
+        """
+        Save historical data to SQLite database in batch
+
+        Args:
+            instrument_token: The instrument token
+            data: Historical data from Kite API
+            interval: The time interval (day, minute, etc.)
+            from_date: Start date of the query
+            to_date: End date of the query
+        """
+        if not data or "candles" not in data or not data["candles"]:
+            return
+
+        # Prepare batch insert with interval
+        batch = []
+        tokens = []
+        for candle in data["candles"]:
+            timestamp = candle[0]
+            open_price = candle[1]
+            high = candle[2]
+            low = candle[3]
+            close = candle[4]
+            volume = candle[5] if len(candle) > 5 else None
+            oi = candle[6] if len(candle) > 6 else None
+
+            batch.append(
+                (
+                    instrument_token,
+                    timestamp,
+                    open_price,
+                    high,
+                    low,
+                    close,
+                    volume,
+                    oi,
+                    interval,  # Make sure interval is included
+                )
+            )
+            tokens.append(instrument_token)
+            logger.info(f"Added to the batch:\n{instrument_token}")
+
+        # Use batch insert with ON CONFLICT IGNORE to avoid duplicates
+        insert_query = """
+        INSERT OR IGNORE INTO instrument_history (
+            instrument_token, timestamp, open, high, low, close, volume, oi,
+            interval
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """
+
+        try:
+            # Begin transaction explicitly
+            self.db_conn.execute("BEGIN TRANSACTION")
+
+            # Execute the batch insert
+            self.db_conn.executemany(insert_query, batch)
+
+            # Commit the transaction
+            self.db_conn.execute("COMMIT")
+            logger.info(f"Inserted for {len(tokens)} tokens:\n{tokens}")
+
+        except Exception as e:
+            # Rollback if any error occurs
+            self.db_conn.execute("ROLLBACK")
+            print(f"Error saving to database: {str(e)}")
+            raise
+
     def get_historical_data(
         self,
         instrument_token: int,
-        from_date: Union[str, datetime],
-        to_date: Union[str, datetime],
+        from_date: Union[str, datetime] = None,
+        to_date: Union[str, datetime] = None,
         interval: str = "day",
         oi: bool = True,
         continuous: bool = False,
         max_retries: int = 3,
+        forceFetch=False,
     ) -> Dict:
         """
         Fetch historical data for an instrument with proper authentication
 
         Args:
-            `instrument_token`: Zerodha instrument token (e.g., 1793 for NIFTY 50)
-            `from_date`: Start date (YYYY-MM-DD or datetime)
-            `to_date`: End date (YYYY-MM-DD or datetime)
-            `interval`: Time interval (minute · day · 3minute · 5minute · 10minute · 15minute · 30minute · 60minute) . See https://kite.trade/docs/connect/v3/historical/
-            `oi`: Include open interest data
-            `continuous`: For continuous contracts. It's important to note that the exchanges
-                          flush the instrument_token for futures and options contracts for every expiry.
-                          For instance, NIFTYJAN18FUT and NIFTYFEB18FUT will have different instrument tokens
-                          although their underlying contract is the same. The instrument master API only returns
-                          instrument_tokens for contracts that are live. It is not possible to retrieve
-                          instrument_tokens for expired contracts from the API, unless you regularly download
-                          and cache them. This is where continuous API comes in which works for NFO and
-                          MCX futures contracts. Given a live contract's instrument_token, the API will
-                          return day candle records for the same instrument's expired contracts. For instance,
-                          assuming the current month is January and you pass NIFTYJAN18FUT's
-                          instrument_token along with continuous=1, you can fetch day candles for December,
-                          November ... contracts by simply changing the from and to dates.
+            instrument_token: Zerodha instrument token
+            from_date: Start date (YYYY-MM-DD or datetime)
+            to_date: End date (YYYY-MM-DD or datetime)
+            interval: Time interval (minute/day/3minute/etc.)
+            oi: Include open interest data
+            continuous: For continuous contracts
+            max_retries: Maximum retry attempts
 
         Returns:
-            Dictionary with historical data in Kite format. The response is an array of records, where each
-            record in turn is an array of the following values — [timestamp, open, high, low, close, volume, oi].
-
-        Raises:
-            requests.exceptions.RequestException: After all retries fail
+            Dictionary with historical data in Kite format
         """
         if instrument_token is None or len(str(instrument_token)) == 0:
-            raise ValueError("instrument_token is a MUST have to work for this API")
+            raise ValueError("instrument_token is required")
         if from_date is None or len(from_date) == 0:
             from_date = PKDateUtilities.YmdStringFromDate(
-                PKDateUtilities.currentDateTime() - datetime.timedelta(days=365)
+                PKDateUtilities.currentDateTime() - timedelta(days=365)
             )
         if to_date is None or len(to_date) == 0:
             to_date = PKDateUtilities.YmdStringFromDate(
                 PKDateUtilities.currentDateTime()
             )
+
+        formatted_from_date = self._format_date(from_date)
+        formatted_to_date = self._format_date(to_date)
+        current_date = PKDateUtilities.YmdStringFromDate(
+            PKDateUtilities.currentDateTime()
+        )
+
+        # Check if we need fresh data (for current day during market hours)
+        need_fresh_data = (
+            formatted_to_date >= current_date and self._is_market_open()
+        ) or forceFetch
+
+        if not need_fresh_data:
+            # Try to get data from database first
+            select_query = """
+            SELECT timestamp, open, high, low, close, volume, oi
+            FROM instrument_history
+            WHERE instrument_token = ?
+            AND interval = ?
+            AND date BETWEEN ? AND ?
+            ORDER BY timestamp;
+            """
+
+            cursor = self.db_conn.cursor()
+            cursor.execute(
+                select_query,
+                (instrument_token, interval, formatted_from_date, formatted_to_date),
+            )
+
+            rows = cursor.fetchall()
+            if rows:
+                candles = []
+                for row in rows:
+                    candle = [
+                        row[0],  # timestamp
+                        float(row[1]),  # open
+                        float(row[2]),  # high
+                        float(row[3]),  # low
+                        float(row[4]),  # close
+                        int(row[5]) if row[5] is not None else 0,  # volume
+                        int(row[6]) if row[6] is not None else 0,  # oi
+                    ]
+                    candles.append(candle)
+
+                return {
+                    "status": "success",
+                    "data": {"candles": candles, "source": "database"},
+                }
+
+        # If we need fresh data or data not found in database, fetch from API
         params = {
             "user_id": self.user_id,
             "oi": "1" if oi else "0",
-            "from": self._format_date(from_date),
-            "to": self._format_date(to_date),
+            "from": formatted_from_date,
+            "to": formatted_to_date,
             "continuous": "1" if continuous else "0",
         }
 
         url = f"{self.BASE_URL}/{instrument_token}/{interval}"
-
         last_error = None
 
         for attempt in range(max_retries):
             try:
-                self._rate_limit()  # Strict rate limiting
+                self._rate_limit()
                 response = self.session.get(url, params=params)
                 response.raise_for_status()
-                return response.json()
+                data = response.json()["data"]
+
+                # Save to database if we got valid candles
+                if data.get("candles"):
+                    self._save_to_database(
+                        instrument_token=instrument_token, data=data, interval=interval
+                    )
+
+                data["source"] = "api"
+                return data
             except requests.exceptions.RequestException as e:
                 last_error = e
                 if attempt < max_retries - 1:
-                    time.sleep(2**attempt)  # Exponential backoff
+                    time.sleep(2**attempt)
                 continue
 
         raise requests.exceptions.RequestException(
             f"Failed after {max_retries} attempts for {instrument_token}: {str(last_error)}"
         )
 
-    def get_multiple_instruments(
+    def get_multiple_instruments_history(
         self,
         instruments: List[int],
-        from_date: Union[str, datetime],
-        to_date: Union[str, datetime],
+        from_date: Union[str, datetime] = None,
+        to_date: Union[str, datetime] = None,
         interval: str = "day",
         oi: bool = True,
         batch_size: int = 3,
         max_retries: int = 2,
         delay: float = 1.0,
+        forceFetch=False,
     ) -> Dict[int, Dict]:
         """
         Fetch historical data for multiple instruments with rate limiting
@@ -212,50 +372,140 @@ class KiteTickerHistory:
             instruments: List of instrument tokens
             from_date: Start date
             to_date: End date
-            interval: Time interval (minute · day · 3minute · 5minute · 10minute · 15minute · 30minute · 60minute) . See https://kite.trade/docs/connect/v3/historical/
+            interval: Time interval
             oi: Include open interest
-            batch_size: Number of requests per batch
-            max_retries: Retry attempts per instrument
-            delay: Delay between batches in seconds
+            batch_size: Requests per batch
+            max_retries: Retry attempts
+            delay: Delay between batches
 
         Returns:
             Dictionary mapping instrument tokens to their historical data
         """
-        if instruments is None or len(instruments) == 0:
-            raise ValueError("list of instruments is a MUST have to work for this API")
+        if not instruments:
+            raise ValueError("list of instruments is required")
         if from_date is None or len(from_date) == 0:
             from_date = PKDateUtilities.YmdStringFromDate(
-                PKDateUtilities.currentDateTime() - datetime.timedelta(days=365)
+                PKDateUtilities.currentDateTime() - timedelta(days=365)
             )
         if to_date is None or len(to_date) == 0:
             to_date = PKDateUtilities.YmdStringFromDate(
                 PKDateUtilities.currentDateTime()
             )
+        formatted_from_date = self._format_date(from_date)
+        formatted_to_date = self._format_date(to_date)
+        current_date = PKDateUtilities.YmdStringFromDate(
+            PKDateUtilities.currentDateTime()
+        )
+        is_market_open = self._is_market_open()
+
         results = {}
-        batch_size = min(batch_size, self.RATE_LIMIT)  # Never exceed rate limit
-        for i in range(0, len(instruments), batch_size):
-            batch = instruments[i : i + batch_size]
+        batch_size = min(batch_size, self.RATE_LIMIT)
+
+        # Determine which instruments need fresh data
+        need_fresh_data = (
+            formatted_to_date >= current_date and is_market_open
+        ) or forceFetch
+
+        if not need_fresh_data:
+            # Try to get all possible data from database first
+            placeholders = ",".join(["?"] * len(instruments))
+            select_query = f"""
+            SELECT instrument_token, timestamp, open, high, low, close, volume, oi
+            FROM instrument_history
+            WHERE instrument_token IN ({placeholders})
+            AND interval = ?
+            AND date BETWEEN ? AND ?
+            -- ORDER BY instrument_token, timestamp;
+            """
+
+            cursor = self.db_conn.cursor()
+            cursor.execute(
+                select_query,
+                (*instruments, interval, formatted_from_date, formatted_to_date),
+            )
+
+            # Group results by instrument_token
+            db_data = {}
+            current_instrument = None
+            candles = []
+
+            for row in cursor.fetchall():
+                if row[0] != current_instrument:
+                    if current_instrument is not None:
+                        db_data[current_instrument] = {
+                            "status": "success",
+                            "data": {"candles": candles.copy(), "source": "database"},
+                        }
+                    current_instrument = row[0]
+                    candles = []
+
+                candle = [
+                    row[1],  # timestamp
+                    float(row[2]),  # open
+                    float(row[3]),  # high
+                    float(row[4]),  # low
+                    float(row[5]),  # close
+                    int(row[6]) if row[6] is not None else 0,  # volume
+                    int(row[7]) if row[7] is not None else 0,  # oi
+                ]
+                candles.append(candle)
+
+            if current_instrument is not None:
+                db_data[current_instrument] = {
+                    "status": "success",
+                    "data": {"candles": candles, "source": "database"},
+                }
+
+            results.update(db_data)
+            # Only fetch instruments that weren't found in database
+            instruments_to_fetch = [i for i in instruments if i not in db_data]
+        else:
+            # Need fresh data for all instruments
+            instruments_to_fetch = instruments
+
+        # Process instruments that need API fetch
+        for i in range(0, len(instruments_to_fetch), batch_size):
+            batch = instruments_to_fetch[i : i + batch_size]
             for instrument in batch:
                 try:
-                    results[instrument] = self.get_historical_data(
+                    api_data = self.get_historical_data(
                         instrument_token=instrument,
                         from_date=from_date,
                         to_date=to_date,
                         interval=interval,
                         oi=oi,
                         max_retries=max_retries,
+                        forceFetch=forceFetch,
                     )
+                    results[instrument] = api_data
                 except Exception as e:
                     results[instrument] = {
                         "status": "failed",
-                        "data": {"candles": [0, 0, 0, 0, 0]},
                         "error": str(e),
                     }
 
-            if i + batch_size < len(instruments):
-                time.sleep(delay)  # Respect rate limits
+            if i + batch_size < len(instruments_to_fetch):
+                time.sleep(delay)
 
         return results
+
+    def __del__(self):
+        """Clean up database connection when object is destroyed"""
+        if hasattr(self, "db_conn"):
+            try:
+                self.db_conn.close()
+            except BaseException:
+                pass
+
+    def _is_market_open(self) -> bool:
+        """Check if market is currently open"""
+        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+
+        current_date = PKDateUtilities.YmdStringFromDate(
+            PKDateUtilities.currentDateTime()
+        )
+        tradingDate = PKDateUtilities.YmdStringFromDate(PKDateUtilities.tradingDate())
+        return current_date == tradingDate
 
 
 """

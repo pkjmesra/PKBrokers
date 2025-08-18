@@ -170,11 +170,10 @@ def kite_history():
         enctoken=enctoken, access_token_response=authenticator.access_token_response
     )
 
-    data = history.get_multiple_instruments(
-        instruments=tokens,
-        interval="day",
+    history.get_multiple_instruments_history(
+        instruments=tokens, interval="day", forceFetch=True
     )
-    print(data)
+    # print(data)
 
 
 def setupLogger(logLevel=LOG_LEVEL):
@@ -201,6 +200,7 @@ def pkkite():
         kite_ticks()
 
     if args.history:
+        setupLogger()
         kite_history()
 
     print("You can use like this :\npkkite --auth\nor\npkkite --ticks")
