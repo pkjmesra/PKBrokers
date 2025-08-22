@@ -59,6 +59,12 @@ argParser.add_argument(
     help="Get instrument tokens for all NSE stocks.",
     required=False,
 )
+argParser.add_argument(
+    "--pickle",
+    action="store_true",
+    help="Get instrument data from remote database and save into pickle for all NSE stocks.",
+    required=False,
+)
 argsv = argParser.parse_known_args()
 args = argsv[0]
 LOG_LEVEL = logging.INFO
@@ -198,6 +204,23 @@ def kite_instruments():
     instruments.get_or_fetch_instrument_tokens(all_columns=True)
 
 
+def kite_fetch_save_pickle():
+    from pkbrokers.kite.datamanager import InstrumentDataManager
+
+    manager = InstrumentDataManager()
+    success = manager.execute()
+
+    if success:
+        # Example: Get data for a specific symbol
+        symbol_data = manager.get_data_for_symbol("RELIANCE")
+        if symbol_data:
+            print(f"Found data for RELIANCE: {len(symbol_data)} days")
+        else:
+            print("No data found for RELIANCE")
+    else:
+        print("Failed to load or create instrument data")
+
+
 def setupLogger(logLevel=LOG_LEVEL):
     log.setup_custom_logger(
         "pkbrokers",
@@ -228,6 +251,10 @@ def pkkite():
     if args.instruments:
         setupLogger()
         kite_instruments()
+
+    if args.pickle:
+        setupLogger()
+        kite_fetch_save_pickle()
 
     print(
         "You can use like this :\npkkite --auth\npkkite --ticks\npkkite --history\npkkite --instruments"
