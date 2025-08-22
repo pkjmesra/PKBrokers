@@ -102,7 +102,7 @@ jobs:
           name: check latest commit is less than a week
           if: ${{ github.event_name == 'workflow_call' }} || ${{ github.event_name == 'workflow_dispatch' }}
           shell: bash
-          run: test -z $(git rev-list  --after="7 days"  ${{ github.sha }} --max-count=1) && echo "::set-output name=should_run::false"
+          run: test -z $(git rev-list  --after="7 days"  ${{ github.sha }} --max-count=1) && echo "should_run=false" >> $GITHUB_OUTPUT
 
   build_wheels:
     name: Build wheel for cp${{ matrix.python }}-${{ matrix.platform_id }}-${{ matrix.manylinux_image }}
@@ -209,8 +209,8 @@ jobs:
         shell: bash
         run: |
           GITHUB_REF=${GITHUB_REF#refs/tags/}
-          echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
-          echo "::set-output name=sha_short::$(git rev-parse --short HEAD)"
+          echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_OUTPUT
+          echo "sha_short=$(echo $(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           CURRENT_VERSION=`grep -o "'.*'" pkbrokers/kite/__init__.py | sed "s/'//g"`
           VERSION_ARR=(${CURRENT_VERSION//./ })
           MAJOR_MINOR=${VERSION_ARR[0]}.${VERSION_ARR[1]}
@@ -224,8 +224,8 @@ jobs:
           fi
           rm -rf pkbrokers/kite/__init__.py
           echo VERSION=\'`echo ${THIS_VERSION}`\' >> pkbrokers/kite/__init__.py
-          echo "##[set-output name=THIS_VERSION;]$(echo ${THIS_VERSION})"
-          echo "##[set-output name=CURRENT_VERSION;]$(echo ${CURRENT_VERSION})"
+          echo "THIS_VERSION=$(echo ${THIS_VERSION})" >> $GITHUB_OUTPUT
+          echo "CURRENT_VERSION=$(echo ${CURRENT_VERSION})" >> $GITHUB_OUTPUT
 
       - name: Install setuptools
         shell: bash
