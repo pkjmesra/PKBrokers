@@ -33,12 +33,15 @@ import csv
 import os
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import libsql
+import pytz
 import requests
 from PKDevTools.classes import Archiver
+from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
 
 # Configure logging
@@ -81,6 +84,8 @@ class KiteInstruments:
         api_key: str,
         access_token: str,
         db_path: str = os.path.join(DEFAULT_PATH, "instruments.db"),
+        local=False,
+        recreate_schema=True,
     ):
         """
         Initialize instruments manager
@@ -94,13 +99,43 @@ class KiteInstruments:
         self.access_token = access_token
         self._update_threshold = 23.5 * 3600  # 23.5 hours in seconds
         self.db_path = db_path
+        self.local = local
+        self.recreate_schema = recreate_schema
         self.base_url = "https://api.kite.trade"
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
             "X-Kite-Version": "3",
             "Authorization": f"token {self.api_key}:{self.access_token}",
         }
-        self._init_db()
+        self._init_db(drop_table=recreate_schema)
+
+    def is_after_8_30_am_ist(self, last_updated_str):
+        # Parse the datetime string
+        last_updated = datetime.fromisoformat(last_updated_str.replace("Z", "+00:00"))
+
+        # Convert to IST timezone
+        ist_timezone = pytz.timezone("Asia/Kolkata")
+        last_updated_ist = last_updated.astimezone(ist_timezone)
+
+        # Create 8:30 AM IST time for the same date
+        eight_thirty_am_ist = datetime.combine(
+            last_updated_ist.date(), time(8, 30, 0)
+        ).replace(tzinfo=ist_timezone)
+
+        # Check if last_updated is >= 8:30 AM IST
+        return last_updated_ist >= eight_thirty_am_ist
+
+    def is_last_updated_today(self):
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT last_updated FROM instruments limit 1")
+            rows = cursor.fetchall()
+            is_after_830 = False
+            for row in rows:
+                last_updated_str = row[0]
+                is_after_830 = self.is_after_8_30_am_ist(last_updated_str)
+                break
+            return is_after_830
 
     def _init_db(self, drop_table=False) -> None:
         """Initialize database schema with proper indexes"""
@@ -108,12 +143,17 @@ class KiteInstruments:
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            if drop_table:
+            if (
+                drop_table
+                and not self.is_last_updated_today()
+                and self._needs_refresh()
+            ):
                 cursor.execute("DROP TABLE IF EXISTS instruments")
 
-            # Enable WAL mode for better concurrency
-            cursor.execute("PRAGMA journal_mode=WAL")
-            cursor.execute("PRAGMA synchronous=NORMAL")
+            if self.local:
+                # Enable WAL mode for better concurrency
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA synchronous=NORMAL")
 
             # Create instruments table with constraints
             cursor.execute("""
@@ -147,9 +187,14 @@ class KiteInstruments:
 
             conn.commit()
 
-    def _get_connection(self) -> sqlite3.Connection:
+    def _get_connection(self, local=False) -> sqlite3.Connection:
         """Get thread-safe database connection"""
-        return sqlite3.connect(self.db_path, timeout=30)
+        if local or self.local:
+            return sqlite3.connect(self.db_path, timeout=30)
+        else:
+            return libsql.connect(
+                database=PKEnvironment().TDU, auth_token=PKEnvironment().TAT
+            )
 
     # @lru_cache(maxsize=1, typed=False)
     def _needs_refresh(self) -> bool:
@@ -248,12 +293,30 @@ class KiteInstruments:
             logger.error(f"Unexpected error processing instruments: {str(e)}")
             raise
 
+    def filter_instrument(self, instrument):
+        return (
+            instrument.exchange == "NSE"
+            and instrument.segment == "NSE"
+            and instrument.instrument_type == "EQ"
+            and "ETF" not in instrument.tradingsymbol
+            and instrument.name is not None
+            and "-" not in instrument.tradingsymbol
+            and 1 <= instrument.lot_size <= 100
+            and instrument.tradingsymbol[0].isupper()
+            if instrument.tradingsymbol
+            else False
+        )
+
     def store_instruments(self, instruments: List[Instrument]) -> None:
         """Bulk upsert instruments into database"""
         if not instruments:
             logger.warn("No instruments to store")
             return
 
+        filtered_instruments = [
+            inst for inst in instruments if self.filter_instrument(inst)
+        ]
+        logger.info(f"Updating/Inserting {len(filtered_instruments)} instruments")
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
@@ -274,26 +337,34 @@ class KiteInstruments:
                     i.exchange,
                     datetime.now().isoformat(),
                 )
-                for i in instruments
+                for i in filtered_instruments
             ]
 
-            # Efficient bulk upsert
-            cursor.executemany(
-                """
-                INSERT INTO instruments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(exchange, tradingsymbol, instrument_type)
-                DO UPDATE SET
-                    instrument_token = excluded.instrument_token,
-                    exchange_token = excluded.exchange_token,
-                    name = excluded.name,
-                    last_price = excluded.last_price,
-                    tick_size = excluded.tick_size,
-                    lot_size = excluded.lot_size,
-                    segment = excluded.segment,
-                    last_updated = datetime('now')
-            """,
-                data,
-            )
+            if self.recreate_schema:
+                cursor.executemany(
+                    """
+                    INSERT or IGNORE INTO instruments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                    data,
+                )
+            else:
+                # Efficient bulk upsert
+                cursor.executemany(
+                    """
+                    INSERT INTO instruments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(exchange, tradingsymbol, instrument_type)
+                    DO UPDATE SET
+                        instrument_token = excluded.instrument_token,
+                        exchange_token = excluded.exchange_token,
+                        name = excluded.name,
+                        last_price = excluded.last_price,
+                        tick_size = excluded.tick_size,
+                        lot_size = excluded.lot_size,
+                        segment = excluded.segment,
+                        last_updated = datetime('now')
+                """,
+                    data,
+                )
 
             conn.commit()
             logger.info(f"Stored/updated {len(data)} instruments")

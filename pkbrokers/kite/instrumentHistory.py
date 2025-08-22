@@ -95,6 +95,7 @@ class KiteTickerHistory:
         self.session = requests.Session()
         self.last_request_time = 0
         self.lock = Lock()  # For thread-safe rate limiting
+        self.failed_tokens = []
 
         # Set all required headers and cookies
         self.session.headers.update(
@@ -134,20 +135,15 @@ class KiteTickerHistory:
         );
         """
         self.db_conn.execute(create_table_query)
-        create_date_index = "CREATE INDEX IF NOT EXISTS idx_instrument_history_date ON instrument_history(date)"
-        self.db_conn.execute(create_date_index)
-
-        create_unique_index = "CREATE INDEX IF NOT EXISTS idx_instrument_history_token_timestamp_interval_date ON instrument_history (instrument_token, timestamp, interval, date)"
-        self.db_conn.execute(create_unique_index)
-
-        create_token_index = "CREATE INDEX IF NOT EXISTS idx_instrument_history_token ON instrument_history (instrument_token)"
-        self.db_conn.execute(create_token_index)
-
-        idx_instrument_history_timestamp = "CREATE INDEX IF NOT EXISTS idx_instrument_history_timestamp ON instrument_history (timestamp)"
-        self.db_conn.execute(idx_instrument_history_timestamp)
-
-        create_interval_index = "CREATE INDEX IF NOT EXISTS idx_instrument_history_interval ON instrument_history (interval);"
-        self.db_conn.execute(create_interval_index)
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_instrument_history_date ON instrument_history(date)",
+            "CREATE INDEX IF NOT EXISTS idx_instrument_history_token_timestamp_interval_date ON instrument_history (instrument_token, timestamp, interval, date)",
+            "CREATE INDEX IF NOT EXISTS idx_instrument_history_token ON instrument_history (instrument_token)",
+            "CREATE INDEX IF NOT EXISTS idx_instrument_history_timestamp ON instrument_history (timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_instrument_history_interval ON instrument_history (interval);",
+        ]
+        for index in indices:
+            self.db_conn.execute(index)
 
     def _rate_limit(self):
         """Enforce strict rate limiting (3 requests/second)"""
@@ -180,8 +176,8 @@ class KiteTickerHistory:
 
         # Prepare batch insert with interval
         batch = []
-        tokens = []
-        for candle in data["candles"]:
+        candles = data["candles"]
+        for candle in candles:
             timestamp = candle[0]
             open_price = candle[1]
             high = candle[2]
@@ -203,8 +199,6 @@ class KiteTickerHistory:
                     interval,  # Make sure interval is included
                 )
             )
-            tokens.append(instrument_token)
-            logger.info(f"Added to the batch:\n{instrument_token}")
 
         # Use batch insert with ON CONFLICT IGNORE to avoid duplicates
         insert_query = """
@@ -223,13 +217,33 @@ class KiteTickerHistory:
 
             # Commit the transaction
             self.db_conn.execute("COMMIT")
-            logger.info(f"Inserted for {len(tokens)} tokens:\n{tokens}")
+            logger.info(f"Inserted {len(candles)} rows for token:{instrument_token}")
 
         except Exception as e:
             # Rollback if any error occurs
             self.db_conn.execute("ROLLBACK")
             print(f"Error saving to database: {str(e)}")
+            logger.error(
+                f"Failed Inserting {len(candles)} rows for token:{instrument_token}\n{str(e)}"
+            )
+            self.failed_tokens.append(instrument_token)
             raise
+
+    def _execute_safe(self, query, params, retrial=False):
+        try:
+            cursor = self.db_conn.cursor()
+            cursor.execute(
+                query,
+                params,
+            )
+        except ValueError:
+            if not retrial:
+                # Re-Initialize database connection
+                self.db_conn = libsql.connect(
+                    database=PKEnvironment().TDU, auth_token=PKEnvironment().TAT
+                )
+                return self._execute_safe(query=query, params=params, retrial=True)
+        return cursor
 
     def get_historical_data(
         self,
@@ -241,6 +255,7 @@ class KiteTickerHistory:
         continuous: bool = False,
         max_retries: int = 3,
         forceFetch=False,
+        insertOnly=False,
     ) -> Dict:
         """
         Fetch historical data for an instrument with proper authentication
@@ -279,7 +294,7 @@ class KiteTickerHistory:
             formatted_to_date >= current_date and self._is_market_open()
         ) or forceFetch
 
-        if not need_fresh_data:
+        if not need_fresh_data and not insertOnly:
             # Try to get data from database first
             select_query = """
             SELECT timestamp, open, high, low, close, volume, oi
@@ -290,12 +305,10 @@ class KiteTickerHistory:
             ORDER BY timestamp;
             """
 
-            cursor = self.db_conn.cursor()
-            cursor.execute(
+            cursor = self._execute_safe(
                 select_query,
                 (instrument_token, interval, formatted_from_date, formatted_to_date),
             )
-
             rows = cursor.fetchall()
             if rows:
                 candles = []
@@ -316,15 +329,40 @@ class KiteTickerHistory:
                     "data": {"candles": candles, "source": "database"},
                 }
 
+        if insertOnly:
+            # Try to get what was the last saved date
+            select_query = """
+            SELECT count(1) as total_count, max(date) as max_date
+            FROM instrument_history
+            WHERE instrument_token = ?
+            AND interval = ?
+            AND date BETWEEN ? AND ?
+            """
+
+            cursor = self._execute_safe(
+                select_query,
+                (instrument_token, interval, formatted_from_date, formatted_to_date),
+            )
+            max_date = formatted_from_date
+            for row in cursor.fetchall():
+                rows_count = row[0]
+                max_date = (
+                    formatted_from_date
+                    if (rows_count == 0 or row[1] is None)
+                    else row[1]
+                )
+                break
+
         # If we need fresh data or data not found in database, fetch from API
         params = {
             "user_id": self.user_id,
             "oi": "1" if oi else "0",
-            "from": formatted_from_date,
+            "from": max_date,
             "to": formatted_to_date,
             "continuous": "1" if continuous else "0",
         }
 
+        # if rows_count >= 249 and formatted_to_date != current_date:
         url = f"{self.BASE_URL}/{instrument_token}/{interval}"
         last_error = None
 
@@ -364,6 +402,7 @@ class KiteTickerHistory:
         max_retries: int = 2,
         delay: float = 1.0,
         forceFetch=False,
+        insertOnly=False,
     ) -> Dict[int, Dict]:
         """
         Fetch historical data for multiple instruments with rate limiting
@@ -381,6 +420,7 @@ class KiteTickerHistory:
         Returns:
             Dictionary mapping instrument tokens to their historical data
         """
+        begin_time = time.time()
         if not instruments:
             raise ValueError("list of instruments is required")
         if from_date is None or len(from_date) == 0:
@@ -406,7 +446,7 @@ class KiteTickerHistory:
             formatted_to_date >= current_date and is_market_open
         ) or forceFetch
 
-        if not need_fresh_data:
+        if not need_fresh_data and not insertOnly:
             # Try to get all possible data from database first
             placeholders = ",".join(["?"] * len(instruments))
             select_query = f"""
@@ -418,12 +458,10 @@ class KiteTickerHistory:
             -- ORDER BY instrument_token, timestamp;
             """
 
-            cursor = self.db_conn.cursor()
-            cursor.execute(
+            cursor = cursor = self._execute_safe(
                 select_query,
                 (*instruments, interval, formatted_from_date, formatted_to_date),
             )
-
             # Group results by instrument_token
             db_data = {}
             current_instrument = None
@@ -464,10 +502,13 @@ class KiteTickerHistory:
             instruments_to_fetch = instruments
 
         # Process instruments that need API fetch
+        counter = 0
+        batch_begin = time.time()
         for i in range(0, len(instruments_to_fetch), batch_size):
             batch = instruments_to_fetch[i : i + batch_size]
             for instrument in batch:
                 try:
+                    batch_begin = time.time()
                     api_data = self.get_historical_data(
                         instrument_token=instrument,
                         from_date=from_date,
@@ -476,16 +517,21 @@ class KiteTickerHistory:
                         oi=oi,
                         max_retries=max_retries,
                         forceFetch=forceFetch,
+                        insertOnly=insertOnly,
                     )
                     results[instrument] = api_data
+                    counter = counter + 1
                 except Exception as e:
                     results[instrument] = {
                         "status": "failed",
                         "error": str(e),
                     }
-
-            if i + batch_size < len(instruments_to_fetch):
-                time.sleep(delay)
+                logger.info(
+                    f"Fetched/Saved {counter} of {len(instruments_to_fetch)} tokens in {'%.3f' % (time.time() - begin_time)} sec."
+                )
+            requiredDelay = delay - (time.time() - batch_begin)
+            if i + batch_size < len(instruments_to_fetch) and requiredDelay >= 0:
+                time.sleep(requiredDelay)
 
         return results
 

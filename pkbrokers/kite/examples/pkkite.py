@@ -53,6 +53,12 @@ argParser.add_argument(
     help="Get history data for all NSE stocks.",
     required=False,
 )
+argParser.add_argument(
+    "--instruments",
+    action="store_true",
+    help="Get instrument tokens for all NSE stocks.",
+    required=False,
+)
 argsv = argParser.parse_known_args()
 args = argsv[0]
 LOG_LEVEL = logging.INFO
@@ -171,9 +177,25 @@ def kite_history():
     )
 
     history.get_multiple_instruments_history(
-        instruments=tokens, interval="day", forceFetch=True
+        instruments=tokens, interval="day", forceFetch=True, insertOnly=True
     )
-    # print(data)
+    if len(history.failed_tokens) > 0:
+        history.get_multiple_instruments_history(
+            instruments=history.failed_tokens,
+            interval="day",
+            forceFetch=True,
+            insertOnly=True,
+        )
+
+
+def kite_instruments():
+    from pkbrokers.kite.authenticator import KiteAuthenticator
+    from pkbrokers.kite.instruments import KiteInstruments
+
+    authenticator = KiteAuthenticator()
+    enctoken = authenticator.get_enctoken()
+    instruments = KiteInstruments(api_key="kitefront", access_token=enctoken)
+    instruments.get_or_fetch_instrument_tokens(all_columns=True)
 
 
 def setupLogger(logLevel=LOG_LEVEL):
@@ -203,7 +225,13 @@ def pkkite():
         setupLogger()
         kite_history()
 
-    print("You can use like this :\npkkite --auth\nor\npkkite --ticks")
+    if args.instruments:
+        setupLogger()
+        kite_instruments()
+
+    print(
+        "You can use like this :\npkkite --auth\npkkite --ticks\npkkite --history\npkkite --instruments"
+    )
 
 
 if __name__ == "__main__":
