@@ -215,12 +215,7 @@ def kite_fetch_save_pickle():
     success = manager.execute()
 
     if success:
-        # Example: Get data for a specific symbol
-        symbol_data = manager.get_data_for_symbol("RELIANCE")
-        if symbol_data:
-            print(f"Found data for RELIANCE: {len(symbol_data)} days")
-        else:
-            print("No data found for RELIANCE")
+        print("Saved instrument data into the pickle file")
     else:
         print("Failed to load or create instrument data")
 
