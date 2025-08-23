@@ -27,6 +27,7 @@ SOFTWARE.
 import os
 
 from dotenv import dotenv_values
+from PKDevTools.classes.log import default_logger
 
 from pkbrokers.kite.instruments import KiteInstruments
 from pkbrokers.kite.zerodhaWebSocketClient import ZerodhaWebSocketClient
@@ -76,6 +77,7 @@ class KiteTokenWatcher:
             for i in range(0, len(tokens), OPTIMAL_TOKEN_BATCH_SIZE)
         ]
         self.client = client
+        self.logger = default_logger()
 
     def watch(self):
         local_secrets = dotenv_values(".env.dev")
@@ -97,7 +99,9 @@ class KiteTokenWatcher:
                 tokens[i : i + OPTIMAL_TOKEN_BATCH_SIZE]
                 for i in range(0, len(tokens), OPTIMAL_TOKEN_BATCH_SIZE)
             ]
-
+        self.logger.debug(
+            f"Fetched {len(tokens)} tokens. Divided into {len(self.token_batches)} batches."
+        )
         if self.client is None:
             self.client = ZerodhaWebSocketClient(
                 enctoken=os.environ.get(

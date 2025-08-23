@@ -148,11 +148,11 @@ class KiteInstruments:
                 and not self._is_last_updated_today()
                 and self._needs_refresh()
             ):
-                self.logger.info("Dropping table instruments.")
+                self.logger.debug("Dropping table instruments.")
                 cursor.execute("DROP TABLE IF EXISTS instruments")
 
             if self.local:
-                self.logger.info("Running in local database mode.")
+                self.logger.debug("Running in local database mode.")
                 # Enable WAL mode for better concurrency
                 cursor.execute("PRAGMA journal_mode=WAL")
                 cursor.execute("PRAGMA synchronous=NORMAL")
@@ -188,7 +188,7 @@ class KiteInstruments:
             """)
 
             conn.commit()
-            self.logger.info("Database initialised for table instruments.")
+            self.logger.debug("Database initialised for table instruments.")
 
     def _get_connection(self, local=False) -> sqlite3.Connection:
         """Get thread-safe database connection"""
@@ -269,10 +269,10 @@ class KiteInstruments:
     def fetch_instruments(self) -> List[Instrument]:
         """Fetch instruments from Kite API"""
         url = f"{self.base_url}/instruments/NSE"
-        self.logger.info(f"Fetching instruments from {url}")
+        self.logger.debug(f"Fetching instruments from {url}")
 
         try:
-            self.logger.info(f"Fetching from {url}")
+            self.logger.debug(f"Fetching from {url}")
             response = requests.get(url, headers=self.headers, timeout=30)
             response.raise_for_status()
 
@@ -287,7 +287,7 @@ class KiteInstruments:
                 if instrument:
                     instruments.append(instrument)
 
-            self.logger.info(f"Fetched {len(instruments)} valid instruments")
+            self.logger.debug(f"Fetched {len(instruments)} valid instruments")
             return instruments
 
         except requests.exceptions.RequestException as e:
@@ -320,7 +320,7 @@ class KiteInstruments:
         filtered_instruments = [
             inst for inst in instruments if self.filter_instrument(inst)
         ]
-        self.logger.info(f"Updating/Inserting {len(filtered_instruments)} instruments")
+        self.logger.debug(f"Updating/Inserting {len(filtered_instruments)} instruments")
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
@@ -371,13 +371,13 @@ class KiteInstruments:
                 )
 
             conn.commit()
-            self.logger.info(f"Stored/updated {len(data)} instruments")
+            self.logger.debug(f"Stored/updated {len(data)} instruments")
 
     def sync_instruments(self, instruments=[], force_fetch: bool = True) -> bool:
         """Complete sync workflow"""
         try:
             if self._needs_refresh():
-                self.logger.info("Starting instruments sync")
+                self.logger.debug("Starting instruments sync")
                 self._init_db(drop_table=True)
                 instruments = self.fetch_instruments() if force_fetch else instruments
                 self.store_instruments(instruments)

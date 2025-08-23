@@ -32,8 +32,6 @@ from contextlib import contextmanager
 from PKDevTools.classes import Archiver
 from PKDevTools.classes.log import default_logger
 
-# Configure logging
-logger = default_logger()
 DEFAULT_PATH = Archiver.get_user_data_dir()
 
 
@@ -42,6 +40,8 @@ class ThreadSafeDatabase:
         self.db_path = db_path
         self.local = threading.local()  # This creates thread-local storage
         self.lock = threading.Lock()
+        # Configure logging
+        self.logger = default_logger()
         self._initialize_db()
 
     def _initialize_db(self, force_drop=False):
@@ -50,6 +50,7 @@ class ThreadSafeDatabase:
             cursor = conn.cursor()
             # Drop old table if exists
             if force_drop:
+                self.logger.debug("Dropping tables market_depth, ticks.")
                 cursor.execute("DROP TABLE IF EXISTS market_depth")
                 cursor.execute("DROP TABLE IF EXISTS ticks")
             # Enable strict datetime typing
@@ -250,14 +251,14 @@ class ThreadSafeDatabase:
                     )
 
                 conn.commit()
-                logger.debug(f"Inserted {len(ticks)} ticks.")
+                self.logger.debug(f"Inserted {len(ticks)} ticks.")
             except sqlite3.OperationalError as e:
-                logger.error(
+                self.logger.error(
                     f"Reinitializing Database. Database Insert error: {str(e)}"
                 )
                 conn.rollback()
                 self.close_all()
                 self._initialize_db(force_drop=True)
             except Exception as e:
-                logger.error(f"Database insert error: {str(e)}")
+                self.logger.error(f"Database insert error: {str(e)}")
                 conn.rollback()

@@ -48,8 +48,6 @@ from pkbrokers.kite.tickMonitor import TickMonitor
 from pkbrokers.kite.ticks import IndexTick, Tick
 from pkbrokers.kite.zerodhaWebSocketParser import ZerodhaWebSocketParser
 
-# Configure logging
-logger = default_logger()
 DEFAULT_PATH = Archiver.get_user_data_dir()
 
 PING_INTERVAL = 30
@@ -102,6 +100,8 @@ class ZerodhaWebSocketClient:
         self.enctoken = enctoken
         self.user_id = user_id
         self.api_key = api_key
+        # Configure logging
+        self.logger = default_logger()
         self.ws_url = self._build_websocket_url()
         self.data_queue = Queue(maxsize=10000)
         self.stop_event = threading.Event()
@@ -193,17 +193,17 @@ class ZerodhaWebSocketClient:
         if not self.index_subscribed:
             self.index_subscribed = True
             # Subscribe to Nifty 50 index
-            logger.debug("Sending NIFTY_50 subscribe and mode messages")
+            self.logger.debug("Sending NIFTY_50 subscribe and mode messages")
             await websocket.send(json.dumps({"a": "subscribe", "v": NIFTY_50}))
             await websocket.send(json.dumps({"a": "mode", "v": ["full", NIFTY_50]}))
 
             # Subscribe to BSE Sensex
-            logger.debug("Sending BSE_SENSEX subscribe and mode messages")
+            self.logger.debug("Sending BSE_SENSEX subscribe and mode messages")
             await websocket.send(json.dumps({"a": "subscribe", "v": BSE_SENSEX}))
             await websocket.send(json.dumps({"a": "mode", "v": ["full", BSE_SENSEX]}))
 
             if subscribe_all_indices:
-                logger.debug("Sending OTHER_INDICES subscribe and mode messages")
+                self.logger.debug("Sending OTHER_INDICES subscribe and mode messages")
                 await websocket.send(json.dumps({"a": "subscribe", "v": OTHER_INDICES}))
                 await websocket.send(
                     json.dumps({"a": "mode", "v": ["full", OTHER_INDICES]})
@@ -222,12 +222,12 @@ class ZerodhaWebSocketClient:
             # full	    Full. Packet contains several fields including market depth (184 bytes).
 
             mode_msg = {"a": "mode", "v": ["full", batch]}
-            logger.debug(
+            self.logger.debug(
                 f"Batch size: {len(batch)}. Sending subscribe message: {subscribe_msg}"
             )
             await websocket.send(json.dumps(subscribe_msg))
 
-            logger.debug(f"Sending mode message: {mode_msg}")
+            self.logger.debug(f"Sending mode message: {mode_msg}")
             await websocket.send(json.dumps(mode_msg))
 
             await asyncio.sleep(1)  # Respect rate limits
@@ -254,7 +254,7 @@ class ZerodhaWebSocketClient:
                         max_size=2**17,  # 128KB max message size
                     ) as websocket
                 ):
-                    logger.info("WebSocket connected successfully")
+                    self.logger.debug("WebSocket connected successfully")
 
                     # Wait for initial messages
                     initial_messages = []
@@ -267,7 +267,7 @@ class ZerodhaWebSocketClient:
                             data = json.loads(message)
                             if data.get("type") in ["instruments_meta", "app_code"]:
                                 initial_messages.append(data)
-                                logger.debug(f"Received initial message: {data}")
+                                self.logger.debug(f"Received initial message: {data}")
                                 self._process_text_message(data=data)
                         await asyncio.sleep(1)
                     # Subscribe to instruments (example tokens)
@@ -286,23 +286,23 @@ class ZerodhaWebSocketClient:
 
             except websockets.exceptions.ConnectionClosedError as e:
                 if hasattr(e, "code"):
-                    logger.error(f"Connection closed: {e.code} - {e.reason}")
+                    self.logger.error(f"Connection closed: {e.code} - {e.reason}")
                     if e.code == 1000:
-                        logger.info("Normal closure, reconnecting...")
+                        self.logger.debug("Normal closure, reconnecting...")
                     elif e.code == 1011:
-                        logger.warn(
+                        self.logger.warn(
                             "(unexpected error) keepalive ping timeout, reconnecting..."
                         )
                 await asyncio.sleep(5)
             except websockets.exceptions.InvalidStatusCode as e:
                 if hasattr(e, "status_code"):
-                    logger.error(f"Connection failed with status {e.status_code}")
+                    self.logger.error(f"Connection failed with status {e.status_code}")
                     if e.status_code == 400:
-                        logger.error("Authentication failed. Please check your:")
-                        logger.error("- API Key")
-                        logger.error("- Access Token")
-                        logger.error("- User ID")
-                        logger.error("- Token expiration (tokens expire daily)")
+                        self.logger.error("Authentication failed. Please check your:")
+                        self.logger.error("- API Key")
+                        self.logger.error("- Access Token")
+                        self.logger.error("- User ID")
+                        self.logger.error("- Token expiration (tokens expire daily)")
                         self.stop()
                         return
                     elif e.status_code in [401, 403]:
@@ -311,7 +311,7 @@ class ZerodhaWebSocketClient:
 
                 await asyncio.sleep(5)
             except Exception as e:
-                logger.error(
+                self.logger.error(
                     f"WebSocket connection error: {str(e)}. Reconnecting in 5 seconds..."
                 )
                 await asyncio.sleep(5)
@@ -327,10 +327,10 @@ class ZerodhaWebSocketClient:
                     # Handle binary messages (market data or heartbeat)
                     if len(message) == 1:
                         # Single byte is a heartbeat, ignore
-                        logger.debug("Heartbeat.")
+                        self.logger.debug("Heartbeat.")
                         continue
                     else:
-                        logger.debug("Receiving Market Data.")
+                        self.logger.debug("Receiving Market Data.")
                         # Process market data
                         ticks = ZerodhaWebSocketParser.parse_binary_message(message)
                         for tick in ticks:
@@ -338,22 +338,22 @@ class ZerodhaWebSocketClient:
                             if self.watcher_queue is not None:
                                 self.watcher_queue.put(tick)
                 elif isinstance(message, str):
-                    logger.debug("Receiving Postbacks or other updates.")
+                    self.logger.debug("Receiving Postbacks or other updates.")
                     # Handle text messages (postbacks and updates)
                     try:
                         data = json.loads(message)
                         self._process_text_message(data)
                     except json.JSONDecodeError:
-                        logger.warn(f"Invalid JSON message: {message}")
+                        self.logger.warn(f"Invalid JSON message: {message}")
 
             except asyncio.TimeoutError:
                 await websocket.ping()
             except websockets.exceptions.ConnectionClosedError as e:
                 if hasattr(e, "code"):
-                    logger.error(f"Connection closed: {e.code} - {e.reason}")
+                    self.logger.error(f"Connection closed: {e.code} - {e.reason}")
                 break
             except Exception as e:
-                logger.error(f"Message processing error: {str(e)}")
+                self.logger.error(f"Message processing error: {str(e)}")
                 break
 
     def _parse_binary_message(self, message):
@@ -380,7 +380,7 @@ class ZerodhaWebSocketClient:
                     ticks.append(tick)
 
         except Exception as e:
-            logger.error(f"Error parsing binary message: {str(e)}")
+            self.logger.error(f"Error parsing binary message: {str(e)}")
 
         return ticks
 
@@ -389,7 +389,7 @@ class ZerodhaWebSocketClient:
         try:
             # Minimum packet is 8 bytes (instrument_token + ltp)
             if len(packet) < 8:
-                logger.warn(f"Packet too short: {len(packet)} bytes")
+                self.logger.warn(f"Packet too short: {len(packet)} bytes")
                 return None
 
             # Unpack common fields (first 8 bytes)
@@ -536,7 +536,7 @@ class ZerodhaWebSocketClient:
             return tick_data
 
         except Exception as e:
-            logger.error(f"Error parsing packet: {str(e)}")
+            self.logger.error(f"Error parsing packet: {str(e)}")
             return None
 
     def _process_text_message(self, data):
@@ -549,9 +549,9 @@ class ZerodhaWebSocketClient:
         if message_type == "order":
             self._process_order(data.get("data", {}))
         elif message_type == "error":
-            logger.error(f"Server error: {data.get('data')}")
+            self.logger.error(f"Server error: {data.get('data')}")
         elif message_type == "message":
-            logger.info(f"Server message: {data.get('data')}")
+            self.logger.debug(f"Server message: {data.get('data')}")
         elif message_type == "instruments_meta":
             # We don't use it. So we can safely ignore.
             # count
@@ -564,19 +564,19 @@ class ZerodhaWebSocketClient:
             # Purpose:
             # Clients can compare the eTag with a previously stored value to check if the instrument list has been updated.
             # If the eTag changes, it means the instrument metadata has been modified (e.g., new listings, delistings, or changes in instrument details).
-            logger.debug(f"Instruments metadata update: {data.get('data')}")
+            self.logger.debug(f"Instruments metadata update: {data.get('data')}")
         elif message_type == "app_code":
-            logger.debug(f"App code update: {data}")
+            self.logger.debug(f"App code update: {data}")
             self.token_timestamp = dateutil.parser.isoparse(
                 data.get("timestamp", datetime.now().isoformat())
             )
             self._refresh_token()
         else:
-            logger.debug(f"Unknown message type: {data}")
+            self.logger.debug(f"Unknown message type: {data}")
 
     def _process_order(self, order_data):
         """Process order updates"""
-        logger.info(f"Order update: {order_data}")
+        self.logger.debug(f"Order update: {order_data}")
         # Add your order processing logic here
 
     def _process_ticks(self):
@@ -625,7 +625,7 @@ class ZerodhaWebSocketClient:
                         if tick.prev_day_close is not None
                         else 0,
                     }
-                    logger.debug(processed)
+                    self.logger.debug(processed)
                     # Add depth if available
                     if tick.depth:
                         processed["depth"] = {
@@ -668,7 +668,7 @@ class ZerodhaWebSocketClient:
                     last_flush = time.time()
                 continue
             except Exception as e:
-                logger.error(f"Error processing ticks: {str(e)}")
+                self.logger.error(f"Error processing ticks: {str(e)}")
 
         # Flush any remaining ticks
         if batch:
@@ -677,7 +677,7 @@ class ZerodhaWebSocketClient:
     def _refresh_token(self, force=False):
         """Refresh expired access token"""
         if force or (time.time() - self.token_timestamp > 86400):  # 24 hours
-            logger.info("Refreshing access token")
+            self.logger.debug("Refreshing access token")
             # Implement your token refresh logic here
             from pkbrokers.kite.authenticator import KiteAuthenticator
 
@@ -693,7 +693,7 @@ class ZerodhaWebSocketClient:
                 self.last_message_time = time.time()
 
             if time.time() - self.last_message_time > 60:
-                logger.warn("No messages received in last 60 seconds")
+                self.logger.warn("No messages received in last 60 seconds")
             await asyncio.sleep(10)
 
     async def _monitor_performance(self):
@@ -708,7 +708,7 @@ class ZerodhaWebSocketClient:
             """)
             ticks_per_minute = cursor.fetchone()[0]
 
-            logger.info(
+            self.logger.debug(
                 f"Performance | Queue: {self.data_queue.qsize()} | "
                 f"Ticks/min: {ticks_per_minute} | "
                 f"DB Lag: {self.data_queue.qsize() / max(1, ticks_per_minute / 60):.1f}s"
@@ -731,11 +731,11 @@ class ZerodhaWebSocketClient:
         try:
             self.db_conn.insert_ticks(batch)
         except Exception as e:
-            logger.error(f"Database error: {str(e)}")
+            self.logger.error(f"Database error: {str(e)}")
 
     def start(self):
         """Start WebSocket client and processing threads"""
-        logger.info("Starting Zerodha WebSocket client")
+        self.logger.debug("Starting Zerodha WebSocket client")
 
         # Create event loop for main thread
         self.loop = asyncio.new_event_loop()
@@ -767,7 +767,7 @@ class ZerodhaWebSocketClient:
 
     def stop(self):
         """Graceful shutdown"""
-        logger.info("Stopping Zerodha WebSocket client")
+        self.logger.debug("Stopping Zerodha WebSocket client")
         self.stop_event.set()
 
         # Close all database connections
@@ -797,4 +797,4 @@ class ZerodhaWebSocketClient:
         if hasattr(self, "processor_thread"):
             self.processor_thread.join(timeout=5)
 
-        logger.info("Shutdown complete")
+        self.logger.debug("Shutdown complete")

@@ -118,7 +118,7 @@ class KiteAuthenticator:
         """
         try:
             if credentials is None or len(credentials.keys()) == 0:
-                default_logger().info(
+                default_logger().debug(
                     "Credentials not sent for authentication. Using the default credentials from environment."
                 )
                 from dotenv import dotenv_values

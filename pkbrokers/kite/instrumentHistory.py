@@ -153,7 +153,7 @@ class KiteTickerHistory:
         ]
         for index in indices:
             self.db_conn.execute(index)
-        self.logger.info("Database inititalised for instrument_history")
+        self.logger.debug("Database inititalised for instrument_history")
 
     def _rate_limit(self):
         """Enforce strict rate limiting (3 requests/second)"""
@@ -246,7 +246,7 @@ class KiteTickerHistory:
 
     def _execute_safe(self, query, params, retrial=False):
         try:
-            self.logger.info(f"Executing:Retrial:{retrial} for query:{query}")
+            self.logger.debug(f"Executing:Retrial:{retrial} for query:{query}")
             cursor = self.db_conn.cursor()
             cursor.execute(
                 query,
@@ -329,7 +329,7 @@ class KiteTickerHistory:
                 (instrument_token, interval, formatted_from_date, formatted_to_date),
             )
             rows = cursor.fetchall()
-            self.logger.info(f"Fetched {len(rows)} rows from the database")
+            self.logger.debug(f"Fetched {len(rows)} rows from the database")
             if rows:
                 candles = []
                 for row in rows:
@@ -365,7 +365,7 @@ class KiteTickerHistory:
             )
             max_date = formatted_from_date
             rows = cursor.fetchall()
-            self.logger.info(f"Fetched {len(rows)} rows from the database")
+            self.logger.debug(f"Fetched {len(rows)} rows from the database")
             for row in rows:
                 rows_count = row[0]
                 max_date = (
@@ -391,7 +391,7 @@ class KiteTickerHistory:
         for attempt in range(max_retries):
             try:
                 self._rate_limit()
-                self.logger.info(
+                self.logger.debug(
                     f"Fetching history data from {url}?{'&'.join([f'{key}={value}' for key, value in params.items()])}"
                 )
                 response = self.session.get(url, params=params)
@@ -496,7 +496,7 @@ class KiteTickerHistory:
             current_instrument = None
             candles = []
             rows = cursor.fetchall()
-            self.logger.info(f"Fetched {len(rows)} rows from the database.")
+            self.logger.debug(f"Fetched {len(rows)} rows from the database.")
             for row in rows:
                 if row[0] != current_instrument:
                     if current_instrument is not None:

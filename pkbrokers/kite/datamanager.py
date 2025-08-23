@@ -26,12 +26,13 @@ SOFTWARE.
 
 import pickle
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import libsql
 import pandas as pd
 import requests
 from PKDevTools.classes.Environment import PKEnvironment
+from PKDevTools.classes.log import default_logger
 
 
 class InstrumentDataManager:
@@ -40,6 +41,7 @@ class InstrumentDataManager:
         self.raw_pickle_url = "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/pkscreener.pkl"
         self.db_conn = None
         self.pickle_data = None
+        self.logger = default_logger()
 
     def _connect_to_database(self):
         """Connect to remote database using libsql"""
@@ -49,7 +51,7 @@ class InstrumentDataManager:
             )
             return True
         except Exception as e:
-            print(f"Database connection failed: {e}")
+            self.logger.debug(f"Database connection failed: {e}")
             return False
 
     def _check_pickle_exists(self) -> bool:
@@ -68,7 +70,7 @@ class InstrumentDataManager:
             self.pickle_data = pickle.loads(response.content)
             return self.pickle_data
         except Exception as e:
-            print(f"Failed to load pickle from GitHub: {e}")
+            self.logger.debug(f"Failed to load pickle from GitHub: {e}")
             return None
 
     def _get_recent_data_from_kite(self):
@@ -82,13 +84,13 @@ class InstrumentDataManager:
             tradingsymbols = self._get_tradingsymbols()
 
             if not tradingsymbols:
-                print("No tradingsymbols found to fetch data")
+                self.logger.debug("No tradingsymbols found to fetch data")
                 return None
 
             # Get data for past 3 days
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=3)
-
+            start_date = self._format_date(end_date - timedelta(days=3))
+            end_date = self._format_date(end_date)
             # Fetch historical data
             historical_data = kite_history.get_multiple_instruments_history(
                 tradingsymbols=tradingsymbols, from_date=start_date, to_date=end_date
@@ -101,12 +103,18 @@ class InstrumentDataManager:
             return historical_data
 
         except ImportError:
-            print("KiteTickerHistory module not available")
+            self.logger.debug("KiteTickerHistory module not available")
             return None
         except Exception as e:
-            print(f"Error fetching data from Kite: {e}")
+            self.logger.debug(f"Error fetching data from Kite: {e}")
             return None
 
+    def _format_date(self, date: Union[str, datetime]) -> str:
+        """Convert date to YYYY-MM-DD format"""
+        if isinstance(date, datetime):
+            return date.strftime("%Y-%m-%d")
+        return date
+    
     def _get_tradingsymbols(self) -> List[str]:
         """Get tradingsymbols from pickle or database"""
         if self.pickle_data:
@@ -127,7 +135,7 @@ class InstrumentDataManager:
             results = cursor.fetchall()
             return [row[0] for row in results] if results else []
         except Exception as e:
-            print(f"Error fetching tradingsymbols from database: {e}")
+            self.logger.debug(f"Error fetching tradingsymbols from database: {e}")
             return []
 
     def _fetch_data_from_database(self) -> Dict:
@@ -138,8 +146,8 @@ class InstrumentDataManager:
         try:
             # Calculate date range
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=365)
-
+            start_date = self._format_date(end_date - timedelta(days=365))
+            end_date = self._format_date(end_date)
             # Fetch instrument history data
             cursor = self.db_conn.cursor()
             query = """
@@ -157,7 +165,7 @@ class InstrumentDataManager:
             return self._process_database_data(results, columns)
 
         except Exception as e:
-            print(f"Error fetching data from database: {e}")
+            self.logger.debug(f"Error fetching data from database: {e}")
             return {}
 
     def _process_database_data(self, results: List, columns: List[str]) -> Dict:
@@ -213,7 +221,7 @@ class InstrumentDataManager:
         with open("pkscreener.pkl", "wb") as f:
             pickle.dump(self.pickle_data, f)
 
-        print("Pickle file updated successfully")
+        self.logger.debug("Pickle file updated successfully")
 
     def get_data_for_symbol(self, tradingsymbol: str) -> Optional[Dict]:
         """Get full year's data for a specific tradingsymbol"""
@@ -223,10 +231,10 @@ class InstrumentDataManager:
 
     def execute(self):
         """Main execution method"""
-        print("Checking for existing pickle file...")
+        self.logger.debug("Checking for existing pickle file...")
 
         if self._check_pickle_exists():
-            print("Pickle file found on GitHub")
+            self.logger.debug("Pickle file found on GitHub")
             self._load_pickle_from_github()
 
             # Get recent data and update
@@ -235,7 +243,7 @@ class InstrumentDataManager:
                 self._update_pickle_file(recent_data)
 
         else:
-            print("Pickle file not found, fetching from database...")
+            self.logger.debug("Pickle file not found, fetching from database...")
             # Fetch data from database
             historical_data = self._fetch_data_from_database()
 
@@ -244,8 +252,8 @@ class InstrumentDataManager:
                 # Save to local pickle file
                 with open("pkscreener.pkl", "wb") as f:
                     pickle.dump(self.pickle_data, f)
-                print("Pickle file created from database data")
+                self.logger.debug("Pickle file created from database data")
             else:
-                print("No data available from database")
+                self.logger.debug("No data available from database")
 
         return self.pickle_data is not None

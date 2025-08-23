@@ -29,10 +29,7 @@ from collections import namedtuple
 from datetime import datetime, timezone
 
 from PKDevTools.classes import Archiver
-from PKDevTools.classes.log import default_logger
 
-# Configure logging
-logger = default_logger()
 DEFAULT_PATH = Archiver.get_user_data_dir()
 
 IndexTick = namedtuple(

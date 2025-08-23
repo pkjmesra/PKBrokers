@@ -32,8 +32,6 @@ import time
 from PKDevTools.classes import Archiver
 from PKDevTools.classes.log import default_logger
 
-# Configure logging
-logger = default_logger()
 DEFAULT_PATH = Archiver.get_user_data_dir()
 
 
@@ -47,6 +45,8 @@ class TickMonitor:
         self.last_alert_time = 0
         self.alert_interval = 60  # seconds
         self.subscribed_tokens = token_batches
+        # Configure logging
+        self.logger = default_logger()
 
     async def _get_stale_instruments(
         self, token_batch: list[int], stale_minutes: int = 1
@@ -85,7 +85,7 @@ class TickMonitor:
                 fetch_all = cursor.fetchall()
                 return [row[0] for row in fetch_all]
         except Exception as e:
-            logger.error(e)
+            self.logger.error(e)
         return []
 
     async def monitor_stale_updates(self):
@@ -106,7 +106,7 @@ class TickMonitor:
             stale_instruments
             and time.time() - self.last_alert_time > self.alert_interval
         ):
-            logger.warn(
+            self.logger.warn(
                 f"Stale instruments detected ({len(stale_instruments)}): {stale_instruments}"
             )
             self.last_alert_time = time.time()
@@ -114,6 +114,6 @@ class TickMonitor:
         return []
 
     async def _handle_stale_instruments(self, stale):
-        logger.warn(
+        self.logger.warn(
             f"Following instruments ({len(stale)}) have stale updates:\n{stale}"
         )
