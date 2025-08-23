@@ -36,6 +36,7 @@ from typing import Dict, Optional
 import pyotp
 import requests
 from kiteconnect import KiteConnect
+from PKDevTools.classes.log import default_logger
 
 from pkbrokers.envupdater import env_update_context
 
@@ -115,23 +116,31 @@ class KiteAuthenticator:
             ValueError: If credentials are missing or invalid
             requests.exceptions.RequestException: On network/API errors
         """
-        if credentials is None or len(credentials.keys()) == 0:
-            from dotenv import dotenv_values
+        try:
+            if credentials is None or len(credentials.keys()) == 0:
+                default_logger().info(
+                    "Credentials not sent for authentication. Using the default credentials from environment."
+                )
+                from dotenv import dotenv_values
 
-            local_secrets = dotenv_values(".env.dev")
-            credentials = {
-                "api_key": "kitefront",
-                "username": os.environ.get(
-                    "KUSER", local_secrets.get("KUSER", "You need your Kite username")
-                ),
-                "password": os.environ.get(
-                    "KPWD", local_secrets.get("KPWD", "You need your Kite password")
-                ),
-                "totp": os.environ.get(
-                    "KTOTP", local_secrets.get("KTOTP", "You need your Kite TOTP")
-                ),
-            }
-        self._validate_credentials(credentials)
+                local_secrets = dotenv_values(".env.dev")
+                credentials = {
+                    "api_key": "kitefront",
+                    "username": os.environ.get(
+                        "KUSER",
+                        local_secrets.get("KUSER", "You need your Kite username"),
+                    ),
+                    "password": os.environ.get(
+                        "KPWD", local_secrets.get("KPWD", "You need your Kite password")
+                    ),
+                    "totp": os.environ.get(
+                        "KTOTP", local_secrets.get("KTOTP", "You need your Kite TOTP")
+                    ),
+                }
+            self._validate_credentials(credentials)
+        except Exception as e:
+            default_logger().error(e)
+            pass
 
         try:
             # Initial request to establish session
@@ -186,10 +195,12 @@ class KiteAuthenticator:
             return access_token
 
         except requests.exceptions.RequestException as e:
+            default_logger().error(e)
             raise requests.exceptions.RequestException(
                 f"Authentication failed: {str(e)}"
             ) from e
         except Exception as e:
+            default_logger().error(e)
             raise ValueError(f"Authentication error: {str(e)}") from e
 
 

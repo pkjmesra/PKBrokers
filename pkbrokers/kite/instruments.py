@@ -45,7 +45,6 @@ from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
 
 # Configure logging
-logger = default_logger()
 DEFAULT_PATH = Archiver.get_user_data_dir()
 
 
@@ -102,6 +101,7 @@ class KiteInstruments:
         self.local = local
         self.recreate_schema = recreate_schema
         self.base_url = "https://api.kite.trade"
+        self.logger = default_logger()
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
             "X-Kite-Version": "3",
@@ -109,7 +109,7 @@ class KiteInstruments:
         }
         self._init_db(drop_table=recreate_schema)
 
-    def is_after_8_30_am_ist(self, last_updated_str):
+    def _is_after_8_30_am_ist(self, last_updated_str):
         # Parse the datetime string
         last_updated = datetime.fromisoformat(last_updated_str.replace("Z", "+00:00"))
 
@@ -125,7 +125,7 @@ class KiteInstruments:
         # Check if last_updated is >= 8:30 AM IST
         return last_updated_ist >= eight_thirty_am_ist
 
-    def is_last_updated_today(self):
+    def _is_last_updated_today(self):
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT last_updated FROM instruments limit 1")
@@ -133,7 +133,7 @@ class KiteInstruments:
             is_after_830 = False
             for row in rows:
                 last_updated_str = row[0]
-                is_after_830 = self.is_after_8_30_am_ist(last_updated_str)
+                is_after_830 = self._is_after_8_30_am_ist(last_updated_str)
                 break
             return is_after_830
 
@@ -145,12 +145,14 @@ class KiteInstruments:
             cursor = conn.cursor()
             if (
                 drop_table
-                and not self.is_last_updated_today()
+                and not self._is_last_updated_today()
                 and self._needs_refresh()
             ):
+                self.logger.info("Dropping table instruments.")
                 cursor.execute("DROP TABLE IF EXISTS instruments")
 
             if self.local:
+                self.logger.info("Running in local database mode.")
                 # Enable WAL mode for better concurrency
                 cursor.execute("PRAGMA journal_mode=WAL")
                 cursor.execute("PRAGMA synchronous=NORMAL")
@@ -186,6 +188,7 @@ class KiteInstruments:
             """)
 
             conn.commit()
+            self.logger.info("Database initialised for table instruments.")
 
     def _get_connection(self, local=False) -> sqlite3.Connection:
         """Get thread-safe database connection"""
@@ -250,7 +253,7 @@ class KiteInstruments:
                 last_updated=datetime.now().isoformat(),
             )
         except (ValueError, KeyError) as e:
-            logger.warn(f"Skipping malformed instrument: {str(e)}")
+            self.logger.warn(f"Skipping malformed instrument: {str(e)}")
             return None
 
     def _normalize_expiry(self, expiry: Optional[str]) -> Optional[str]:
@@ -260,15 +263,16 @@ class KiteInstruments:
         try:
             return datetime.strptime(expiry, "%Y-%m-%d").strftime("%Y-%m-%d")
         except ValueError:
-            logger.warn(f"Invalid expiry format: {expiry}")
+            self.logger.warn(f"Invalid expiry format: {expiry}")
             return None
 
     def fetch_instruments(self) -> List[Instrument]:
         """Fetch instruments from Kite API"""
         url = f"{self.base_url}/instruments/NSE"
-        logger.info(f"Fetching instruments from {url}")
+        self.logger.info(f"Fetching instruments from {url}")
 
         try:
+            self.logger.info(f"Fetching from {url}")
             response = requests.get(url, headers=self.headers, timeout=30)
             response.raise_for_status()
 
@@ -283,14 +287,14 @@ class KiteInstruments:
                 if instrument:
                     instruments.append(instrument)
 
-            logger.info(f"Fetched {len(instruments)} valid instruments")
+            self.logger.info(f"Fetched {len(instruments)} valid instruments")
             return instruments
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to fetch instruments: {str(e)}")
+            self.logger.error(f"Failed to fetch instruments: {str(e)}")
             raise
         except Exception as e:
-            logger.error(f"Unexpected error processing instruments: {str(e)}")
+            self.logger.error(f"Unexpected error processing instruments: {str(e)}")
             raise
 
     def filter_instrument(self, instrument):
@@ -310,13 +314,13 @@ class KiteInstruments:
     def store_instruments(self, instruments: List[Instrument]) -> None:
         """Bulk upsert instruments into database"""
         if not instruments:
-            logger.warn("No instruments to store")
+            self.logger.warn("No instruments to store")
             return
 
         filtered_instruments = [
             inst for inst in instruments if self.filter_instrument(inst)
         ]
-        logger.info(f"Updating/Inserting {len(filtered_instruments)} instruments")
+        self.logger.info(f"Updating/Inserting {len(filtered_instruments)} instruments")
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
@@ -367,19 +371,19 @@ class KiteInstruments:
                 )
 
             conn.commit()
-            logger.info(f"Stored/updated {len(data)} instruments")
+            self.logger.info(f"Stored/updated {len(data)} instruments")
 
     def sync_instruments(self, instruments=[], force_fetch: bool = True) -> bool:
         """Complete sync workflow"""
         try:
             if self._needs_refresh():
-                logger.info("Starting instruments sync")
+                self.logger.info("Starting instruments sync")
                 self._init_db(drop_table=True)
                 instruments = self.fetch_instruments() if force_fetch else instruments
                 self.store_instruments(instruments)
             return True
         except Exception as e:
-            logger.error(f"Sync failed: {str(e)}", exc_info=True)
+            self.logger.error(f"Sync failed: {str(e)}", exc_info=True)
             return False
 
     def get_instrument_count(self) -> int:

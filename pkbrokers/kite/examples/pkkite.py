@@ -49,7 +49,7 @@ argParser.add_argument(
 )
 argParser.add_argument(
     "--history",
-    action="store_true",
+    # action="store_true",
     help="Get history data for all NSE stocks.",
     required=False,
 )
@@ -65,7 +65,11 @@ argParser.add_argument(
     help="Get instrument data from remote database and save into pickle for all NSE stocks.",
     required=False,
 )
-argsv = argParser.parse_known_args()
+try:
+    argsv = argParser.parse_known_args()
+except BaseException:
+    pass
+
 args = argsv[0]
 LOG_LEVEL = logging.INFO
 _watcher_queue = None
@@ -183,12 +187,12 @@ def kite_history():
     )
 
     history.get_multiple_instruments_history(
-        instruments=tokens, interval="day", forceFetch=True, insertOnly=True
+        instruments=tokens, interval=args.history, forceFetch=True, insertOnly=True
     )
     if len(history.failed_tokens) > 0:
         history.get_multiple_instruments_history(
             instruments=history.failed_tokens,
-            interval="day",
+            interval=args.history,
             forceFetch=True,
             insertOnly=True,
         )
@@ -222,6 +226,7 @@ def kite_fetch_save_pickle():
 
 
 def setupLogger(logLevel=LOG_LEVEL):
+    os.environ["PKDevTools_Default_Log_Level"] = str(logLevel)
     log.setup_custom_logger(
         "pkbrokers",
         logLevel,
@@ -229,7 +234,6 @@ def setupLogger(logLevel=LOG_LEVEL):
         log_file_path="PKBrokers-log.txt",
         filter=None,
     )
-    os.environ["PKDevTools_Default_Log_Level"] = str(logLevel)
 
 
 def pkkite():
@@ -245,8 +249,16 @@ def pkkite():
         kite_ticks()
 
     if args.history:
-        setupLogger()
-        kite_history()
+        from pkbrokers.kite.instrumentHistory import Historical_Interval
+
+        supported_intervals = [member.value for member in Historical_Interval]
+        if args.history not in supported_intervals:
+            print(
+                f"--history= requires at least one of the following parameters: {', '.join(map(lambda x: x.value, Historical_Interval))}\nFor example:\n--history={'--history='.join(map(lambda x: x.value + '\n', Historical_Interval))}"
+            )
+        else:
+            setupLogger()
+            kite_history()
 
     if args.instruments:
         setupLogger()
@@ -257,7 +269,7 @@ def pkkite():
         kite_fetch_save_pickle()
 
     print(
-        "You can use like this :\npkkite --auth\npkkite --ticks\npkkite --history\npkkite --instruments"
+        "You can use like this :\npkkite --auth\npkkite --ticks\npkkite --history\npkkite --instruments\npkkite --pickle"
     )
 
 

@@ -27,6 +27,7 @@ SOFTWARE.
 import os
 import time
 from datetime import datetime, timedelta
+from enum import Enum
 from threading import Lock
 from typing import Dict, List, Union
 
@@ -36,7 +37,15 @@ from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
 from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
-logger = default_logger()
+
+class Historical_Interval(Enum):
+    day = "day"
+    min_1 = "minute"
+    min_5 = "5minute"
+    min_10 = "10minute"
+    min_15 = "15minute"
+    min_30 = "30minute"
+    min_60 = "60minute"
 
 
 class KiteTickerHistory:
@@ -79,7 +88,7 @@ class KiteTickerHistory:
         from dotenv import dotenv_values
 
         local_secrets = dotenv_values(".env.dev")
-
+        self.logger = default_logger()
         if enctoken is None or len(enctoken) == 0:
             enctoken = (
                 os.environ.get(
@@ -144,6 +153,7 @@ class KiteTickerHistory:
         ]
         for index in indices:
             self.db_conn.execute(index)
+        self.logger.info("Database inititalised for instrument_history")
 
     def _rate_limit(self):
         """Enforce strict rate limiting (3 requests/second)"""
@@ -172,6 +182,9 @@ class KiteTickerHistory:
             to_date: End date of the query
         """
         if not data or "candles" not in data or not data["candles"]:
+            self.logger.warn(
+                f"No candle data available for {instrument_token} for interval:{interval}"
+            )
             return
 
         # Prepare batch insert with interval
@@ -217,26 +230,32 @@ class KiteTickerHistory:
 
             # Commit the transaction
             self.db_conn.execute("COMMIT")
-            logger.info(f"Inserted {len(candles)} rows for token:{instrument_token}")
+            self.logger.info(
+                f"Committed/inserted {len(candles)} rows for token:{instrument_token} and interval:{interval}"
+            )
 
         except Exception as e:
             # Rollback if any error occurs
             self.db_conn.execute("ROLLBACK")
             print(f"Error saving to database: {str(e)}")
-            logger.error(
-                f"Failed Inserting {len(candles)} rows for token:{instrument_token}\n{str(e)}"
+            self.logger.error(
+                f"Rollback:Failed Inserting {len(candles)} rows for token:{instrument_token} and interval:{interval}\n{str(e)}"
             )
             self.failed_tokens.append(instrument_token)
             raise
 
     def _execute_safe(self, query, params, retrial=False):
         try:
+            self.logger.info(f"Executing:Retrial:{retrial} for query:{query}")
             cursor = self.db_conn.cursor()
             cursor.execute(
                 query,
                 params,
             )
-        except ValueError:
+        except ValueError as e:
+            self.logger.error(
+                f"Error executing:Retrial:{retrial} for query:{query}. {e}"
+            )
             if not retrial:
                 # Re-Initialize database connection
                 self.db_conn = libsql.connect(
@@ -310,6 +329,7 @@ class KiteTickerHistory:
                 (instrument_token, interval, formatted_from_date, formatted_to_date),
             )
             rows = cursor.fetchall()
+            self.logger.info(f"Fetched {len(rows)} rows from the database")
             if rows:
                 candles = []
                 for row in rows:
@@ -344,7 +364,9 @@ class KiteTickerHistory:
                 (instrument_token, interval, formatted_from_date, formatted_to_date),
             )
             max_date = formatted_from_date
-            for row in cursor.fetchall():
+            rows = cursor.fetchall()
+            self.logger.info(f"Fetched {len(rows)} rows from the database")
+            for row in rows:
                 rows_count = row[0]
                 max_date = (
                     formatted_from_date
@@ -369,6 +391,9 @@ class KiteTickerHistory:
         for attempt in range(max_retries):
             try:
                 self._rate_limit()
+                self.logger.info(
+                    f"Fetching history data from {url}?{'&'.join([f'{key}={value}' for key, value in params.items()])}"
+                )
                 response = self.session.get(url, params=params)
                 response.raise_for_status()
                 data = response.json()["data"]
@@ -382,11 +407,15 @@ class KiteTickerHistory:
                 data["source"] = "api"
                 return data
             except requests.exceptions.RequestException as e:
+                self.logger.error(e)
                 last_error = e
                 if attempt < max_retries - 1:
                     time.sleep(2**attempt)
                 continue
 
+        self.logger.error(
+            f"Failed after {max_retries} attempts for {instrument_token}: {str(last_error)}"
+        )
         raise requests.exceptions.RequestException(
             f"Failed after {max_retries} attempts for {instrument_token}: {str(last_error)}"
         )
@@ -466,8 +495,9 @@ class KiteTickerHistory:
             db_data = {}
             current_instrument = None
             candles = []
-
-            for row in cursor.fetchall():
+            rows = cursor.fetchall()
+            self.logger.info(f"Fetched {len(rows)} rows from the database.")
+            for row in rows:
                 if row[0] != current_instrument:
                     if current_instrument is not None:
                         db_data[current_instrument] = {
@@ -526,7 +556,7 @@ class KiteTickerHistory:
                         "status": "failed",
                         "error": str(e),
                     }
-                logger.info(
+                self.logger.info(
                     f"Fetched/Saved {counter} of {len(instruments_to_fetch)} tokens in {'%.3f' % (time.time() - begin_time)} sec."
                 )
             requiredDelay = delay - (time.time() - batch_begin)
