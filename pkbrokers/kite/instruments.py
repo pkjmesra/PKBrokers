@@ -35,18 +35,21 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 import libsql
 import pytz
 import requests
 from PKDevTools.classes import Archiver
+from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
+from PKNSETools.PKNSEStockDataFetcher import nseStockDataFetcher
 
 # Configure logging
 DEFAULT_PATH = Archiver.get_user_data_dir()
-
+NIFTY_50 = 256265
+BSE_SENSEX = 265
 
 @dataclass
 class Instrument:
@@ -65,6 +68,7 @@ class Instrument:
     segment: str
     exchange: str
     last_updated: str
+    nse_stock: bool = False  # New field to indicate if it's an NSE stock
 
 
 class KiteInstruments:
@@ -76,6 +80,7 @@ class KiteInstruments:
     - Efficient bulk sync operations
     - Thread-safe queries
     - Comprehensive type hints
+    - NSE stock identification
     """
 
     def __init__(
@@ -107,6 +112,8 @@ class KiteInstruments:
             "X-Kite-Version": "3",
             "Authorization": f"token {self.api_key}:{self.access_token}",
         }
+        self._nse_trading_symbols: Optional[list[str]] = None
+        self._filtered_trading_symbols: Optional[list[str]] = []
         self._init_db(drop_table=recreate_schema)
 
     def _is_after_8_30_am_ist(self, last_updated_str):
@@ -119,23 +126,26 @@ class KiteInstruments:
 
         # Create 8:30 AM IST time for the same date
         eight_thirty_am_ist = datetime.combine(
-            last_updated_ist.date(), time(8, 30, 0)
+            PKDateUtilities.currentDateTime().date(), time(8, 30, 0)
         ).replace(tzinfo=ist_timezone)
 
         # Check if last_updated is >= 8:30 AM IST
         return last_updated_ist >= eight_thirty_am_ist
 
     def _is_last_updated_today(self):
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT last_updated FROM instruments limit 1")
-            rows = cursor.fetchall()
-            is_after_830 = False
-            for row in rows:
-                last_updated_str = row[0]
-                is_after_830 = self._is_after_8_30_am_ist(last_updated_str)
-                break
-            return is_after_830
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT last_updated FROM instruments limit 1")
+                rows = cursor.fetchall()
+                is_after_830 = False
+                for row in rows:
+                    last_updated_str = row[0]
+                    is_after_830 = self._is_after_8_30_am_ist(last_updated_str)
+                    break
+                return is_after_830
+        except BaseException:
+            return False
 
     def _init_db(self, drop_table=False) -> None:
         """Initialize database schema with proper indexes"""
@@ -157,7 +167,8 @@ class KiteInstruments:
                 cursor.execute("PRAGMA journal_mode=WAL")
                 cursor.execute("PRAGMA synchronous=NORMAL")
 
-            # Create instruments table with constraints
+            # Create instruments table with constraints and new nse_stock column
+            # Use INTEGER instead of BOOLEAN for Turso compatibility
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS instruments (
                     instrument_token INTEGER,
@@ -173,11 +184,12 @@ class KiteInstruments:
                     segment TEXT NOT NULL,
                     exchange TEXT NOT NULL,
                     last_updated TEXT DEFAULT (datetime('now')),
+                    nse_stock INTEGER DEFAULT 0 CHECK (nse_stock IN (0, 1)),
                     PRIMARY KEY (exchange, tradingsymbol, instrument_type)
                 ) STRICT
             """)
 
-            # Create optimized indexes
+            # Create optimized indexes including nse_stock
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_instrument_token
                 ON instruments(instrument_token)
@@ -185,6 +197,10 @@ class KiteInstruments:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_tradingsymbol_segment
                 ON instruments(tradingsymbol, segment)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_nse_stock
+                ON instruments(nse_stock)
             """)
 
             conn.commit()
@@ -199,7 +215,23 @@ class KiteInstruments:
                 database=PKEnvironment().TDU, auth_token=PKEnvironment().TAT
             )
 
-    # @lru_cache(maxsize=1, typed=False)
+    def _get_nse_trading_symbols(self) -> list[str]:
+        """Get NSE trading symbols from NSE data fetcher with caching"""
+        if self._nse_trading_symbols is None:
+            try:
+                nse_fetcher = nseStockDataFetcher()
+                equities = list(set(nse_fetcher.fetchNiftyCodes(tickerOption=12)))
+                fno = list(set(nse_fetcher.fetchNiftyCodes(tickerOption=14)))
+                
+                self._nse_trading_symbols = list(set(equities + fno))
+                self.logger.debug(f"Fetched {len(self._nse_trading_symbols)} Unique NSE symbols")
+                self.logger.debug(f"{self._nse_trading_symbols}")
+            except Exception as e:
+                self.logger.warn(f"Failed to fetch NSE symbols: {str(e)}")
+                self._nse_trading_symbols = []
+        
+        return self._nse_trading_symbols
+
     def _needs_refresh(self) -> bool:
         """
         Determines if instruments need refresh with:
@@ -211,36 +243,44 @@ class KiteInstruments:
             cursor = conn.cursor()
 
             # Single efficient query that returns age in seconds
-            cursor.execute(
-                """
-                SELECT CASE
-                    WHEN NOT EXISTS (SELECT 1 FROM instruments LIMIT 1) THEN 1
-                    WHEN (
-                        strftime('%s','now') -
-                        COALESCE(
-                            (SELECT strftime('%s',MAX(last_updated)) FROM instruments),
-                            0
-                        ) > ?
-                    ) THEN 1
-                    WHEN (
-                        SELECT DATE(MAX(last_updated),'utc')
-                        FROM instruments
-                    ) != DATE('now','utc') THEN 1
-                    ELSE 0
-                END AS needs_refresh
-            """,
-                (self._update_threshold,),
-            )
+            try:
+                cursor.execute(
+                    """
+                    SELECT CASE
+                        WHEN NOT EXISTS (SELECT 1 FROM instruments LIMIT 1) THEN 1
+                        WHEN (
+                            strftime('%s','now') -
+                            COALESCE(
+                                (SELECT strftime('%s',MAX(last_updated)) FROM instruments),
+                                0
+                            ) > ?
+                        ) THEN 1
+                        WHEN (
+                            SELECT DATE(MAX(last_updated),'utc')
+                            FROM instruments
+                        ) != DATE('now','utc') THEN 1
+                        ELSE 0
+                    END AS needs_refresh
+                """,
+                    (self._update_threshold,),
+                )
 
-            return cursor.fetchone()[0] == 1  # 0 for first run case
+                return cursor.fetchone()[0] == 1  # 0 for first run case
+            except BaseException:
+                return True
 
     def _normalize_instrument(self, raw: Dict[str, str]) -> Optional[Instrument]:
         """Convert raw API data to Instrument object with validation"""
         try:
+            # Check if this is an NSE stock
+            nse_symbols = self._get_nse_trading_symbols()
+            tradingsymbol = raw["tradingsymbol"].strip()
+            is_nse_stock = tradingsymbol in nse_symbols if nse_symbols else False
+
             return Instrument(
                 instrument_token=int(raw["instrument_token"]),
                 exchange_token=raw["exchange_token"],
-                tradingsymbol=raw["tradingsymbol"].strip(),
+                tradingsymbol=tradingsymbol,
                 name=raw["name"].strip() if raw.get("name") else None,
                 last_price=float(raw["last_price"]) if raw.get("last_price") else None,
                 expiry=self._normalize_expiry(raw.get("expiry")),
@@ -251,6 +291,7 @@ class KiteInstruments:
                 segment=raw["segment"].strip(),
                 exchange=raw["exchange"].strip(),
                 last_updated=datetime.now().isoformat(),
+                nse_stock=is_nse_stock,
             )
         except (ValueError, KeyError) as e:
             self.logger.warn(f"Skipping malformed instrument: {str(e)}")
@@ -266,6 +307,43 @@ class KiteInstruments:
             self.logger.warn(f"Invalid expiry format: {expiry}")
             return None
 
+    def _filter_instrument(self, instrument: Instrument) -> bool:
+        """
+        Filter instruments based on criteria, with NSE symbol list preference
+        
+        If NSE trading symbols are available, use them for filtering.
+        Otherwise, fall back to the original filtering logic.
+        """
+        nse_symbols = self._get_nse_trading_symbols()
+        
+        basic_conditions = (instrument.exchange == "NSE"
+                and instrument.segment == "NSE"
+                and instrument.instrument_type == "EQ"
+                and instrument.name is not None
+                )
+        if nse_symbols:
+            # Use NSE symbol list as the primary filter
+            in_nse_symbols_or_indices = (basic_conditions and (instrument.tradingsymbol.replace("-BE","").replace("-BZ","") in nse_symbols
+                or instrument.instrument_token in [NIFTY_50, BSE_SENSEX]))
+            if in_nse_symbols_or_indices:
+                self._filtered_trading_symbols.append(instrument.tradingsymbol.replace("-BE","").replace("-BZ",""))
+            else:
+                if basic_conditions:
+                    self.logger.debug(f"Filtered Out:{instrument.tradingsymbol}")
+            return in_nse_symbols_or_indices
+            
+        else:
+            # Fall back to original filtering logic
+            return (
+                basic_conditions
+                and "-" not in instrument.tradingsymbol
+                and 1 <= instrument.lot_size <= 100
+                and "ETF" not in instrument.tradingsymbol
+                and instrument.tradingsymbol[0].isupper()
+                if instrument.tradingsymbol
+                else False
+            )
+
     def fetch_instruments(self) -> List[Instrument]:
         """Fetch instruments from Kite API"""
         url = f"{self.base_url}/instruments/NSE"
@@ -276,8 +354,6 @@ class KiteInstruments:
             response = requests.get(url, headers=self.headers, timeout=30)
             response.raise_for_status()
 
-            # Handle gzipped response ? Or it's not gzip. It's plain text
-            # content = gzip.decompress(response.content).decode('utf-8')
             content = response.content.decode("utf-8")
             reader = csv.DictReader(content.splitlines())
 
@@ -297,34 +373,21 @@ class KiteInstruments:
             self.logger.error(f"Unexpected error processing instruments: {str(e)}")
             raise
 
-    def filter_instrument(self, instrument):
-        return (
-            instrument.exchange == "NSE"
-            and instrument.segment == "NSE"
-            and instrument.instrument_type == "EQ"
-            and "ETF" not in instrument.tradingsymbol
-            and instrument.name is not None
-            and "-" not in instrument.tradingsymbol
-            and 1 <= instrument.lot_size <= 100
-            and instrument.tradingsymbol[0].isupper()
-            if instrument.tradingsymbol
-            else False
-        )
-
     def store_instruments(self, instruments: List[Instrument]) -> None:
-        """Bulk upsert instruments into database"""
+        """Bulk upsert instruments into database with nse_stock column"""
         if not instruments:
             self.logger.warn("No instruments to store")
             return
 
         filtered_instruments = [
-            inst for inst in instruments if self.filter_instrument(inst)
+            inst for inst in instruments if self._filter_instrument(inst)
         ]
         self.logger.debug(f"Updating/Inserting {len(filtered_instruments)} instruments")
+        self.logger.debug(f"Filtered out but present in NSE_symbols:{set(self._nse_trading_symbols)-set(self._filtered_trading_symbols)}")
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
-            # Prepare batch data
+            # Prepare batch data including nse_stock column (as INTEGER)
             data = [
                 (
                     i.instrument_token,
@@ -340,6 +403,7 @@ class KiteInstruments:
                     i.segment,
                     i.exchange,
                     datetime.now().isoformat(),
+                    1 if i.nse_stock else 0,  # nse_stock column as INTEGER
                 )
                 for i in filtered_instruments
             ]
@@ -347,15 +411,17 @@ class KiteInstruments:
             if self.recreate_schema:
                 cursor.executemany(
                     """
-                    INSERT or IGNORE INTO instruments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT or IGNORE INTO instruments 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                     data,
                 )
             else:
-                # Efficient bulk upsert
+                # Efficient bulk upsert including nse_stock column
                 cursor.executemany(
                     """
-                    INSERT INTO instruments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO instruments 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(exchange, tradingsymbol, instrument_type)
                     DO UPDATE SET
                         instrument_token = excluded.instrument_token,
@@ -365,7 +431,8 @@ class KiteInstruments:
                         tick_size = excluded.tick_size,
                         lot_size = excluded.lot_size,
                         segment = excluded.segment,
-                        last_updated = datetime('now')
+                        last_updated = datetime('now'),
+                        nse_stock = excluded.nse_stock
                 """,
                     data,
                 )
@@ -393,10 +460,18 @@ class KiteInstruments:
             cursor.execute("SELECT COUNT(1) FROM instruments")
             return cursor.fetchone()[0]
 
+    def get_nse_stock_count(self) -> int:
+        """Get count of instruments marked as NSE stocks"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(1) FROM instruments WHERE nse_stock = 1")
+            return cursor.fetchone()[0]
+
     def get_equities(
         self,
         column_names: str = "instrument_token,tradingsymbol,name",
         segment: str = "NSE",
+        only_nse_stocks: bool = False
     ) -> List[Dict]:
         """
         Get equity instruments with dynamic column selection
@@ -404,7 +479,7 @@ class KiteInstruments:
         Args:
             column_names: Comma-separated list of valid column names
             segment: Market segment (NSE, INDICES, etc.)
-            exclude_etfs: Whether to exclude ETF instruments
+            only_nse_stocks: Whether to return only instruments marked as NSE stocks
 
         Returns:
             List of instrument dictionaries with requested columns
@@ -427,6 +502,7 @@ class KiteInstruments:
             "segment",
             "exchange",
             "last_updated",
+            "nse_stock",
         }
         column_names = column_names.replace(" ", "").strip()
         requested_columns = [col.strip() for col in column_names.split(",")]
@@ -445,8 +521,12 @@ class KiteInstruments:
                 instrument_type = 'EQ'
         """
 
-        # Add segment-specific filters
+        # Add NSE stock filter if requested
         params = [segment]
+        if only_nse_stocks:
+            query += " AND nse_stock = 1"
+        
+        # Add segment-specific filters
         if segment == "NSE":
             query = (
                 query
@@ -465,17 +545,18 @@ class KiteInstruments:
             cursor = conn.cursor()
             cursor.execute(query, params)
             return [
-                dict(zip(column_names.split(","), row)) for row in cursor.fetchall()
+                dict(zip(requested_columns, row)) for row in cursor.fetchall()
             ]
 
-    def get_or_fetch_instrument_tokens(self, all_columns=False):
+    def get_or_fetch_instrument_tokens(self, all_columns=False, only_nse_stocks=False):
         equities_count = self.get_instrument_count()
         if equities_count == 0:
             self.sync_instruments(force_fetch=True)
         equities = self.get_equities(
             column_names="instrument_token"
             if not all_columns
-            else "instrument_token,tradingsymbol,name"
+            else "instrument_token,tradingsymbol,name",
+            only_nse_stocks=only_nse_stocks
         )
         tokens = self.get_instrument_tokens(equities=equities)
         return tokens
@@ -511,32 +592,94 @@ class KiteInstruments:
                 (instrument_token,),
             )
             row = cursor.fetchone()
-            return (
-                dict(
-                    zip(
-                        [
-                            "instrument_token",
-                            "exchange_token",
-                            "tradingsymbol",
-                            "name",
-                            "last_price",
-                            "expiry",
-                            "strike",
-                            "tick_size",
-                            "lot_size",
-                            "instrument_type",
-                            "segment",
-                            "exchange",
-                            "last_updated",
-                        ],
-                        row,
-                    )
+            if row:
+                columns = [
+                    "instrument_token", "exchange_token", "tradingsymbol", "name",
+                    "last_price", "expiry", "strike", "tick_size", "lot_size",
+                    "instrument_type", "segment", "exchange", "last_updated", "nse_stock"
+                ]
+                result = dict(zip(columns, row))
+                # Convert nse_stock to boolean for easier use
+                result["nse_stock"] = bool(result["nse_stock"])
+                return result
+            return None
+
+    def get_nse_stocks(self) -> List[Dict]:
+        """Convenience method to get all NSE stocks"""
+        stocks = self.get_equities(
+            column_names="instrument_token,tradingsymbol,name,last_price,nse_stock",
+            only_nse_stocks=True
+        )
+        # Convert nse_stock to boolean for easier use
+        for stock in stocks:
+            stock["nse_stock"] = bool(stock["nse_stock"])
+        return stocks
+
+    def update_nse_stock_status(self, tradingsymbol: str, is_nse_stock: bool) -> bool:
+        """Update the nse_stock status for a specific instrument"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    UPDATE instruments 
+                    SET nse_stock = ?, last_updated = datetime('now')
+                    WHERE tradingsymbol = ? AND exchange = 'NSE'
+                """,
+                    (1 if is_nse_stock else 0, tradingsymbol),
                 )
-                if row
-                else None
-            )
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            self.logger.error(f"Failed to update NSE stock status: {str(e)}")
+            return False
 
+    def migrate_to_nse_stock_column(self) -> bool:
+        """
+        Migrate existing data to use the nse_stock column.
+        This should be called once after adding the new column.
+        """
+        try:
+            nse_symbols = self._get_nse_trading_symbols()
+            if not nse_symbols:
+                self.logger.warn("No NSE symbols available for migration")
+                return False
 
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Update all instruments based on NSE symbol list
+                cursor.execute(
+                    """
+                    UPDATE instruments 
+                    SET nse_stock = 1, last_updated = datetime('now')
+                    WHERE exchange = 'NSE' 
+                    AND segment = 'NSE'
+                    AND instrument_type = 'EQ'
+                    AND tradingsymbol IN ({})
+                    """.format(','.join(['?'] * len(nse_symbols))),
+                    list(nse_symbols)
+                )
+                
+                # Set nse_stock = 0 for non-matching instruments
+                cursor.execute(
+                    """
+                    UPDATE instruments 
+                    SET nse_stock = 0, last_updated = datetime('now')
+                    WHERE exchange = 'NSE' 
+                    AND segment = 'NSE'
+                    AND instrument_type = 'EQ'
+                    AND nse_stock IS NULL
+                    """
+                )
+                
+                conn.commit()
+                self.logger.debug(f"Migrated {cursor.rowcount} instruments to use nse_stock column")
+                return True
+                
+        except Exception as e:
+            self.logger.error(f"Migration failed: {str(e)}")
+            return False
 """
 # Example usage
 if __name__ == "__main__":
