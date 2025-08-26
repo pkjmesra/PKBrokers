@@ -36,6 +36,7 @@ from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
 
 DEFAULT_PATH = Archiver.get_user_data_dir()
+DEFAULT_DB_PATH = os.path.join(DEFAULT_PATH, "ticks.db")
 
 
 class ThreadSafeDatabase:

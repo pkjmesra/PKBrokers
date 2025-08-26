@@ -30,15 +30,11 @@ import json
 import multiprocessing
 import os
 import queue
-import sqlite3
-import struct
 import threading
 import time
 from datetime import datetime
-from queue import Queue
 from urllib.parse import quote
 
-import dateutil
 import pytz
 import websockets
 from PKDevTools.classes import Archiver, log
@@ -46,14 +42,13 @@ from PKDevTools.classes.log import default_logger
 from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
 from pkbrokers.kite.threadSafeDatabase import ThreadSafeDatabase
-from pkbrokers.kite.tickMonitor import MAX_ALERT_INTERVAL_SEC, TickMonitor
-from pkbrokers.kite.ticks import IndexTick, Tick
+from pkbrokers.kite.ticks import Tick
 from pkbrokers.kite.zerodhaWebSocketParser import ZerodhaWebSocketParser
 
 DEFAULT_PATH = Archiver.get_user_data_dir()
 
 PING_INTERVAL = 30
-OPTIMAL_BATCH_SIZE = 100  # Adjust based on testing
+OPTIMAL_BATCH_SIZE = 50  # Adjust based on testing
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
@@ -237,14 +232,12 @@ class WebSocketProcess:
 
                     # Main message loop
                     last_heartbeat = time.time()
-                    last_message_time = time.time()
 
                     while not self.stop_event.is_set():
                         try:
                             message = await asyncio.wait_for(
                                 websocket.recv(), timeout=10
                             )
-                            last_message_time = time.time()
 
                             if isinstance(message, bytes):
                                 if len(message) == 1:
@@ -374,9 +367,6 @@ class ZerodhaWebSocketClient:
         api_key="kitefront",
         token_batches=[],
         watcher_queue=None,
-        monitor_performance=False,
-        monitor_stale=False,
-        monitor_connection=True,
     ):
         self.watcher_queue = watcher_queue
         self.enctoken = enctoken
@@ -391,9 +381,6 @@ class ZerodhaWebSocketClient:
         self.token_timestamp = 0
         self.ws_processes = []
         self.process_pool = None
-        self.monitor_performance = monitor_performance
-        self.monitor_stale = monitor_stale
-        self.monitor_connection = monitor_connection
 
     def _build_tokens(self):
         """Build token batches by fetching available instruments from Zerodha."""
@@ -556,6 +543,30 @@ class ZerodhaWebSocketClient:
         except Exception as e:
             self.logger.error(f"Database error: {str(e)}")
 
+    def _monitor_processes(self, process_args):
+        """Monitor and restart failed processes"""
+        ctx = multiprocessing.get_context('spawn')
+        
+        try:
+            while not self.stop_event.is_set():
+                # Check WebSocket processes
+                for i, p in enumerate(self.ws_processes):
+                    if not p.is_alive():
+                        self.logger.warning(f"WebSocket process {i} died, restarting...")
+                        args = process_args[i]
+                        new_p = ctx.Process(target=websocket_process_worker, args=(args,))
+                        new_p.daemon = True
+                        new_p.start()
+                        self.ws_processes[i] = new_p
+                
+                time.sleep(5)
+                
+        except KeyboardInterrupt:
+            self.stop()
+        except Exception as e:
+            self.logger.error(f"Error in multiprocessing: {str(e)}")
+            self.stop()
+
     def start(self):
         """Start WebSocket client with multiprocessing."""
         self.logger.debug("Starting Zerodha WebSocket client with multiprocessing")
@@ -629,6 +640,8 @@ class ZerodhaWebSocketClient:
         except Exception as e:
             self.logger.error(f"Error in multiprocessing: {str(e)}")
             self.stop()
+        # Monitor processes
+        self._monitor_processes(process_args)
 
     def stop(self):
         """Graceful shutdown of the WebSocket client."""
