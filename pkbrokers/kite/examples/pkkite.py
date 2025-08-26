@@ -31,7 +31,11 @@ import sys
 
 from PKDevTools.classes import log
 
-LOG_LEVEL = logging.INFO
+LOG_LEVEL = (
+    logging.INFO
+    if "PKDevTools_Default_Log_Level" not in os.environ.keys()
+    else int(os.environ["PKDevTools_Default_Log_Level"])
+)
 
 # Argument Parsing for test purpose
 argParser = argparse.ArgumentParser()

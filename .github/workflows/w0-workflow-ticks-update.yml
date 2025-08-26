@@ -4,11 +4,19 @@ on:
     # Run 20 minutes before NSE market open (9:00 AM IST = 3:30 AM UTC)
     - cron: '25 3 * * 1-5'  # Monday-Friday at 3:40 AM UTC (9:20 AM IST)
   workflow_dispatch:  # Allow manual triggering
+    inputs:
+      logLevel:
+        description: 'Log level for PKDevTools (default 20)'
+        required: false
+        default: 20
+        type: number
 
 jobs:
   market-runner:
     runs-on: ubuntu-latest
     timeout-minutes: 355  # Just under 6 hours (5h55m) to avoid being cutoff
+    env:
+      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
     
     steps:
     - name: Checkout code
@@ -87,13 +95,17 @@ jobs:
         KPWD=$KPWD
         KTOTP=$KTOTP
         DB_TYPE=$DB_TYPE
+        PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
         EOF
         
         echo "Created .env.dev file with secrets"
+        echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
 
     - name: Run pkkite with intelligent restart
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        PYTHONUNBUFFERED: 1  # Force unbuffered output
+        PKDevTools_Default_Log_Level: ${{ env.PKDevTools_Default_Log_Level }}
       run: |
         # Function to check if current time is within market hours
         check_market_hours() {
@@ -198,9 +210,13 @@ jobs:
               break
             fi
             
-            # Run pkkite and capture exit code
-            pkkite --ticks
-            EXIT_CODE=$?
+            # Run pkkite with unbuffered output to ensure all logs are printed immediately
+            echo "Starting pkkite with unbuffered output to capture all logs..."
+            python -u -m pkkite --ticks --verbose 2>&1 | while IFS= read -r line; do
+              # Print timestamp with each log line for better debugging
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] $line"
+            done
+            EXIT_CODE=${PIPESTATUS[0]}
             
             echo "pkkite exited with code $EXIT_CODE"
             

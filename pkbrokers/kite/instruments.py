@@ -691,9 +691,13 @@ class KiteInstruments:
         try:
             if self._needs_refresh():
                 self.logger.debug("Starting instruments sync")
+                begin_time = time.time()
                 self._init_db(drop_table=True)
                 instruments = self.fetch_instruments() if force_fetch else instruments
                 self.store_instruments(instruments)
+                self.logger.info(
+                    f"Synced NSE Instruments in: {'%.3f' % (time.time() - begin_time)} sec."
+                )
             return True
         except Exception as e:
             self.logger.error(f"Sync failed: {str(e)}", exc_info=True)
