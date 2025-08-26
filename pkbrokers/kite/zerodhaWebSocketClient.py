@@ -42,6 +42,7 @@ import pytz
 import websockets
 from PKDevTools.classes import Archiver
 from PKDevTools.classes.log import default_logger
+from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
 from pkbrokers.kite.threadSafeDatabase import ThreadSafeDatabase
 from pkbrokers.kite.tickMonitor import MAX_ALERT_INTERVAL_SEC, TickMonitor
@@ -51,7 +52,7 @@ from pkbrokers.kite.zerodhaWebSocketParser import ZerodhaWebSocketParser
 DEFAULT_PATH = Archiver.get_user_data_dir()
 
 PING_INTERVAL = 30
-OPTIMAL_BATCH_SIZE = 200  # Adjust based on testing
+OPTIMAL_BATCH_SIZE = 20  # Adjust based on testing
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
@@ -88,6 +89,36 @@ OTHER_INDICES = [
 
 
 class ZerodhaWebSocketClient:
+    """
+    A WebSocket client for connecting to Zerodha's trading API to receive real-time market data.
+
+    This client handles connection establishment, subscription to instruments, processing of
+    market data ticks, and maintaining connection health. It supports batching of instrument
+    tokens to comply with Zerodha's limits and implements sequential subscription to manage
+    server load.
+
+    Attributes:
+        watcher_queue (Queue): Optional queue for forwarding ticks to external watchers
+        enctoken (str): Encrypted authentication token for Zerodha API
+        user_id (str): User ID for Zerodha account
+        api_key (str): API key for Zerodha application
+        logger (Logger): Logger instance for logging events and errors
+        ws_url (str): WebSocket URL with authentication parameters
+        data_queue (Queue): Queue for storing processed ticks before database insertion
+        stop_event (threading.Event): Event to signal when to stop all operations
+        db_conn (ThreadSafeDatabase): Thread-safe database connection for storing ticks
+        extra_headers (dict): Headers required for WebSocket connection
+        last_message_time (float): Timestamp of last received message
+        last_heartbeat (float): Timestamp of last heartbeat sent
+        token_batches (list): List of token batches to subscribe to
+        token_timestamp (float): Timestamp when token was last refreshed
+        ws_tasks (list): List of WebSocket connection tasks
+        index_subscribed (bool): Flag indicating if index instruments are subscribed
+        monitor_performance (bool): Flag to enable performance monitoring
+        monitor_stale (bool): Flag to enable stale instrument monitoring
+        monitor_connection (bool): Flag to enable connection monitoring
+    """
+
     def __init__(
         self,
         enctoken,
@@ -99,6 +130,19 @@ class ZerodhaWebSocketClient:
         monitor_stale=False,
         monitor_connection=True,
     ):
+        """
+        Initialize the Zerodha WebSocket client.
+
+        Args:
+            enctoken (str): Encrypted authentication token for Zerodha API
+            user_id (str): User ID for Zerodha account
+            api_key (str, optional): API key for Zerodha application. Defaults to "kitefront".
+            token_batches (list, optional): List of token batches to subscribe to. Defaults to [].
+            watcher_queue (Queue, optional): Queue for forwarding ticks to external watchers. Defaults to None.
+            monitor_performance (bool, optional): Enable performance monitoring. Defaults to False.
+            monitor_stale (bool, optional): Enable stale instrument monitoring. Defaults to False.
+            monitor_connection (bool, optional): Enable connection monitoring. Defaults to True.
+        """
         self.watcher_queue = watcher_queue
         self.enctoken = enctoken
         self.user_id = user_id
@@ -121,7 +165,15 @@ class ZerodhaWebSocketClient:
         self.monitor_connection = monitor_connection
 
     def _build_websocket_url(self):
-        """Construct the WebSocket URL with proper parameters"""
+        """
+        Construct the WebSocket URL with proper authentication parameters.
+
+        Returns:
+            str: WebSocket URL with encoded parameters
+
+        Raises:
+            ValueError: If any required authentication parameter is missing or empty
+        """
         if self.api_key is None or len(self.api_key) == 0:
             raise ValueError("API Key must not be blank")
         if self.user_id is None or len(self.user_id) == 0:
@@ -140,7 +192,12 @@ class ZerodhaWebSocketClient:
         return f"wss://ws.zerodha.com/?{query_string}"
 
     def _build_headers(self):
-        """Generate required WebSocket headers"""
+        """
+        Generate required WebSocket headers for the connection handshake.
+
+        Returns:
+            dict: Headers required for WebSocket connection
+        """
         # Generate random WebSocket key (required for handshake)
         ws_key = base64.b64encode(os.urandom(16)).decode("utf-8")
 
@@ -160,6 +217,15 @@ class ZerodhaWebSocketClient:
         }
 
     def _build_tokens(self):
+        """
+        Build token batches by fetching available instruments from Zerodha.
+
+        This method uses the KiteInstruments class to fetch equity instruments and
+        creates batches of tokens according to the optimal batch size.
+
+        Raises:
+            ValueError: If required environment variables or secrets are missing
+        """
         import os
 
         from PKDevTools.classes.Environment import PKEnvironment
@@ -190,13 +256,27 @@ class ZerodhaWebSocketClient:
         ]
 
     async def _subscribe_instruments(
-        self, websocket, token_batches, subscribe_all_indices=False
+        self, websocket, token_batches, subscribe_all_indices=False, websocket_index=-1
     ):
-        """Subscribe to instruments with rate limiting"""
+        """
+        Subscribe to instruments with rate limiting.
+
+        Args:
+            websocket: The WebSocket connection object
+            token_batch (list): Batch of tokens to subscribe to
+            subscribe_all_indices (bool, optional): Whether to subscribe to all indices. Defaults to False.
+
+        Note:
+            This method subscribes to index instruments first if not already subscribed,
+            then subscribes to the provided token batch with a rate limit delay.
+        """
         if self.stop_event.is_set():
             return
 
         if not self.index_subscribed:
+            self.logger.info(
+                f"Subscribing for indices on websocket_index:{websocket_index}"
+            )
             self.index_subscribed = True
             # Subscribe to Nifty 50 index
             self.logger.debug("Sending NIFTY_50 subscribe and mode messages")
@@ -215,21 +295,23 @@ class ZerodhaWebSocketClient:
                     json.dumps({"a": "mode", "v": ["full", OTHER_INDICES]})
                 )
 
-        for batch in token_batches:
+        for token_batch in token_batches:
             if self.stop_event.is_set():
                 break
-
-            subscribe_msg = {"a": "subscribe", "v": batch}
+            self.logger.info(
+                f"Subscribing for batch on websocket_index:{websocket_index}"
+            )
+            subscribe_msg = {"a": "subscribe", "v": token_batch}
             # There are three different modes in which quote packets are streamed.
             # modes:
-            # ltp	    LTP. Packet contains only the last traded price (8 bytes).
-            # ltpc	    LTPC. Packet contains only the last traded price and close price (16 bytes).
-            # quote	    Quote. Packet contains several fields excluding market depth (44 bytes).
-            # full	    Full. Packet contains several fields including market depth (184 bytes).
+            # ltp     LTP. Packet contains only the last traded price (8 bytes).
+            # ltpc      LTPC. Packet contains only the last traded price and close price (16 bytes).
+            # quote     Quote. Packet contains several fields excluding market depth (44 bytes).
+            # full      Full. Packet contains several fields including market depth (184 bytes).
 
-            mode_msg = {"a": "mode", "v": ["full", batch]}
-            self.logger.debug(
-                f"Batch size: {len(batch)}. Sending subscribe message: {subscribe_msg}"
+            mode_msg = {"a": "mode", "v": ["full", token_batch]}
+            self.logger.info(
+                f"Batch size: {len(token_batch)}. Sending subscribe message: {subscribe_msg}"
             )
             await websocket.send(json.dumps(subscribe_msg))
 
@@ -239,14 +321,31 @@ class ZerodhaWebSocketClient:
             await asyncio.sleep(1)  # Respect rate limits
 
     async def send_heartbeat(self, websocket):
+        """
+        Send heartbeat message to keep the WebSocket connection alive.
+
+        Args:
+            websocket: The WebSocket connection object
+        """
         # Send heartbeat every 30 seconds
         if time.time() - self.last_heartbeat > PING_INTERVAL:
             await websocket.send(json.dumps({"a": "ping"}))
             self.last_heartbeat = time.time()
 
-    async def _connect_websocket(self, token_batch=[]):
-        """Establish and maintain WebSocket connection"""
+    async def _connect_websocket(self, token_batch=[], websocket_index=-1):
+        """
+        Establish and maintain WebSocket connection with sequential batch subscription.
 
+        This method handles the WebSocket connection lifecycle, including:
+        - Connection establishment and authentication
+        - Receiving initial messages
+        - Sequential subscription to token batches
+        - Message processing loop
+        - Error handling and reconnection logic
+
+        The method subscribes to token batches sequentially, only subscribing to the
+        next batch after receiving the first tick from the current batch.
+        """
         while not self.stop_event.is_set():
             try:
                 async with (
@@ -274,21 +373,28 @@ class ZerodhaWebSocketClient:
                             if data.get("type") in ["instruments_meta", "app_code"]:
                                 initial_messages.append(data)
                                 self.logger.debug(f"Received initial message: {data}")
+                                self.logger.info(
+                                    f"Received on websocket_index:{websocket_index}, initial message: {data}"
+                                )
                                 self._process_text_message(data=data)
                         await asyncio.sleep(1)
-                    # Subscribe to instruments (example tokens)
+
+                    # Build tokens if not provided
                     if len(self.token_batches) == 0:
                         self._build_tokens()
+
+                    # Subscribe to indices first
                     await self._subscribe_instruments(
                         websocket,
                         self.token_batches if len(token_batch) == 0 else token_batch,
+                        websocket_index=websocket_index,
                     )
 
                     # Heartbeat every 30 seconds
                     self.last_heartbeat = time.time()
 
                     # Main message loop
-                    await self._message_loop(websocket)
+                    await self._message_loop(websocket, websocket_index=websocket_index)
 
             except websockets.exceptions.ConnectionClosedError as e:
                 if hasattr(e, "code"):
@@ -322,8 +428,17 @@ class ZerodhaWebSocketClient:
                 )
                 await asyncio.sleep(5)
 
-    async def _message_loop(self, websocket):
-        """Handle incoming messages according to Zerodha's spec"""
+    async def _message_loop(self, websocket, websocket_index=-1):
+        """
+        Handle incoming messages with sequential batch subscription.
+
+        This method processes incoming messages and manages the sequential subscription
+        to token batches. It subscribes to the next batch only after receiving the first
+        tick from the current batch.
+
+        Args:
+            websocket: The WebSocket connection object
+        """
         while not self.stop_event.is_set():
             try:
                 message = await asyncio.wait_for(websocket.recv(), timeout=10)
@@ -336,34 +451,58 @@ class ZerodhaWebSocketClient:
                         self.logger.debug("Heartbeat.")
                         continue
                     else:
-                        self.logger.debug("Receiving Market Data.")
+                        self.logger.debug(
+                            f"Receiving Market Data on websocket_index:{websocket_index}"
+                        )
+                        self.logger.info(
+                            f"Receiving Tick on websocket_index:{websocket_index}"
+                        )
                         # Process market data
                         ticks = ZerodhaWebSocketParser.parse_binary_message(message)
                         for tick in ticks:
                             self.data_queue.put(tick)
                             if self.watcher_queue is not None:
                                 self.watcher_queue.put(tick)
+                        # Sleep and give equal processor time to other message loops for other websocket_indices
+                        time.sleep(0.5)
+
                 elif isinstance(message, str):
-                    self.logger.debug("Receiving Postbacks or other updates.")
+                    self.logger.debug(
+                        f"Receiving Postbacks or other updates on websocket_index:{websocket_index}."
+                    )
                     # Handle text messages (postbacks and updates)
                     try:
                         data = json.loads(message)
                         self._process_text_message(data)
                     except json.JSONDecodeError:
-                        self.logger.warn(f"Invalid JSON message: {message}")
+                        self.logger.warn(
+                            f"Invalid JSON message on websocket_index:{websocket_index}: {message}"
+                        )
 
             except asyncio.TimeoutError:
                 await websocket.ping()
             except websockets.exceptions.ConnectionClosedError as e:
                 if hasattr(e, "code"):
-                    self.logger.error(f"Connection closed: {e.code} - {e.reason}")
+                    self.logger.error(
+                        f"Connection closed on websocket_index:{websocket_index}: {e.code} - {e.reason}"
+                    )
                 break
             except Exception as e:
-                self.logger.error(f"Message processing error: {str(e)}")
+                self.logger.error(
+                    f"Message processing error on websocket_index:{websocket_index}: {str(e)}"
+                )
                 break
 
     def _parse_binary_message(self, message):
-        """Parse binary market data messages"""
+        """
+        Parse binary market data messages.
+
+        Args:
+            message (bytes): Binary message received from WebSocket
+
+        Returns:
+            list: List of parsed tick data dictionaries
+        """
         ticks = []
 
         try:
@@ -391,7 +530,15 @@ class ZerodhaWebSocketClient:
         return ticks
 
     def _parse_binary_packet(self, packet):
-        """Parse individual binary packet with variable length"""
+        """
+        Parse individual binary packet with variable length.
+
+        Args:
+            packet (bytes): Binary packet data
+
+        Returns:
+            dict: Parsed tick data or None if parsing fails
+        """
         try:
             # Minimum packet is 8 bytes (instrument_token + ltp)
             if len(packet) < 8:
@@ -546,7 +693,12 @@ class ZerodhaWebSocketClient:
             return None
 
     def _process_text_message(self, data):
-        """Process non-binary JSON messages"""
+        """
+        Process non-binary JSON messages received from WebSocket.
+
+        Args:
+            data (dict): Parsed JSON message data
+        """
         if not isinstance(data, dict):
             return
 
@@ -581,12 +733,23 @@ class ZerodhaWebSocketClient:
             self.logger.debug(f"Unknown message type: {data}")
 
     def _process_order(self, order_data):
-        """Process order updates"""
+        """
+        Process order updates received from WebSocket.
+
+        Args:
+            order_data (dict): Order update data
+        """
         self.logger.debug(f"Order update: {order_data}")
         # Add your order processing logic here
 
     def _process_ticks(self):
-        """Process ticks from queue and store in database"""
+        """
+        Process ticks from queue and store in database.
+
+        This method runs in a separate thread and processes ticks from the data queue,
+        batching them for efficient database insertion. It also handles the detection
+        of the first tick for the current batch to trigger subscription to the next batch.
+        """
         batch = []
         last_flush = time.time()
 
@@ -599,6 +762,8 @@ class ZerodhaWebSocketClient:
 
                 # Process the tick based on its type
                 if isinstance(tick, Tick):
+                    if tick.exchange_timestamp is None:
+                        tick.exchange_timestamp = PKDateUtilities.currentDateTimestamp()
                     # Convert to optimized format
                     processed = {
                         "instrument_token": tick.instrument_token,
@@ -637,17 +802,21 @@ class ZerodhaWebSocketClient:
                         processed["depth"] = {
                             "bid": [
                                 {
-                                    "price": b.price,
-                                    "quantity": b.quantity,
-                                    "orders": b.orders,
+                                    "price": b.price if b.price is not None else 0,
+                                    "quantity": b.quantity
+                                    if b.quantity is not None
+                                    else 0,
+                                    "orders": b.orders if b.orders is not None else 0,
                                 }
                                 for b in tick.depth["bid"][:5]  # Only first 5 levels
                             ],
                             "ask": [
                                 {
-                                    "price": a.price,
-                                    "quantity": a.quantity,
-                                    "orders": a.orders,
+                                    "price": a.price if a.price is not None else 0,
+                                    "quantity": a.quantity
+                                    if a.quantity is not None
+                                    else 0,
+                                    "orders": a.orders if a.orders is not None else 0,
                                 }
                                 for a in tick.depth["ask"][:5]
                             ],
@@ -681,7 +850,12 @@ class ZerodhaWebSocketClient:
             self._flush_to_db(batch)
 
     def _refresh_token(self, force=False):
-        """Refresh expired access token"""
+        """
+        Refresh expired access token.
+
+        Args:
+            force (bool, optional): Force token refresh even if not expired. Defaults to False.
+        """
         if force or (time.time() - self.token_timestamp > 86400):  # 24 hours
             self.logger.debug("Refreshing access token")
             # Implement your token refresh logic here
@@ -693,7 +867,9 @@ class ZerodhaWebSocketClient:
             self.ws_url = self._build_websocket_url()
 
     async def _connection_monitor(self):
-        """Monitor connection health"""
+        """
+        Monitor connection health and log warnings if no messages are received.
+        """
         while not self.stop_event.is_set():
             if not hasattr(self, "last_message_time"):
                 self.last_message_time = time.time()
@@ -703,7 +879,9 @@ class ZerodhaWebSocketClient:
             await asyncio.sleep(10)
 
     async def _monitor_performance(self):
-        """Monitor system performance"""
+        """
+        Monitor system performance and log metrics.
+        """
         conn = sqlite3.connect(os.path.join(DEFAULT_PATH, "ticks.db"), timeout=30)
         while not self.stop_event.is_set():
             # Track processing rate
@@ -723,7 +901,9 @@ class ZerodhaWebSocketClient:
             await asyncio.sleep(60)
 
     async def _monitor_stale_instruments(self):
-        """Monitor stale instruments"""
+        """
+        Monitor for stale instruments that haven't received updates.
+        """
         if len(self.token_batches) == 0:
             self._build_tokens()
         tick_monitor = TickMonitor(token_batches=self.token_batches)
@@ -733,14 +913,25 @@ class ZerodhaWebSocketClient:
             await asyncio.sleep(MAX_ALERT_INTERVAL_SEC)
 
     def _flush_to_db(self, batch):
-        """Bulk insert ticks to database"""
+        """
+        Bulk insert ticks to database.
+
+        Args:
+            batch (list): List of tick data to insert
+        """
         try:
             self.db_conn.insert_ticks(batch)
         except Exception as e:
             self.logger.error(f"Database error: {str(e)}")
 
     def start(self):
-        """Start WebSocket client and processing threads"""
+        """
+        Start WebSocket client and processing threads.
+
+        This method initializes the event loop, creates WebSocket connection tasks,
+        and starts the tick processing thread. It implements sequential batch subscription
+        by creating a single WebSocket connection task instead of one per batch.
+        """
         self.logger.debug("Starting Zerodha WebSocket client")
 
         # Create event loop for main thread
@@ -749,8 +940,12 @@ class ZerodhaWebSocketClient:
 
         # Start WebSocket and other tasks
         self.ws_tasks = []
+        websocket_index = 0
         for token_batch in self.token_batches:
-            task = self.loop.create_task(self._connect_websocket([token_batch]))
+            websocket_index += 1
+            task = self.loop.create_task(
+                self._connect_websocket([token_batch], websocket_index)
+            )
             self.ws_tasks.append(task)
 
         if self.monitor_performance:
@@ -775,7 +970,12 @@ class ZerodhaWebSocketClient:
             self.stop()
 
     def stop(self):
-        """Graceful shutdown"""
+        """
+        Graceful shutdown of the WebSocket client.
+
+        This method stops all running tasks, closes database connections,
+        and cleans up resources.
+        """
         self.logger.debug("Stopping Zerodha WebSocket client")
         self.stop_event.set()
 

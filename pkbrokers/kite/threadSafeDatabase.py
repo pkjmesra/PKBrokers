@@ -177,8 +177,11 @@ class ThreadSafeDatabase:
         try:
             yield conn
         except Exception as e:
-            if hasattr(conn, "rollback"):
-                conn.rollback()
+            try:
+                if hasattr(conn, "rollback"):
+                    conn.rollback()
+            except BaseException:
+                pass
             raise e
 
     def close_all(self):
@@ -290,8 +293,11 @@ class ThreadSafeDatabase:
 
             except Exception as e:
                 self.logger.error(f"Database insert error: {str(e)}")
-                if hasattr(conn, "rollback"):
-                    conn.rollback()
+                try:
+                    if hasattr(conn, "rollback"):
+                        conn.rollback()
+                except BaseException:
+                    pass
                 if (
                     self.db_type == "turso"
                     and "stream not found" in str(e).lower()
