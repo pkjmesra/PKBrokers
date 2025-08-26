@@ -107,6 +107,10 @@ jobs:
         PYTHONUNBUFFERED: 1  # Force unbuffered output
         PKDevTools_Default_Log_Level: ${{ env.PKDevTools_Default_Log_Level }}
       run: |
+        # Record job start time at the very beginning
+        JOB_START_TIME=$(date +%s)
+        echo "Job started at: $(date -d @$JOB_START_TIME)"
+        
         # Function to check if current time is within market hours
         check_market_hours() {
           current_utc=$(date -u +%H%M)
@@ -121,6 +125,22 @@ jobs:
             fi
           fi
           return 1  # Outside market hours
+        }
+
+        # Function to check if today is a holiday
+        check_holiday() {
+          # Download holidays file
+          curl -s -o /tmp/holidays.json https://raw.githubusercontent.com/pkjmesra/PKScreener/main/.github/dependencies/nse-holidays.json
+          
+          # Get current date in DD-MMM-YYYY format
+          CURRENT_DATE=$(date +"%d-%b-%Y")
+          
+          # Check if current date is in holidays list
+          if jq -e --arg date "$CURRENT_DATE" '.CM[] | select(.tradingDate == $date)' /tmp/holidays.json > /dev/null; then
+            return 0  # It's a holiday
+          else
+            return 1  # Not a holiday
+          fi
         }
 
         # Function to calculate minutes remaining in market session
@@ -151,27 +171,26 @@ jobs:
         check_timeout_risk() {
           # GitHub Actions jobs can run max 6 hours (360 minutes)
           # We set timeout to 355 minutes to be safe
-          # If we have less than 10 minutes until timeout AND we're still in market hours
-          # we should restart to avoid being cut off
+          
+          # Calculate minutes elapsed since job start
+          current_time=$(date +%s)
+          seconds_elapsed=$((current_time - JOB_START_TIME))
+          minutes_elapsed=$((seconds_elapsed / 60))
+          github_minutes_remaining=$((355 - minutes_elapsed))
           
           # Get minutes until market close
           market_minutes_remaining=$(get_minutes_remaining)
           
-          # Get minutes until GitHub timeout (job started at beginning)
-          # We need to calculate how long we've been running
-          job_start_seconds=$(( $(date +%s) - $(cat /proc/uptime | cut -d' ' -f1 | cut -d'.' -f1) ))
-          job_minutes_elapsed=$((job_start_seconds / 60))
-          github_minutes_remaining=$((355 - job_minutes_elapsed))
-          
-          echo "Market minutes remaining: $market_minutes_remaining"
+          echo "Job minutes elapsed: $minutes_elapsed"
           echo "GitHub timeout minutes remaining: $github_minutes_remaining"
+          echo "Market minutes remaining: $market_minutes_remaining"
           
           # If we have less than 10 minutes until GitHub timeout AND still have market time left
           if [ $github_minutes_remaining -le 10 ] && [ $market_minutes_remaining -gt 0 ]; then
             echo "Timeout risk detected: GitHub timeout in $github_minutes_remaining minutes, market still open for $market_minutes_remaining minutes"
             return 1  # At risk of timeout
           else
-            echo "No timeout risk: GitHub timeout in $github_minutes_remaining minutes, market time remaining: $market_minutes_remaining minutes"
+            echo "No timeout risk"
             return 0  # No immediate timeout risk
           fi
         }
@@ -179,12 +198,21 @@ jobs:
         # Function to restart the workflow via API
         restart_workflow() {
           echo "Restarting workflow via GitHub API..."
-          REPO_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f2)
-          curl -s -X POST \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/${{ github.workflow }}.yml/dispatches" \
-            -d '{"ref":"${{ github.ref }}", "inputs": {"logLevel": "${{ github.event.inputs.logLevel || '20' }}"}}'
+          # For manual runs, pass the logLevel input
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            curl -s -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/${{ github.workflow }}.yml/dispatches" \
+              -d '{"ref":"${{ github.ref }}", "inputs": {"logLevel": "${{ github.event.inputs.logLevel || '20' }}"}}'
+          else
+            # For scheduled runs, no inputs needed
+            curl -s -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/${{ github.workflow }}.yml/dispatches" \
+              -d '{"ref":"${{ github.ref }}"}'
+          fi
         }
 
         # Main execution logic
@@ -213,10 +241,12 @@ jobs:
             fi
             
             # Check if we're at risk of hitting GitHub's 6-hour timeout (only for market hours)
-            if check_market_hours && check_timeout_risk; then
-              echo "Approaching GitHub timeout limit. Restarting workflow to continue..."
-              restart_workflow
-              break
+            if check_market_hours; then
+              if check_timeout_risk; then
+                echo "Approaching GitHub timeout limit. Restarting workflow to continue..."
+                restart_workflow
+                break
+              fi
             fi
             
             # Run pkkite with unbuffered output to ensure all logs are printed immediately
