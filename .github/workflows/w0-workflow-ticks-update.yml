@@ -1,4 +1,4 @@
-name: PKBrokers Market Hours Ticks Runner
+name: 0. PKBrokers Market Hours Ticks Runner
 on:
   schedule:
     # Run 20 minutes before NSE market open (9:00 AM IST = 3:30 AM UTC)
