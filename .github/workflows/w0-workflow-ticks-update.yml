@@ -167,25 +167,32 @@ jobs:
         }
 
         # Main execution logic
-        MAX_RETRIES=5
+        MAX_RETRIES=50  # Increased retries for continuous operation
         RETRY_COUNT=0
         
-        # For manual runs, skip holiday check during execution
+        # For manual runs, skip holiday check during execution and allow outside market hours
         if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
           if check_holiday; then
             echo "Today is a market holiday. Exiting."
             exit 0
           fi
         else
-          echo "Manual run detected - proceeding even if it's a holiday"
+          echo "Manual run detected - proceeding regardless of holiday or market hours"
+          # For manual runs, we want to run at least once even outside market hours
+          MANUAL_RUN=true
         fi
         
         while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-          if check_market_hours; then
-            echo "Within market hours. Running pkkite --ticks (Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
+          # For manual runs, always execute regardless of market hours
+          if [ "$MANUAL_RUN" = "true" ] || check_market_hours; then
+            if [ "$MANUAL_RUN" = "true" ]; then
+              echo "Manual run - executing pkkite --ticks (Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
+            else
+              echo "Within market hours. Running pkkite --ticks (Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
+            fi
             
-            # Check if we're at risk of hitting GitHub's 6-hour timeout
-            if check_timeout_risk; then
+            # Check if we're at risk of hitting GitHub's 6-hour timeout (only for market hours)
+            if check_market_hours && check_timeout_risk; then
               echo "Approaching GitHub timeout limit. Restarting workflow to continue..."
               restart_workflow
               break
@@ -195,19 +202,20 @@ jobs:
             pkkite --ticks
             EXIT_CODE=$?
             
-            if [ $EXIT_CODE -ne 0 ]; then
-              echo "pkkite exited with code $EXIT_CODE"
-              
-              if check_market_hours; then
-                RETRY_COUNT=$((RETRY_COUNT + 1))
-                echo "Still within market hours. Retrying in 30 seconds... ($RETRY_COUNT/$MAX_RETRIES)"
-                sleep 30
-              else
-                echo "Outside market hours. Exiting."
-                break
-              fi
+            echo "pkkite exited with code $EXIT_CODE"
+            
+            # For manual runs, always retry regardless of exit code or market hours
+            if [ "$MANUAL_RUN" = "true" ]; then
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              echo "Manual run - Retrying in 30 seconds... ($RETRY_COUNT/$MAX_RETRIES)"
+              sleep 30
+            # For scheduled runs, only retry if still within market hours
+            elif check_market_hours; then
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              echo "Still within market hours. Retrying in 30 seconds... ($RETRY_COUNT/$MAX_RETRIES)"
+              sleep 30
             else
-              echo "pkkite completed successfully."
+              echo "Outside market hours. Exiting."
               break
             fi
           else
@@ -216,9 +224,9 @@ jobs:
           fi
         done
 
-        # If we hit max retries and still in market hours, restart the workflow
-        if [ $RETRY_COUNT -eq $MAX_RETRIES ] && check_market_hours; then
-          echo "Max retries reached but still in market hours. Restarting workflow..."
+        # If we hit max retries and still in market hours (or manual run), restart the workflow
+        if [ $RETRY_COUNT -eq $MAX_RETRIES ] && ( [ "$MANUAL_RUN" = "true" ] || check_market_hours ); then
+          echo "Max retries reached. Restarting workflow..."
           restart_workflow
         fi
 
