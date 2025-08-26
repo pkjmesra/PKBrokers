@@ -5,4 +5,4 @@ pyotp
 pytz #>=2024.2
 urllib3 #>=1.26.20
 kiteconnect
-websockets<11.0,>=10.0 #pyppeteer 2.0.0 requires websockets<11.0,>=10.0
+websockets<11.0,>=10.4 #pyppeteer 2.0.0 requires websockets<11.0,>=10.0
