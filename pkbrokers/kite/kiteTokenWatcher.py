@@ -74,7 +74,60 @@ OTHER_INDICES = [
 
 
 class KiteTokenWatcher:
+    """
+    A high-performance tick data watcher and processor for Zerodha Kite Connect API.
+
+    This class manages real-time market data streaming, batch processing, and database
+    storage for multiple instruments. It handles token batching, tick aggregation,
+    and efficient database operations with multi-threaded architecture.
+
+    Features:
+    - Real-time WebSocket connection to Zerodha Kite API
+    - Automatic token batch management (max 500 tokens per batch)
+    - Tick aggregation and OHLCV calculation
+    - Multi-threaded processing with dedicated database thread
+    - Graceful shutdown and cleanup
+    - Market depth data processing
+
+    Attributes:
+        _watcher_queue (Queue): Queue for receiving raw ticks from WebSocket
+        _db_queue (Queue): Queue for processed batches ready for database insertion
+        _processing_thread (Thread): Thread for processing raw ticks
+        _db_thread (Thread): Thread for database operations
+        _shutdown_event (Event): Event signal for graceful shutdown
+        token_batches (list): List of token batches for WebSocket subscription
+        client (ZerodhaWebSocketClient): WebSocket client instance
+        logger (Logger): Logger instance for debugging and monitoring
+        _db_instance (ThreadSafeDatabase): Database connection instance
+        _tick_batch (defaultdict): Buffer for accumulating ticks by instrument
+        _next_process_time (datetime): Next scheduled batch processing time
+
+    Example:
+        >>> watcher = KiteTokenWatcher(tokens=[256265, 265])  # Nifty 50 and Sensex
+        >>> watcher.watch()  # Start watching in background threads
+        >>> # Program continues running...
+        >>> watcher.stop()  # Graceful shutdown when done
+    """
+
     def __init__(self, tokens=[], watcher_queue=None, client=None):
+        """
+        Initialize the KiteTokenWatcher instance.
+
+        Args:
+            tokens (list, optional): List of instrument tokens to watch.
+                                    If empty, will fetch all equities automatically.
+            watcher_queue (Queue, optional): Custom queue for tick data.
+                                            Creates default queue if not provided.
+            client (ZerodhaWebSocketClient, optional): Pre-configured WebSocket client.
+
+        Example:
+            >>> # Watch specific tokens
+            >>> watcher = KiteTokenWatcher(tokens=[256265, 265])
+            >>>
+            >>> # Watch all equities with custom queue
+            >>> custom_queue = Queue(maxsize=20000)
+            >>> watcher = KiteTokenWatcher(tokens=[], watcher_queue=custom_queue)
+        """
         self._watcher_queue = watcher_queue or Queue(maxsize=10000)
         self._db_queue = Queue(maxsize=10000)
         self._processing_thread = None
@@ -92,6 +145,23 @@ class KiteTokenWatcher:
         self._next_process_time = None
 
     def watch(self):
+        """
+        Start watching market data for the configured tokens.
+
+        This method:
+        1. Fetches tokens if not provided during initialization
+        2. Initializes WebSocket client if not provided
+        3. Starts processing and database threads
+        4. Begins WebSocket connection
+
+        Raises:
+            Exception: If WebSocket connection fails or token fetch fails
+
+        Example:
+            >>> watcher = KiteTokenWatcher()
+            >>> watcher.watch()  # Starts watching all equities in background
+            >>> # Program continues running while data is processed in threads
+        """
         local_secrets = PKEnvironment().allSecrets
         if len(self.token_batches) == 0:
             API_KEY = "kitefront"
@@ -146,6 +216,14 @@ class KiteTokenWatcher:
             self.stop()
 
     def _get_database(self):
+        """
+        Get or create the thread-safe database instance.
+
+        Returns:
+            ThreadSafeDatabase: Database instance for tick storage
+
+        Note: Uses lazy initialization to avoid unnecessary database connections
+        """
         if self._db_instance is None:
             from pkbrokers.kite.threadSafeDatabase import ThreadSafeDatabase
 
@@ -153,7 +231,21 @@ class KiteTokenWatcher:
         return self._db_instance
 
     def _process_tick_batch(self, tick_batch):
-        """Process a batch of ticks for all instruments at once"""
+        """
+        Process a batch of ticks for all instruments at once.
+
+        Calculates OHLCV values, processes market depth, and prepares data
+        for database insertion.
+
+        Args:
+            tick_batch (dict): Dictionary mapping instrument tokens to list of ticks
+
+        Example internal usage:
+            >>> self._process_tick_batch({
+            ...     256265: [tick1, tick2, tick3],
+            ...     265: [tick1, tick2]
+            ... })
+        """
         if not tick_batch:
             return
 
@@ -264,6 +356,17 @@ class KiteTokenWatcher:
             self.logger.debug(f"Error inserting to database: {e}")
 
     def _process_ticks(self):
+        """
+        Main processing thread method for handling incoming ticks.
+
+        This method:
+        - Reads ticks from the watcher queue
+        - Accumulates ticks in batches
+        - Processes batches at scheduled intervals
+        - Handles graceful shutdown
+
+        Note: This method runs in a separate daemon thread
+        """
         from pkbrokers.kite.ticks import Tick
 
         # Initialize next process time to the start of the next minute
@@ -342,7 +445,16 @@ class KiteTokenWatcher:
         self.logger.warn("Exiting tick processing...")
 
     def _process_db_operations(self):
-        """Dedicated database thread with optimized inserts"""
+        """
+        Dedicated database thread with optimized batch inserts.
+
+        This method:
+        - Buffers multiple batches for bulk database operations
+        - Handles database timeouts and errors gracefully
+        - Ensures efficient database usage with bulk inserts
+
+        Note: This method runs in a separate daemon thread
+        """
         batch_buffer = []
         while not self._shutdown_event.is_set():
             try:
@@ -376,7 +488,12 @@ class KiteTokenWatcher:
                 self.logger.error(f"Database processing error: {e}")
 
     def _process_buffered_batches(self, batches):
-        """Process multiple batches together for efficiency"""
+        """
+        Process multiple batches together for database insertion efficiency.
+
+        Args:
+            batches (list): List of tick batches to process together
+        """
         all_processed = []
         for batch in batches:
             processed = self._prepare_batch_for_insertion(batch)
@@ -388,7 +505,15 @@ class KiteTokenWatcher:
             self.logger.info(f"Inserted {len(all_processed)} records in bulk")
 
     def _prepare_batch_for_insertion(self, tick_batch):
-        """Prepare batch data without the time-consuming processing"""
+        """
+        Prepare batch data for database insertion without time-consuming processing.
+
+        Args:
+            tick_batch (dict): Dictionary of instrument tokens to ticks
+
+        Returns:
+            list: List of processed tick data ready for database insertion
+        """
         processed_batch = []
         for instrument_token, ticks in tick_batch.items():
             if not ticks:
@@ -422,7 +547,15 @@ class KiteTokenWatcher:
         return processed_batch
 
     def _extract_depth(self, tick):
-        """Quick depth extraction"""
+        """
+        Quickly extract market depth data from a tick.
+
+        Args:
+            tick (Tick): The tick object containing depth information
+
+        Returns:
+            dict: Dictionary with 'bid' and 'ask' lists containing depth information
+        """
         depth = {"bid": [], "ask": []}
         for i in range(1, 6):
             if hasattr(tick.depth, f"buy_{i}_price"):
@@ -444,7 +577,21 @@ class KiteTokenWatcher:
         return depth
 
     def stop(self):
-        """Graceful shutdown of all components"""
+        """
+        Graceful shutdown of all components.
+
+        This method:
+        - Signals shutdown to all threads
+        - Stops the WebSocket client
+        - Waits for threads to finish processing
+        - Ensures all data is flushed to database
+
+        Example:
+            >>> watcher = KiteTokenWatcher()
+            >>> watcher.watch()
+            >>> # ... some time later ...
+            >>> watcher.stop()  # Clean shutdown
+        """
         self.logger.debug("Initiating graceful shutdown...")
 
         # Set shutdown event
@@ -472,6 +619,11 @@ class KiteTokenWatcher:
         self.logger.debug("Shutdown complete")
 
     def __del__(self):
-        """Ensure cleanup on object destruction"""
+        """
+        Ensure cleanup on object destruction.
+
+        Automatically calls stop() if the watcher wasn't properly shut down.
+        This serves as a safety net for resource cleanup.
+        """
         if not self._shutdown_event.is_set():
             self.stop()

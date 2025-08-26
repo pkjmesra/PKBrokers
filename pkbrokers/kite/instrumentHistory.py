@@ -39,6 +39,29 @@ from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
 
 class Historical_Interval(Enum):
+    """
+    Enumeration of supported historical data intervals for Kite Connect API.
+
+    This enum provides standardized interval values for fetching historical
+    market data at different time resolutions.
+
+    Attributes:
+        day: Daily interval (1 day)
+        min_1: 1-minute interval
+        min_5: 5-minute interval
+        min_10: 10-minute interval
+        min_15: 15-minute interval
+        min_30: 30-minute interval
+        min_60: 60-minute interval
+
+    Example:
+        >>> from pkbrokers.kite.instrumentHistory import Historical_Interval
+        >>> interval = Historical_Interval.min_5
+        >>> print(interval.value)  # "5minute"
+        >>> # Use in API calls
+        >>> data = kite_history.get_historical_data(256265, interval=interval.value)
+    """
+
     day = "day"
     min_1 = "minute"
     min_5 = "5minute"
@@ -50,25 +73,63 @@ class Historical_Interval(Enum):
 
 class KiteTickerHistory:
     """
-    Fetches historical data from Zerodha's Kite Connect API with:
-    - Proper cookie handling from access_token_response
-    - Strict rate limiting (3 requests/second)
-    - Batch processing with automatic retries
-    - SQLite database integration for caching
+    Fetches historical data from Zerodha's Kite Connect API with comprehensive features.
 
-    Usage:
-        authenticator = KiteAuthenticator()
-        enctoken = authenticator.get_enctoken(...)
+    This class provides robust historical data retrieval with:
+    - Proper authentication and cookie handling
+    - Strict rate limiting (3 requests/second as per Kite API limits)
+    - Batch processing with automatic retries and error handling
+    - SQLite database integration for caching and persistence
+    - Support for multiple time intervals via Historical_Interval enum
 
-        history = KiteTickerHistory(
-            enctoken=enctoken,
-            user_id="YourUserId",
-            auth_cookies=authenticator.access_token_response.headers.get('Set-Cookie', '')
-        )
+    The class handles both API data fetching and local database storage, providing
+    efficient data retrieval while respecting API rate limits.
+
+    Attributes:
+        BASE_URL (str): Kite Connect API base URL for historical data
+        RATE_LIMIT (int): Maximum requests per second (3 as per Kite API limits)
+        RATE_LIMIT_WINDOW (float): Rate limiting window in seconds
+        enctoken (str): Authentication token for Kite API
+        user_id (str): Zerodha user ID
+        session (requests.Session): HTTP session with authentication headers
+        last_request_time (float): Timestamp of last API request for rate limiting
+        lock (Lock): Thread lock for rate limiting synchronization
+        failed_tokens (List[int]): List of instrument tokens that failed to fetch
+        db_conn: Database connection for data caching
+
+    Example:
+        >>> from pkbrokers.kite.instrumentHistory import KiteTickerHistory, Historical_Interval
+        >>> from pkbrokers.kite.authenticator import KiteAuthenticator
+        >>>
+        >>> # Authenticate first
+        >>> authenticator = KiteAuthenticator()
+        >>> enctoken = authenticator.get_enctoken()
+        >>>
+        >>> # Create history client
+        >>> history = KiteTickerHistory(
+        >>>     enctoken=enctoken,
+        >>>     user_id="YourUserId",
+        >>>     access_token_response=authenticator.access_token_response
+        >>> )
+        >>>
+        >>> # Fetch historical data
+        >>> data = history.get_historical_data(
+        >>>     instrument_token=256265,
+        >>>     interval=Historical_Interval.day.value,
+        >>>     from_date="2023-01-01",
+        >>>     to_date="2023-12-31"
+        >>> )
+        >>>
+        >>> # Fetch multiple instruments
+        >>> instruments = [256265, 5633, 779521]
+        >>> results = history.get_multiple_instruments_history(
+        >>>     instruments=instruments,
+        >>>     interval=Historical_Interval.min_15.value
+        >>> )
     """
 
     BASE_URL = "https://kite.zerodha.com/oms/instruments/historical"
-    RATE_LIMIT = 3  # requests per second
+    RATE_LIMIT = 3  # requests per second (Kite API limit)
     RATE_LIMIT_WINDOW = 1.0  # seconds
 
     def __init__(
@@ -78,12 +139,29 @@ class KiteTickerHistory:
         access_token_response: requests.Response = None,
     ):
         """
-        Initialize with authentication token and cookies
+        Initialize KiteTickerHistory with authentication credentials.
 
         Args:
-            enctoken: Authentication token from KiteAuthenticator
-            user_id: Zerodha user ID (e.g., 'YourUserId')
-            access_token_response: Cookies/headers from access_token_response (along with Set-Cookie headers)
+            enctoken: Authentication token obtained from KiteAuthenticator.get_enctoken()
+            user_id: Zerodha user ID (e.g., 'AB1234')
+            access_token_response: Response object from authentication containing cookies
+
+        Raises:
+            ValueError: If required authentication parameters are missing
+
+        Note:
+            If enctoken or user_id are not provided, the constructor will attempt to
+            load them from environment variables or .env file using PKEnvironment.
+
+        Example:
+            >>> authenticator = KiteAuthenticator()
+            >>> enctoken = authenticator.get_enctoken()
+            >>>
+            >>> history = KiteTickerHistory(
+            >>>     enctoken=enctoken,
+            >>>     user_id="AB1234",
+            >>>     access_token_response=authenticator.access_token_response
+            >>> )
         """
         from PKDevTools.classes.Environment import PKEnvironment
 
@@ -127,7 +205,26 @@ class KiteTickerHistory:
         self._initialize_database()
 
     def _initialize_database(self):
-        """Create the instrument_history table if it doesn't exist"""
+        """
+        Initialize the database schema for storing historical data.
+
+        Creates the instrument_history table with appropriate columns and indexes
+        for efficient data retrieval and querying.
+
+        Table Structure:
+            instrument_token: Unique instrument identifier
+            timestamp: Candlestick timestamp
+            open: Opening price
+            high: Highest price
+            low: Lowest price
+            close: Closing price
+            volume: Trading volume
+            oi: Open interest (optional)
+            interval: Time interval (day/minute/5minute/etc.)
+            date: Generated date column for partitioning
+
+        Indexes created for performance optimization on common query patterns.
+        """
         create_table_query = """
         CREATE TABLE IF NOT EXISTS instrument_history (
             instrument_token INTEGER NOT NULL,
@@ -156,7 +253,16 @@ class KiteTickerHistory:
         self.logger.debug("Database inititalised for instrument_history")
 
     def _rate_limit(self):
-        """Enforce strict rate limiting (3 requests/second)"""
+        """
+        Enforce strict rate limiting according to Kite API limits.
+
+        Implements token bucket algorithm to ensure maximum of 3 requests per second.
+        This method blocks the calling thread if the rate limit would be exceeded.
+
+        Note:
+            Kite API allows maximum 3 requests per second. This method ensures
+            compliance with this limit to avoid API bans or rate limit errors.
+        """
         with self.lock:
             elapsed = time.time() - self.last_request_time
             if elapsed < self.RATE_LIMIT_WINDOW / self.RATE_LIMIT:
@@ -165,21 +271,50 @@ class KiteTickerHistory:
             self.last_request_time = time.time()
 
     def _format_date(self, date: Union[str, datetime]) -> str:
-        """Convert date to YYYY-MM-DD format"""
+        """
+        Convert date input to standardized YYYY-MM-DD format.
+
+        Args:
+            date: Date input as datetime object or string
+
+        Returns:
+            str: Formatted date string in YYYY-MM-DD format
+
+        Example:
+            >>> formatted = self._format_date(datetime(2023, 12, 25))
+            >>> print(formatted)  # "2023-12-25"
+
+            >>> formatted = self._format_date("2023-12-25")
+            >>> print(formatted)  # "2023-12-25"
+        """
         if isinstance(date, datetime):
             return date.strftime("%Y-%m-%d")
         return date
 
     def _save_to_database(self, instrument_token: int, data: Dict, interval: str):
         """
-        Save historical data to SQLite database in batch
+        Save historical candle data to the database in batch mode.
 
         Args:
-            instrument_token: The instrument token
-            data: Historical data from Kite API
-            interval: The time interval (day, minute, etc.)
-            from_date: Start date of the query
-            to_date: End date of the query
+            instrument_token: Unique instrument identifier
+            data: Historical data dictionary containing 'candles' list
+            interval: Time interval string (e.g., 'day', '5minute')
+
+        Raises:
+            Exception: If database operation fails, rolls back transaction
+
+        Note:
+            Uses batch insert with transaction for performance and data integrity.
+            Implements ON CONFLICT IGNORE to handle duplicate data gracefully.
+
+        Example:
+            >>> data = {
+            >>>     "candles": [
+            >>>         ["2023-12-25 09:15:00", 100.0, 102.0, 99.5, 101.5, 10000, 5000],
+            >>>         ["2023-12-25 09:16:00", 101.5, 103.0, 101.0, 102.5, 12000, 5500]
+            >>>     ]
+            >>> }
+            >>> self._save_to_database(256265, data, "minute")
         """
         if not data or "candles" not in data or not data["candles"]:
             self.logger.warn(
@@ -245,6 +380,20 @@ class KiteTickerHistory:
             raise
 
     def _execute_safe(self, query, params, retrial=False):
+        """
+        Execute database query with error handling and automatic retry.
+
+        Args:
+            query: SQL query string
+            params: Query parameters
+            retrial: Internal flag for retry attempts (default: False)
+
+        Returns:
+            cursor: Database cursor with executed query
+
+        Note:
+            Automatically reconnects to database if connection issues are detected.
+        """
         try:
             self.logger.debug(f"Executing:Retrial:{retrial} for query:{query}")
             cursor = self.db_conn.cursor()
@@ -277,19 +426,54 @@ class KiteTickerHistory:
         insertOnly=False,
     ) -> Dict:
         """
-        Fetch historical data for an instrument with proper authentication
+        Fetch historical data for a single instrument with intelligent caching.
+
+        This method first checks the local database for existing data and only
+        fetches from the Kite API if necessary (fresh data needed or not in database).
 
         Args:
-            instrument_token: Zerodha instrument token
-            from_date: Start date (YYYY-MM-DD or datetime)
-            to_date: End date (YYYY-MM-DD or datetime)
-            interval: Time interval (minute/day/3minute/etc.)
-            oi: Include open interest data
-            continuous: For continuous contracts
-            max_retries: Maximum retry attempts
+            instrument_token: Zerodha instrument token (required)
+            from_date: Start date (YYYY-MM-DD or datetime, defaults to 365 days ago)
+            to_date: End date (YYYY-MM-DD or datetime, defaults to current date)
+            interval: Time interval (default: "day", see Historical_Interval enum)
+            oi: Include open interest data (default: True)
+            continuous: For continuous contracts (default: False)
+            max_retries: Maximum API retry attempts (default: 3)
+            forceFetch: Bypass cache and force API fetch (default: False)
+            insertOnly: Only insert new data without returning (default: False)
 
         Returns:
-            Dictionary with historical data in Kite format
+            Dict: Historical data with candles and metadata
+            Format: {
+                "status": "success",
+                "data": {
+                    "candles": [
+                        [timestamp, open, high, low, close, volume, oi],
+                        ...
+                    ],
+                    "source": "database" or "api"
+                }
+            }
+
+        Raises:
+            ValueError: If instrument_token is missing or invalid
+            requests.exceptions.RequestException: If API calls fail after retries
+
+        Example:
+            >>> # Fetch daily data for Nifty 50
+            >>> data = history.get_historical_data(
+            >>>     instrument_token=256265,
+            >>>     from_date="2023-01-01",
+            >>>     to_date="2023-12-31",
+            >>>     interval=Historical_Interval.day.value
+            >>> )
+            >>>
+            >>> # Fetch intraday 5-minute data
+            >>> data = history.get_historical_data(
+            >>>     instrument_token=256265,
+            >>>     interval=Historical_Interval.min_5.value,
+            >>>     forceFetch=True  # Bypass cache
+            >>> )
         """
         if instrument_token is None or len(str(instrument_token)) == 0:
             raise ValueError("instrument_token is required")
@@ -434,20 +618,51 @@ class KiteTickerHistory:
         insertOnly=False,
     ) -> Dict[int, Dict]:
         """
-        Fetch historical data for multiple instruments with rate limiting
+        Fetch historical data for multiple instruments with optimized batching.
+
+        This method efficiently processes multiple instruments by:
+        1. First checking local database for existing data
+        2. Only fetching missing or fresh data from API
+        3. Using batch processing with rate limiting
+        4. Providing progress logging
 
         Args:
-            instruments: List of instrument tokens
-            from_date: Start date
-            to_date: End date
-            interval: Time interval
-            oi: Include open interest
-            batch_size: Requests per batch
-            max_retries: Retry attempts
-            delay: Delay between batches
+            instruments: List of instrument tokens (required)
+            from_date: Start date (defaults to 365 days ago)
+            to_date: End date (defaults to current date)
+            interval: Time interval (default: "day")
+            oi: Include open interest (default: True)
+            batch_size: Number of instruments per batch (default: 3)
+            max_retries: Maximum retry attempts per instrument (default: 2)
+            delay: Delay between batches in seconds (default: 1.0)
+            forceFetch: Force API fetch bypassing cache (default: False)
+            insertOnly: Only insert data without returning (default: False)
 
         Returns:
-            Dictionary mapping instrument tokens to their historical data
+            Dict[int, Dict]: Dictionary mapping instrument tokens to their historical data
+            Format: {
+                256265: {"status": "success", "data": {...}},
+                5633: {"status": "success", "data": {...}},
+                ...
+            }
+
+        Raises:
+            ValueError: If instruments list is empty
+
+        Example:
+            >>> # Fetch data for multiple Nifty stocks
+            >>> nifty_stocks = [256265, 5633, 779521, 1270529]
+            >>> results = history.get_multiple_instruments_history(
+            >>>     instruments=nifty_stocks,
+            >>>     interval=Historical_Interval.min_15.value,
+            >>>     from_date="2023-12-20",
+            >>>     to_date="2023-12-25"
+            >>> )
+            >>>
+            >>> # Process results
+            >>> for token, data in results.items():
+            >>>     if data["status"] == "success":
+            >>>         print(f"Token {token}: {len(data['data']['candles'])} candles")
         """
         begin_time = time.time()
         if not instruments:
@@ -566,7 +781,11 @@ class KiteTickerHistory:
         return results
 
     def __del__(self):
-        """Clean up database connection when object is destroyed"""
+        """
+        Cleanup method to close database connection when object is destroyed.
+
+        Ensures proper resource cleanup to prevent database connection leaks.
+        """
         if hasattr(self, "db_conn"):
             try:
                 self.db_conn.close()
@@ -574,7 +793,16 @@ class KiteTickerHistory:
                 pass
 
     def _is_market_open(self) -> bool:
-        """Check if market is currently open"""
+        """
+        Check if the stock market is currently open for trading.
+
+        Returns:
+            bool: True if market is open, False otherwise
+
+        Note:
+            Uses PKDateUtilities to determine market hours based on Indian stock market
+            timing (9:15 AM to 3:30 PM IST on trading days).
+        """
         from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
         current_date = PKDateUtilities.YmdStringFromDate(
@@ -582,34 +810,3 @@ class KiteTickerHistory:
         )
         tradingDate = PKDateUtilities.YmdStringFromDate(PKDateUtilities.tradingDate())
         return current_date == tradingDate
-
-
-"""
-# First authenticate
-from pkbrokers.kite.authenticator import KiteAuthenticator
-authenticator = KiteAuthenticator()
-enctoken = authenticator.get_enctoken(...)  # Your credentials
-
-# Create history client with the full response object
-history = KiteTickerHistory(
-    enctoken=enctoken,
-    user_id="whatever",
-    access_token_response=authenticator.access_token_response
-)
-
-# Single request (automatically rate limited)
-data = history.get_historical_data(
-    instrument_token=1793,
-    from_date="2024-08-10",
-    to_date="2025-08-11",
-    interval="day"
-)
-
-# Batch processing (automatically respects 3req/sec limit)
-batch_data = history.get_multiple_instruments(
-    instruments=[256265, 260105, 1793, 11536],
-    from_date="2024-01-01",
-    to_date="2024-01-31",
-    interval="5minute"
-)
-"""

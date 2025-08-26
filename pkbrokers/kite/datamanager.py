@@ -36,15 +36,60 @@ from PKDevTools.classes.log import default_logger
 
 
 class InstrumentDataManager:
+    """
+    A comprehensive data manager for financial instrument data synchronization and retrieval.
+
+    This class handles data from multiple sources including GitHub-hosted pickle files,
+    remote databases, and Kite API. It provides seamless data synchronization, updating,
+    and retrieval for financial analysis and screening.
+
+    Attributes:
+        pickle_url (str): GitHub repository URL for the pickle file
+        raw_pickle_url (str): Raw content URL for the pickle file
+        db_conn: Database connection object
+        pickle_data (Dict): Loaded pickle data
+        logger: Logger instance for debugging and information
+
+    Example:
+        >>> from pkbrokers.kite.datamanager import InstrumentDataManager
+        >>> manager = InstrumentDataManager()
+        >>> success = manager.execute()
+        >>> if success:
+        >>>     data = manager.get_data_for_symbol("RELIANCE")
+        >>>     print(f"Reliance data: {data}")
+    """
+
     def __init__(self):
+        """
+        Initialize the InstrumentDataManager with default URLs and empty data storage.
+
+        The manager is configured to work with PKScreener's GitHub repository structure
+        and requires proper environment variables for database connections.
+        """
         self.pickle_url = "https://github.com/pkjmesra/PKScreener/tree/actions-data-download/results/Data/pkscreener.pkl"
         self.raw_pickle_url = "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/pkscreener.pkl"
         self.db_conn = None
         self.pickle_data = None
         self.logger = default_logger()
 
-    def _connect_to_database(self):
-        """Connect to remote database using libsql"""
+    def _connect_to_database(self) -> bool:
+        """
+        Establish connection to remote Turso database using libsql.
+
+        Uses environment variables for database URL and authentication token.
+        Required environment variables:
+        - TDU: Turso Database URL
+        - TAT: Turso Authentication Token
+
+        Returns:
+            bool: True if connection successful, False otherwise
+
+        Example:
+            >>> manager = InstrumentDataManager()
+            >>> connected = manager._connect_to_database()
+            >>> if connected:
+            >>>     print("Database connection established")
+        """
         try:
             self.db_conn = libsql.connect(
                 database=PKEnvironment().TDU, auth_token=PKEnvironment().TAT
@@ -55,7 +100,19 @@ class InstrumentDataManager:
             return False
 
     def _check_pickle_exists(self) -> bool:
-        """Check if pickle file exists on GitHub"""
+        """
+        Check if the pickle file exists on GitHub repository.
+
+        Uses HTTP HEAD request to verify file existence without downloading content.
+
+        Returns:
+            bool: True if file exists (HTTP 200), False otherwise
+
+        Example:
+            >>> exists = manager._check_pickle_exists()
+            >>> if exists:
+            >>>     print("Pickle file available on GitHub")
+        """
         try:
             response = requests.head(self.raw_pickle_url)
             return response.status_code == 200
@@ -63,7 +120,21 @@ class InstrumentDataManager:
             return False
 
     def _load_pickle_from_github(self) -> Optional[Dict]:
-        """Load pickle file from GitHub"""
+        """
+        Download and load pickle data from GitHub raw content URL.
+
+        Returns:
+            Optional[Dict]: Loaded pickle data dictionary if successful, None otherwise
+
+        Raises:
+            requests.HTTPError: If download fails
+            pickle.UnpicklingError: If file content is not valid pickle data
+
+        Example:
+            >>> data = manager._load_pickle_from_github()
+            >>> if data:
+            >>>     print(f"Loaded {len(data)} instruments")
+        """
         try:
             response = requests.get(self.raw_pickle_url)
             response.raise_for_status()
@@ -73,8 +144,24 @@ class InstrumentDataManager:
             self.logger.debug(f"Failed to load pickle from GitHub: {e}")
             return None
 
-    def _get_recent_data_from_kite(self):
-        """Get recent 2-3 days data using KiteTickerHistory"""
+    def _get_recent_data_from_kite(self) -> Optional[Dict]:
+        """
+        Fetch recent 2-3 days of market data using Kite API.
+
+        This method:
+        1. Retrieves trading symbols from available sources
+        2. Fetches historical data for past 3 days
+        3. Optionally saves data to database
+        4. Returns structured market data
+
+        Returns:
+            Optional[Dict]: Recent market data dictionary if successful, None otherwise
+
+        Example:
+            >>> recent_data = manager._get_recent_data_from_kite()
+            >>> if recent_data:
+            >>>     print(f"Got {len(recent_data)} recent data points")
+        """
         try:
             from pkbrokers.kite.instrumentHistory import KiteTickerHistory
 
@@ -110,13 +197,38 @@ class InstrumentDataManager:
             return None
 
     def _format_date(self, date: Union[str, datetime]) -> str:
-        """Convert date to YYYY-MM-DD format"""
+        """
+        Convert date object or string to standardized YYYY-MM-DD format.
+
+        Args:
+            date: Date input as datetime object or string
+
+        Returns:
+            str: Formatted date string in YYYY-MM-DD format
+
+        Example:
+            >>> formatted = manager._format_date(datetime(2023, 12, 25))
+            >>> print(formatted)  # "2023-12-25"
+        """
         if isinstance(date, datetime):
             return date.strftime("%Y-%m-%d")
         return date
 
     def _get_tradingsymbols(self) -> List[str]:
-        """Get tradingsymbols from pickle or database"""
+        """
+        Retrieve list of trading symbols from available data sources.
+
+        Priority:
+        1. Existing pickle data (if loaded)
+        2. Database (if connected)
+
+        Returns:
+            List[str]: List of trading symbols
+
+        Example:
+            >>> symbols = manager._get_tradingsymbols()
+            >>> print(f"Found {len(symbols)} trading symbols")
+        """
         if self.pickle_data:
             # Extract tradingsymbols from pickle data
             return list(self.pickle_data.keys())
@@ -125,7 +237,16 @@ class InstrumentDataManager:
             return self._get_tradingsymbols_from_db()
 
     def _get_tradingsymbols_from_db(self) -> List[str]:
-        """Fetch tradingsymbols from instruments table"""
+        """
+        Fetch distinct trading symbols from instruments database table.
+
+        Returns:
+            List[str]: List of unique trading symbols from database
+
+        Example:
+            >>> symbols = manager._get_tradingsymbols_from_db()
+            >>> print(f"Database has {len(symbols)} symbols")
+        """
         if not self._connect_to_database():
             return []
 
@@ -139,7 +260,16 @@ class InstrumentDataManager:
             return []
 
     def _fetch_data_from_database(self) -> Dict:
-        """Fetch 365 days of data from instrument_history table"""
+        """
+        Fetch 365 days of historical data from instrument_history table.
+
+        Returns:
+            Dict: Structured historical data with trading symbols as keys
+
+        Example:
+            >>> historical_data = manager._fetch_data_from_database()
+            >>> print(f"Fetched {len(historical_data)} symbols from database")
+        """
         if not self._connect_to_database():
             return {}
 
@@ -169,7 +299,19 @@ class InstrumentDataManager:
             return {}
 
     def _process_database_data(self, results: List, columns: List[str]) -> Dict:
-        """Process database results into structured format"""
+        """
+        Process raw database results into structured dictionary format.
+
+        Args:
+            results: Raw database query results
+            columns: Column names from database query
+
+        Returns:
+            Dict: Processed data with trading symbols as keys and date-based data as values
+
+        Example:
+            >>> processed = manager._process_database_data(results, columns)
+        """
         master_data = {}
 
         # Convert to DataFrame for easier processing
@@ -203,7 +345,16 @@ class InstrumentDataManager:
         return master_data
 
     def _update_pickle_file(self, new_data: Dict):
-        """Update pickle file with new data"""
+        """
+        Update local pickle file with new data, merging with existing data.
+
+        Args:
+            new_data: Dictionary containing new data to merge
+
+        Example:
+            >>> manager._update_pickle_file(new_data)
+            >>> print("Pickle file updated successfully")
+        """
         if self.pickle_data:
             # Merge new data with existing pickle data
             for tradingsymbol, daily_data in new_data.items():
@@ -224,13 +375,43 @@ class InstrumentDataManager:
         self.logger.debug("Pickle file updated successfully")
 
     def get_data_for_symbol(self, tradingsymbol: str) -> Optional[Dict]:
-        """Get full year's data for a specific tradingsymbol"""
+        """
+        Retrieve full year's data for a specific trading symbol.
+
+        Args:
+            tradingsymbol: Trading symbol to retrieve data for (e.g., "RELIANCE")
+
+        Returns:
+            Optional[Dict]: Data for the specified symbol if available, None otherwise
+
+        Example:
+            >>> reliance_data = manager.get_data_for_symbol("RELIANCE")
+            >>> if reliance_data:
+            >>>     print(f"Reliance has {len(reliance_data)} days of data")
+        """
         if self.pickle_data and tradingsymbol in self.pickle_data:
             return self.pickle_data[tradingsymbol]
         return None
 
-    def execute(self):
-        """Main execution method"""
+    def execute(self) -> bool:
+        """
+        Main execution method that orchestrates the data synchronization process.
+
+        Workflow:
+        1. Check if pickle file exists on GitHub
+        2. If exists: download and load, then fetch recent data from Kite
+        3. If not exists: fetch full year data from database
+        4. Update local pickle file with latest data
+
+        Returns:
+            bool: True if data was successfully loaded/created, False otherwise
+
+        Example:
+            >>> manager = InstrumentDataManager()
+            >>> success = manager.execute()
+            >>> if success:
+            >>>     print("Data synchronization completed successfully")
+        """
         self.logger.debug("Checking for existing pickle file...")
 
         if self._check_pickle_exists():

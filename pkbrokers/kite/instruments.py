@@ -54,7 +54,46 @@ BSE_SENSEX = 265
 
 @dataclass
 class Instrument:
-    """Data class representing a financial instrument"""
+    """
+    Data class representing a financial instrument from Kite Connect API.
+
+    This class provides a structured representation of instrument data with
+    proper type hints and optional fields for flexible data handling.
+
+    Attributes:
+        instrument_token (int): Unique identifier for the instrument
+        exchange_token (str): Exchange-specific token
+        tradingsymbol (str): Trading symbol (e.g., 'RELIANCE', 'INFY')
+        name (Optional[str]): Full name of the instrument
+        last_price (Optional[float]): Last traded price
+        expiry (Optional[str]): Expiry date for derivatives (YYYY-MM-DD format)
+        strike (Optional[float]): Strike price for options
+        tick_size (float): Minimum price movement
+        lot_size (int): Contract/trading lot size
+        instrument_type (str): Type of instrument (EQ, FUT, OPT, etc.)
+        segment (str): Market segment (NSE, BSE, etc.)
+        exchange (str): Exchange name (NSE, BSE, etc.)
+        last_updated (str): ISO format timestamp of last update
+        nse_stock (bool): Whether this is an NSE-listed stock (default: False)
+
+    Example:
+        >>> instrument = Instrument(
+        >>>     instrument_token=256265,
+        >>>     exchange_token="NSE:256265",
+        >>>     tradingsymbol="NIFTY 50",
+        >>>     name="Nifty 50 Index",
+        >>>     last_price=21500.50,
+        >>>     expiry=None,
+        >>>     strike=None,
+        >>>     tick_size=0.05,
+        >>>     lot_size=1,
+        >>>     instrument_type="INDEX",
+        >>>     segment="NSE",
+        >>>     exchange="NSE",
+        >>>     last_updated="2023-12-25T10:30:00.000Z",
+        >>>     nse_stock=False
+        >>> )
+    """
 
     instrument_token: int
     exchange_token: str
@@ -74,14 +113,50 @@ class Instrument:
 
 class KiteInstruments:
     """
-    Manages instrument data from Kite Connect API
+    Comprehensive manager for Kite Connect instrument data with database integration.
+
+    This class handles the complete lifecycle of instrument data including:
+    - Fetching from Kite Connect API
+    - Local database storage and caching
+    - Intelligent filtering and normalization
+    - NSE stock identification and classification
+    - Thread-safe database operations
 
     Features:
-    - Automatic database initialization
-    - Efficient bulk sync operations
-    - Thread-safe queries
-    - Comprehensive type hints
-    - NSE stock identification
+    - Automatic database initialization with proper schema
+    - Efficient bulk sync operations with rate limiting
+    - Support for both local SQLite and remote Turso databases
+    - Comprehensive type hints and error handling
+    - NSE stock identification using external data source
+    - Smart refresh logic based on market hours and data age
+
+    Attributes:
+        api_key (str): Kite Connect API key
+        access_token (str): Kite Connect access token
+        db_path (str): Path to SQLite database file
+        local (bool): Whether to use local SQLite database
+        recreate_schema (bool): Whether to recreate database schema on init
+        base_url (str): Kite Connect API base URL
+        logger: Logger instance for debugging and monitoring
+        headers (Dict): HTTP headers for API requests
+
+    Example:
+        >>> from pkbrokers.kite.instruments import KiteInstruments
+        >>>
+        >>> # Initialize with API credentials
+        >>> instruments = KiteInstruments(
+        >>>     api_key="your_api_key",
+        >>>     access_token="your_access_token",
+        >>>     db_path="/path/to/instruments.db",
+        >>>     local=True  # Use local SQLite database
+        >>> )
+        >>>
+        >>> # Sync instruments (fetches if needed)
+        >>> success = instruments.sync_instruments()
+        >>> if success:
+        >>>     # Get all NSE stocks
+        >>>     nse_stocks = instruments.get_nse_stocks()
+        >>>     print(f"Found {len(nse_stocks)} NSE stocks")
     """
 
     def __init__(
@@ -93,12 +168,36 @@ class KiteInstruments:
         recreate_schema=True,
     ):
         """
-        Initialize instruments manager
+        Initialize the KiteInstruments manager with API credentials and database configuration.
 
         Args:
-            api_key: Kite Connect API key
-            access_token: Kite Connect access token
-            db_path: Path to SQLite database file
+            api_key: Kite Connect API key (required)
+            access_token: Kite Connect access token (required)
+            db_path: Path to SQLite database file (default: user data directory)
+            local: Whether to use local SQLite instead of remote database (default: False)
+            recreate_schema: Whether to recreate database schema on initialization (default: True)
+
+        Raises:
+            ValueError: If API key or access token are missing or invalid
+
+        Note:
+            When using remote database (local=False), ensure TDU and TAT environment variables
+            are set for Turso database connection.
+
+        Example:
+            >>> # Local SQLite database
+            >>> local_instruments = KiteInstruments(
+            >>>     api_key="your_api_key",
+            >>>     access_token="your_access_token",
+            >>>     local=True
+            >>> )
+            >>>
+            >>> # Remote Turso database
+            >>> remote_instruments = KiteInstruments(
+            >>>     api_key="your_api_key",
+            >>>     access_token="your_access_token",
+            >>>     local=False  # Uses TDU and TAT environment variables
+            >>> )
         """
         self.api_key = api_key
         self.access_token = access_token
@@ -117,7 +216,21 @@ class KiteInstruments:
         self._filtered_trading_symbols: Optional[list[str]] = []
         self._init_db(drop_table=recreate_schema)
 
-    def _is_after_8_30_am_ist(self, last_updated_str):
+    def _is_after_8_30_am_ist(self, last_updated_str: str) -> bool:
+        """
+        Check if the given timestamp is after 8:30 AM IST.
+
+        Args:
+            last_updated_str: ISO format timestamp string
+
+        Returns:
+            bool: True if timestamp is after 8:30 AM IST, False otherwise
+
+        Note:
+            Used to determine if data was updated during current trading day.
+            Indian stock market opens at 9:15 AM IST, so 8:30 AM is used as
+            a conservative threshold for same-day data freshness.
+        """
         # Parse the datetime string
         last_updated = datetime.fromisoformat(last_updated_str.replace("Z", "+00:00"))
 
@@ -133,7 +246,17 @@ class KiteInstruments:
         # Check if last_updated is >= 8:30 AM IST
         return last_updated_ist >= eight_thirty_am_ist
 
-    def _is_last_updated_today(self):
+    def _is_last_updated_today(self) -> bool:
+        """
+        Check if the database contains data updated today after 8:30 AM IST.
+
+        Returns:
+            bool: True if fresh data exists, False otherwise
+
+        Note:
+            This method helps avoid unnecessary API calls when fresh data
+            is already available in the database.
+        """
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -148,8 +271,22 @@ class KiteInstruments:
         except BaseException:
             return False
 
-    def _init_db(self, drop_table=False) -> None:
-        """Initialize database schema with proper indexes"""
+    def _init_db(self, drop_table: bool = False) -> None:
+        """
+        Initialize the database schema with proper tables and indexes.
+
+        Args:
+            drop_table: Whether to drop existing table and recreate schema
+
+        Note:
+            Creates the 'instruments' table with comprehensive schema including:
+            - Primary key on (exchange, tradingsymbol, instrument_type)
+            - Constraints for data integrity
+            - Indexes for performance optimization
+            - nse_stock column for NSE stock identification
+
+            Also enables WAL mode for local SQLite databases for better concurrency.
+        """
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
 
         with self._get_connection() as conn:
@@ -207,8 +344,20 @@ class KiteInstruments:
             conn.commit()
             self.logger.debug("Database initialised for table instruments.")
 
-    def _get_connection(self, local=False) -> sqlite3.Connection:
-        """Get thread-safe database connection"""
+    def _get_connection(self, local: bool = False) -> sqlite3.Connection:
+        """
+        Get a thread-safe database connection.
+
+        Args:
+            local: Force local connection even if configured for remote
+
+        Returns:
+            sqlite3.Connection: Database connection object
+
+        Note:
+            Returns either local SQLite connection or remote Turso connection
+            based on configuration and the 'local' parameter.
+        """
         if local or self.local:
             return sqlite3.connect(self.db_path, timeout=30)
         else:
@@ -217,7 +366,16 @@ class KiteInstruments:
             )
 
     def _get_nse_trading_symbols(self) -> list[str]:
-        """Get NSE trading symbols from NSE data fetcher with caching"""
+        """
+        Get NSE trading symbols from NSE data fetcher with caching.
+
+        Returns:
+            list[str]: List of NSE trading symbols
+
+        Note:
+            Uses nseStockDataFetcher to fetch Nifty 50 and F&O symbols.
+            Results are cached for subsequent calls to avoid repeated fetching.
+        """
         if self._nse_trading_symbols is None:
             try:
                 nse_fetcher = nseStockDataFetcher()
@@ -237,10 +395,19 @@ class KiteInstruments:
 
     def _needs_refresh(self) -> bool:
         """
-        Determines if instruments need refresh with:
-        - Database timestamp check
-        - Minimum update frequency enforcement
-        - Network-optimized queries
+        Determine if instrument data needs to be refreshed.
+
+        Returns:
+            bool: True if refresh is needed, False otherwise
+
+        Checks:
+            1. If database is empty (first run)
+            2. If data is older than update threshold (23.5 hours)
+            3. If last update was not today
+
+        Note:
+            The 23.5 hour threshold ensures daily refresh while accounting for
+            market timing variations.
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -273,7 +440,19 @@ class KiteInstruments:
                 return True
 
     def _normalize_instrument(self, raw: Dict[str, str]) -> Optional[Instrument]:
-        """Convert raw API data to Instrument object with validation"""
+        """
+        Convert raw API CSV data to structured Instrument object.
+
+        Args:
+            raw: Dictionary of raw CSV data from Kite API
+
+        Returns:
+            Optional[Instrument]: Normalized Instrument object or None if invalid
+
+        Note:
+            Performs data validation, type conversion, and NSE stock identification.
+            Invalid instruments are logged and skipped.
+        """
         try:
             # Check if this is an NSE stock
             nse_symbols = self._get_nse_trading_symbols()
@@ -301,7 +480,15 @@ class KiteInstruments:
             return None
 
     def _normalize_expiry(self, expiry: Optional[str]) -> Optional[str]:
-        """Standardize expiry date format"""
+        """
+        Standardize expiry date format to YYYY-MM-DD.
+
+        Args:
+            expiry: Raw expiry date string
+
+        Returns:
+            Optional[str]: Normalized expiry date or None if invalid
+        """
         if not expiry:
             return None
         try:
@@ -312,10 +499,19 @@ class KiteInstruments:
 
     def _filter_instrument(self, instrument: Instrument) -> bool:
         """
-        Filter instruments based on criteria, with NSE symbol list preference
+        Filter instruments based on criteria for equity trading.
 
-        If NSE trading symbols are available, use them for filtering.
-        Otherwise, fall back to the original filtering logic.
+        Args:
+            instrument: Instrument object to filter
+
+        Returns:
+            bool: True if instrument should be included, False otherwise
+
+        Filter Criteria:
+            - NSE exchange and segment
+            - Equity instrument type (EQ)
+            - Valid name
+            - Either in NSE symbol list or is Nifty 50/Sensex index
         """
         nse_symbols = self._get_nse_trading_symbols()
 
@@ -354,7 +550,20 @@ class KiteInstruments:
             )
 
     def fetch_instruments(self) -> List[Instrument]:
-        """Fetch instruments from Kite API"""
+        """
+        Fetch instruments from Kite Connect API.
+
+        Returns:
+            List[Instrument]: List of normalized instrument objects
+
+        Raises:
+            requests.exceptions.RequestException: If API call fails
+            Exception: For unexpected processing errors
+
+        Note:
+            Fetches CSV data from Kite API and converts to structured objects.
+            Includes error handling and logging for failed requests.
+        """
         url = f"{self.base_url}/instruments/NSE"
         self.logger.debug(f"Fetching instruments from {url}")
 
@@ -383,7 +592,16 @@ class KiteInstruments:
             raise
 
     def store_instruments(self, instruments: List[Instrument]) -> None:
-        """Bulk upsert instruments into database with nse_stock column"""
+        """
+        Bulk upsert instruments into database with efficient batch operations.
+
+        Args:
+            instruments: List of Instrument objects to store
+
+        Note:
+            Filters instruments before storage and uses batch operations for
+            better performance. Handles both new inserts and updates.
+        """
         if not instruments:
             self.logger.warn("No instruments to store")
             return
@@ -451,8 +669,25 @@ class KiteInstruments:
             conn.commit()
             self.logger.debug(f"Stored/updated {len(data)} instruments")
 
-    def sync_instruments(self, instruments=[], force_fetch: bool = True) -> bool:
-        """Complete sync workflow"""
+    def sync_instruments(
+        self, instruments: List[Instrument] = [], force_fetch: bool = True
+    ) -> bool:
+        """
+        Complete instrument synchronization workflow.
+
+        Args:
+            instruments: Pre-fetched instruments (optional)
+            force_fetch: Whether to force API fetch if instruments provided (default: True)
+
+        Returns:
+            bool: True if sync successful, False otherwise
+
+        Workflow:
+            1. Check if refresh is needed
+            2. Initialize database schema
+            3. Fetch instruments from API if needed
+            4. Store filtered instruments in database
+        """
         try:
             if self._needs_refresh():
                 self.logger.debug("Starting instruments sync")
@@ -465,14 +700,24 @@ class KiteInstruments:
             return False
 
     def get_instrument_count(self) -> int:
-        """Get total instrument count"""
+        """
+        Get total count of instruments in database.
+
+        Returns:
+            int: Number of instruments stored
+        """
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(1) FROM instruments")
             return cursor.fetchone()[0]
 
     def get_nse_stock_count(self) -> int:
-        """Get count of instruments marked as NSE stocks"""
+        """
+        Get count of instruments marked as NSE stocks.
+
+        Returns:
+            int: Number of NSE stocks in database
+        """
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(1) FROM instruments WHERE nse_stock = 1")
@@ -485,18 +730,30 @@ class KiteInstruments:
         only_nse_stocks: bool = False,
     ) -> List[Dict]:
         """
-        Get equity instruments with dynamic column selection
+        Get equity instruments with dynamic column selection and filtering.
 
         Args:
-            column_names: Comma-separated list of valid column names
-            segment: Market segment (NSE, INDICES, etc.)
-            only_nse_stocks: Whether to return only instruments marked as NSE stocks
+            column_names: Comma-separated list of column names to retrieve
+            segment: Market segment to filter by (default: "NSE")
+            only_nse_stocks: Whether to return only NSE-listed stocks (default: False)
 
         Returns:
-            List of instrument dictionaries with requested columns
+            List[Dict]: List of instrument dictionaries with requested columns
 
         Raises:
-            ValueError: If invalid column names are provided
+            ValueError: If invalid column names are requested
+
+        Example:
+            >>> # Get basic instrument info
+            >>> equities = instruments.get_equities(
+            >>>     column_names="instrument_token,tradingsymbol,name"
+            >>> )
+            >>>
+            >>> # Get only NSE stocks with price data
+            >>> nse_stocks = instruments.get_equities(
+            >>>     column_names="instrument_token,tradingsymbol,name,last_price",
+            >>>     only_nse_stocks=True
+            >>> )
         """
         # Validate and sanitize column names
         valid_columns = {
@@ -528,39 +785,28 @@ class KiteInstruments:
         query = f"""
             SELECT {columns_sql} FROM instruments
             """
-        # """
-        #     WHERE
-        #         exchange = 'NSE' AND
-        #         segment = ? AND
-        #         instrument_type = 'EQ'
-        # """
-
-        # # Add NSE stock filter if requested
-        # params = [segment]
-        # if only_nse_stocks:
-        #     query += " AND nse_stock = 1"
-
-        # # Add segment-specific filters
-        # if segment == "NSE":
-        #     query = (
-        #         query
-        #         + """
-        #             AND
-        #             tradingsymbol NOT LIKE '%ETF%' AND  -- Exclude ETFs
-        #             name IS NOT NULL AND
-        #             tradingsymbol NOT LIKE '%-%' AND  -- Exclude preferred stocks
-        #             lot_size BETWEEN 1 AND 100 AND
-        #             tradingsymbol GLOB '[A-Z]*'  -- Starts with uppercase letter
-        #         ORDER BY tradingsymbol
-        #     """
-        #     )
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(query, params)
             return [dict(zip(requested_columns, row)) for row in cursor.fetchall()]
 
-    def get_or_fetch_instrument_tokens(self, all_columns=False, only_nse_stocks=False):
+    def get_or_fetch_instrument_tokens(
+        self, all_columns: bool = False, only_nse_stocks: bool = False
+    ) -> List[int]:
+        """
+        Get instrument tokens, fetching from API if database is empty.
+
+        Args:
+            all_columns: Whether to return full instrument data or just tokens
+            only_nse_stocks: Whether to return only NSE stock tokens
+
+        Returns:
+            List[int]: List of instrument tokens or full instrument data
+
+        Note:
+            Automatically triggers sync if no instruments are found in database.
+        """
         equities_count = self.get_instrument_count()
         if equities_count == 0:
             self.sync_instruments(force_fetch=True)
@@ -575,13 +821,16 @@ class KiteInstruments:
 
     def get_instrument_tokens(self, equities: List[Dict]) -> List[int]:
         """
-        Safely extracts instrument tokens with validation
+        Safely extract instrument tokens from equity data.
 
-        Features:
-        - Type checking
-        - Handles missing keys
-        - Filters invalid tokens
-        - Preserves order
+        Args:
+            equities: List of instrument dictionaries
+
+        Returns:
+            List[int]: List of validated instrument tokens
+
+        Note:
+            Handles missing or invalid token values gracefully.
         """
         tokens = []
         for eq in equities:
@@ -593,7 +842,18 @@ class KiteInstruments:
         return tokens
 
     def get_instrument(self, instrument_token: int) -> Optional[Dict]:
-        """Get single instrument by token"""
+        """
+        Get complete instrument data by token.
+
+        Args:
+            instrument_token: Instrument token to lookup
+
+        Returns:
+            Optional[Dict]: Complete instrument data or None if not found
+
+        Note:
+            Returns all columns including nse_stock as boolean for easier use.
+        """
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -628,7 +888,12 @@ class KiteInstruments:
             return None
 
     def get_nse_stocks(self) -> List[Dict]:
-        """Convenience method to get all NSE stocks"""
+        """
+        Convenience method to get all NSE-listed stocks.
+
+        Returns:
+            List[Dict]: List of NSE stock instruments with nse_stock as boolean
+        """
         stocks = self.get_equities(
             column_names="instrument_token,tradingsymbol,name,last_price,nse_stock",
             only_nse_stocks=True,
@@ -639,7 +904,16 @@ class KiteInstruments:
         return stocks
 
     def update_nse_stock_status(self, tradingsymbol: str, is_nse_stock: bool) -> bool:
-        """Update the nse_stock status for a specific instrument"""
+        """
+        Update the NSE stock status for a specific instrument.
+
+        Args:
+            tradingsymbol: Trading symbol to update
+            is_nse_stock: Whether the instrument is an NSE stock
+
+        Returns:
+            bool: True if update successful, False otherwise
+        """
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -660,7 +934,13 @@ class KiteInstruments:
     def migrate_to_nse_stock_column(self) -> bool:
         """
         Migrate existing data to use the nse_stock column.
-        This should be called once after adding the new column.
+
+        Returns:
+            bool: True if migration successful, False otherwise
+
+        Note:
+            This should be called once after adding the nse_stock column to
+            populate it based on the NSE symbol list.
         """
         try:
             nse_symbols = self._get_nse_trading_symbols()
