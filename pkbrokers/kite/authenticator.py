@@ -121,9 +121,9 @@ class KiteAuthenticator:
                 default_logger().debug(
                     "Credentials not sent for authentication. Using the default credentials from environment."
                 )
-                from dotenv import dotenv_values
+                from PKDevTools.classes.Environment import PKEnvironment
 
-                local_secrets = dotenv_values(".env.dev")
+                local_secrets = PKEnvironment().allSecrets
                 credentials = {
                     "api_key": "kitefront",
                     "username": os.environ.get(
@@ -202,21 +202,3 @@ class KiteAuthenticator:
         except Exception as e:
             default_logger().error(e)
             raise ValueError(f"Authentication error: {str(e)}") from e
-
-
-"""
-# Example Usage:
-if __name__ == "__main__":
-    # Configuration - load from environment in production
-    from dotenv import dotenv_values
-    local_secrets = dotenv_values(".env.dev")
-    credentials = {
-                    "api_key" : "kitefront",
-                    "username" : os.environ.get("KUSER",local_secrets.get("KUSER","You need your Kite username")),
-                    "password" : os.environ.get("KPWD",local_secrets.get("KPWD","You need your Kite password")),
-                    "totp" : os.environ.get("KTOTP",local_secrets.get("KTOTP","You need your Kite TOTP")),
-                   }
-    authenticator = KiteAuthenticator(timeout=10)
-    req_token = authenticator.get_enctoken(**credentials)
-    print(req_token)
-"""

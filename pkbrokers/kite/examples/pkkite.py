@@ -28,10 +28,10 @@ import argparse
 import logging
 import os
 import sys
-import threading
-from queue import Queue
 
 from PKDevTools.classes import log
+
+LOG_LEVEL = logging.INFO
 
 # Argument Parsing for test purpose
 argParser = argparse.ArgumentParser()
@@ -71,8 +71,6 @@ except BaseException:
     pass
 
 args = argsv[0]
-LOG_LEVEL = logging.INFO
-_watcher_queue = None
 
 
 def validate_credentials():
@@ -85,76 +83,28 @@ def validate_credentials():
     return True
 
 
-def _process_ticks():
-    from datetime import datetime
-
-    from pkbrokers.kite.ticks import Tick
-
-    global _watcher_queue
-    while _watcher_queue is not None or (
-        _watcher_queue is not None and not _watcher_queue.empty()
-    ):
-        try:
-            tick = _watcher_queue.get(timeout=1)
-
-            if tick is None:
-                continue
-
-            # Process the tick based on its type
-            if isinstance(tick, Tick):
-                # Convert to optimized format
-                processed = {
-                    "instrument_token": tick.instrument_token,
-                    "timestamp": str(datetime.fromtimestamp(tick.exchange_timestamp)),
-                    "last_price": tick.last_price if tick.last_price is not None else 0,
-                    "day_volume": tick.day_volume if tick.day_volume is not None else 0,
-                    "oi": tick.oi if tick.oi is not None else 0,
-                    "buy_quantity": tick.buy_quantity
-                    if tick.buy_quantity is not None
-                    else 0,
-                    "sell_quantity": tick.sell_quantity
-                    if tick.sell_quantity is not None
-                    else 0,
-                    "high_price": tick.high_price if tick.high_price is not None else 0,
-                    "low_price": tick.low_price if tick.low_price is not None else 0,
-                    "open_price": tick.open_price if tick.open_price is not None else 0,
-                    "prev_day_close": tick.prev_day_close
-                    if tick.prev_day_close is not None
-                    else 0,
-                }
-                print(processed)
-                _watcher_queue.task_done()
-
-        except KeyboardInterrupt:
-            _watcher_queue = None
-            sys.exit(0)
-        except Exception as e:
-            print(e)
-            pass
-    print("Exiting ...")
-
-
 def kite_ticks():
     from pkbrokers.kite.kiteTokenWatcher import KiteTokenWatcher
 
-    global _watcher_queue
-    _watcher_queue = Queue(maxsize=10000)
-    watcher = KiteTokenWatcher(watcher_queue=_watcher_queue)
-    print(
-        "We're now ready to begin listening to ticks from Zerodha's Kite\nPress any key to continue..."
-    )
-    # Start processing thread (still needs to be thread)
-    threading.Thread(target=_process_ticks, daemon=True).start()
-    watcher.watch()
+    watcher = KiteTokenWatcher()
+    print("We're now ready to begin listening to ticks from Zerodha's Kite...")
+    # Start watching for ticks
+    try:
+        watcher.watch()
+    except KeyboardInterrupt:
+        watcher.stop()
+    except Exception as e:
+        print(f"Error: {e}")
+        watcher.stop()
 
 
 def kite_auth():
     # Configuration - load from environment in production
-    from dotenv import dotenv_values
+    from PKDevTools.classes.Environment import PKEnvironment
 
     from pkbrokers.kite.authenticator import KiteAuthenticator
 
-    local_secrets = dotenv_values(".env.dev")
+    local_secrets = PKEnvironment().allSecrets
     credentials = {
         "api_key": "kitefront",
         "username": os.environ.get(

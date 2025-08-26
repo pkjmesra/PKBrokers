@@ -114,7 +114,7 @@ class InstrumentDataManager:
         if isinstance(date, datetime):
             return date.strftime("%Y-%m-%d")
         return date
-    
+
     def _get_tradingsymbols(self) -> List[str]:
         """Get tradingsymbols from pickle or database"""
         if self.pickle_data:

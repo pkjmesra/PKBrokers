@@ -44,7 +44,7 @@ from PKDevTools.classes import Archiver
 from PKDevTools.classes.log import default_logger
 
 from pkbrokers.kite.threadSafeDatabase import ThreadSafeDatabase
-from pkbrokers.kite.tickMonitor import TickMonitor
+from pkbrokers.kite.tickMonitor import MAX_ALERT_INTERVAL_SEC, TickMonitor
 from pkbrokers.kite.ticks import IndexTick, Tick
 from pkbrokers.kite.zerodhaWebSocketParser import ZerodhaWebSocketParser
 
@@ -95,6 +95,9 @@ class ZerodhaWebSocketClient:
         api_key="kitefront",
         token_batches=[],
         watcher_queue=None,
+        monitor_performance=False,
+        monitor_stale=False,
+        monitor_connection=True,
     ):
         self.watcher_queue = watcher_queue
         self.enctoken = enctoken
@@ -113,6 +116,9 @@ class ZerodhaWebSocketClient:
         self.token_timestamp = 0
         self.ws_tasks = []
         self.index_subscribed = True
+        self.monitor_performance = monitor_performance
+        self.monitor_stale = monitor_stale
+        self.monitor_connection = monitor_connection
 
     def _build_websocket_url(self):
         """Construct the WebSocket URL with proper parameters"""
@@ -156,14 +162,14 @@ class ZerodhaWebSocketClient:
     def _build_tokens(self):
         import os
 
-        from dotenv import dotenv_values
+        from PKDevTools.classes.Environment import PKEnvironment
 
         from pkbrokers.kite.instruments import KiteInstruments
 
         API_KEY = "kitefront"
         ACCESS_TOKEN = ""
         try:
-            local_secrets = dotenv_values(".env.dev")
+            local_secrets = PKEnvironment().allSecrets
             ACCESS_TOKEN = os.environ.get(
                 "KTOKEN", local_secrets.get("KTOKEN", "You need your Kite token")
             )
@@ -724,7 +730,7 @@ class ZerodhaWebSocketClient:
         while not self.stop_event.is_set():
             # Track processing rate
             await tick_monitor.monitor_stale_updates()
-            await asyncio.sleep(60)
+            await asyncio.sleep(MAX_ALERT_INTERVAL_SEC)
 
     def _flush_to_db(self, batch):
         """Bulk insert ticks to database"""
@@ -747,11 +753,14 @@ class ZerodhaWebSocketClient:
             task = self.loop.create_task(self._connect_websocket([token_batch]))
             self.ws_tasks.append(task)
 
-        self.monitor_task = self.loop.create_task(self._monitor_performance())
-        self.monitor_stale_task = self.loop.create_task(
-            self._monitor_stale_instruments()
-        )
-        self.conn_monitor_task = self.loop.create_task(self._connection_monitor())
+        if self.monitor_performance:
+            self.monitor_task = self.loop.create_task(self._monitor_performance())
+        if self.monitor_stale:
+            self.monitor_stale_task = self.loop.create_task(
+                self._monitor_stale_instruments()
+            )
+        if self.monitor_connection:
+            self.conn_monitor_task = self.loop.create_task(self._connection_monitor())
 
         # Start processing thread (still needs to be thread)
         self.processor_thread = threading.Thread(

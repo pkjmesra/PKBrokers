@@ -33,6 +33,7 @@ from PKDevTools.classes import Archiver
 from PKDevTools.classes.log import default_logger
 
 DEFAULT_PATH = Archiver.get_user_data_dir()
+MAX_ALERT_INTERVAL_SEC = 180
 
 
 class TickMonitor:
@@ -43,7 +44,7 @@ class TickMonitor:
         self.local = threading.local()  # This creates thread-local storage
         self.lock = threading.Lock()
         self.last_alert_time = 0
-        self.alert_interval = 60  # seconds
+        self.alert_interval = MAX_ALERT_INTERVAL_SEC  # seconds
         self.subscribed_tokens = token_batches
         # Configure logging
         self.logger = default_logger()

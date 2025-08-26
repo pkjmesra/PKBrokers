@@ -85,9 +85,9 @@ class KiteTickerHistory:
             user_id: Zerodha user ID (e.g., 'YourUserId')
             access_token_response: Cookies/headers from access_token_response (along with Set-Cookie headers)
         """
-        from dotenv import dotenv_values
+        from PKDevTools.classes.Environment import PKEnvironment
 
-        local_secrets = dotenv_values(".env.dev")
+        local_secrets = PKEnvironment().allSecrets
         self.logger = default_logger()
         if enctoken is None or len(enctoken) == 0:
             enctoken = (

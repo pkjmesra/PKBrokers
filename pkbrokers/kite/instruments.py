@@ -35,21 +35,22 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, time
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 import libsql
 import pytz
 import requests
 from PKDevTools.classes import Archiver
-from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
+from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 from PKNSETools.PKNSEStockDataFetcher import nseStockDataFetcher
 
 # Configure logging
 DEFAULT_PATH = Archiver.get_user_data_dir()
 NIFTY_50 = 256265
 BSE_SENSEX = 265
+
 
 @dataclass
 class Instrument:
@@ -222,14 +223,16 @@ class KiteInstruments:
                 nse_fetcher = nseStockDataFetcher()
                 equities = list(set(nse_fetcher.fetchNiftyCodes(tickerOption=12)))
                 fno = list(set(nse_fetcher.fetchNiftyCodes(tickerOption=14)))
-                
+
                 self._nse_trading_symbols = list(set(equities + fno))
-                self.logger.debug(f"Fetched {len(self._nse_trading_symbols)} Unique NSE symbols")
+                self.logger.debug(
+                    f"Fetched {len(self._nse_trading_symbols)} Unique NSE symbols"
+                )
                 self.logger.debug(f"{self._nse_trading_symbols}")
             except Exception as e:
                 self.logger.warn(f"Failed to fetch NSE symbols: {str(e)}")
                 self._nse_trading_symbols = []
-        
+
         return self._nse_trading_symbols
 
     def _needs_refresh(self) -> bool:
@@ -310,28 +313,34 @@ class KiteInstruments:
     def _filter_instrument(self, instrument: Instrument) -> bool:
         """
         Filter instruments based on criteria, with NSE symbol list preference
-        
+
         If NSE trading symbols are available, use them for filtering.
         Otherwise, fall back to the original filtering logic.
         """
         nse_symbols = self._get_nse_trading_symbols()
-        
-        basic_conditions = (instrument.exchange == "NSE"
-                and instrument.segment == "NSE"
-                and instrument.instrument_type == "EQ"
-                and instrument.name is not None
-                )
+
+        basic_conditions = (
+            instrument.exchange == "NSE"
+            and instrument.segment == "NSE"
+            and instrument.instrument_type == "EQ"
+            and instrument.name is not None
+        )
         if nse_symbols:
             # Use NSE symbol list as the primary filter
-            in_nse_symbols_or_indices = (basic_conditions and (instrument.tradingsymbol.replace("-BE","").replace("-BZ","") in nse_symbols
-                or instrument.instrument_token in [NIFTY_50, BSE_SENSEX]))
+            in_nse_symbols_or_indices = basic_conditions and (
+                instrument.tradingsymbol.replace("-BE", "").replace("-BZ", "")
+                in nse_symbols
+                or instrument.instrument_token in [NIFTY_50, BSE_SENSEX]
+            )
             if in_nse_symbols_or_indices:
-                self._filtered_trading_symbols.append(instrument.tradingsymbol.replace("-BE","").replace("-BZ",""))
+                self._filtered_trading_symbols.append(
+                    instrument.tradingsymbol.replace("-BE", "").replace("-BZ", "")
+                )
             else:
                 if basic_conditions:
                     self.logger.debug(f"Filtered Out:{instrument.tradingsymbol}")
             return in_nse_symbols_or_indices
-            
+
         else:
             # Fall back to original filtering logic
             return (
@@ -383,7 +392,9 @@ class KiteInstruments:
             inst for inst in instruments if self._filter_instrument(inst)
         ]
         self.logger.debug(f"Updating/Inserting {len(filtered_instruments)} instruments")
-        self.logger.debug(f"Filtered out but present in NSE_symbols:{set(self._nse_trading_symbols)-set(self._filtered_trading_symbols)}")
+        self.logger.debug(
+            f"Filtered out but present in NSE_symbols:{set(self._nse_trading_symbols) - set(self._filtered_trading_symbols)}"
+        )
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
@@ -411,7 +422,7 @@ class KiteInstruments:
             if self.recreate_schema:
                 cursor.executemany(
                     """
-                    INSERT or IGNORE INTO instruments 
+                    INSERT or IGNORE INTO instruments
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                     data,
@@ -420,7 +431,7 @@ class KiteInstruments:
                 # Efficient bulk upsert including nse_stock column
                 cursor.executemany(
                     """
-                    INSERT INTO instruments 
+                    INSERT INTO instruments
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(exchange, tradingsymbol, instrument_type)
                     DO UPDATE SET
@@ -471,7 +482,7 @@ class KiteInstruments:
         self,
         column_names: str = "instrument_token,tradingsymbol,name",
         segment: str = "NSE",
-        only_nse_stocks: bool = False
+        only_nse_stocks: bool = False,
     ) -> List[Dict]:
         """
         Get equity instruments with dynamic column selection
@@ -513,40 +524,41 @@ class KiteInstruments:
 
         # Build safe SQL query
         columns_sql = ", ".join(requested_columns)
+        params = []
         query = f"""
             SELECT {columns_sql} FROM instruments
-            WHERE
-                exchange = 'NSE' AND
-                segment = ? AND
-                instrument_type = 'EQ'
-        """
-
-        # Add NSE stock filter if requested
-        params = [segment]
-        if only_nse_stocks:
-            query += " AND nse_stock = 1"
-        
-        # Add segment-specific filters
-        if segment == "NSE":
-            query = (
-                query
-                + """
-                    AND
-                    tradingsymbol NOT LIKE '%ETF%' AND  -- Exclude ETFs
-                    name IS NOT NULL AND
-                    tradingsymbol NOT LIKE '%-%' AND  -- Exclude preferred stocks
-                    lot_size BETWEEN 1 AND 100 AND
-                    tradingsymbol GLOB '[A-Z]*'  -- Starts with uppercase letter
-                ORDER BY tradingsymbol
             """
-            )
+        # """
+        #     WHERE
+        #         exchange = 'NSE' AND
+        #         segment = ? AND
+        #         instrument_type = 'EQ'
+        # """
+
+        # # Add NSE stock filter if requested
+        # params = [segment]
+        # if only_nse_stocks:
+        #     query += " AND nse_stock = 1"
+
+        # # Add segment-specific filters
+        # if segment == "NSE":
+        #     query = (
+        #         query
+        #         + """
+        #             AND
+        #             tradingsymbol NOT LIKE '%ETF%' AND  -- Exclude ETFs
+        #             name IS NOT NULL AND
+        #             tradingsymbol NOT LIKE '%-%' AND  -- Exclude preferred stocks
+        #             lot_size BETWEEN 1 AND 100 AND
+        #             tradingsymbol GLOB '[A-Z]*'  -- Starts with uppercase letter
+        #         ORDER BY tradingsymbol
+        #     """
+        #     )
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(query, params)
-            return [
-                dict(zip(requested_columns, row)) for row in cursor.fetchall()
-            ]
+            return [dict(zip(requested_columns, row)) for row in cursor.fetchall()]
 
     def get_or_fetch_instrument_tokens(self, all_columns=False, only_nse_stocks=False):
         equities_count = self.get_instrument_count()
@@ -556,7 +568,7 @@ class KiteInstruments:
             column_names="instrument_token"
             if not all_columns
             else "instrument_token,tradingsymbol,name",
-            only_nse_stocks=only_nse_stocks
+            only_nse_stocks=only_nse_stocks,
         )
         tokens = self.get_instrument_tokens(equities=equities)
         return tokens
@@ -594,9 +606,20 @@ class KiteInstruments:
             row = cursor.fetchone()
             if row:
                 columns = [
-                    "instrument_token", "exchange_token", "tradingsymbol", "name",
-                    "last_price", "expiry", "strike", "tick_size", "lot_size",
-                    "instrument_type", "segment", "exchange", "last_updated", "nse_stock"
+                    "instrument_token",
+                    "exchange_token",
+                    "tradingsymbol",
+                    "name",
+                    "last_price",
+                    "expiry",
+                    "strike",
+                    "tick_size",
+                    "lot_size",
+                    "instrument_type",
+                    "segment",
+                    "exchange",
+                    "last_updated",
+                    "nse_stock",
                 ]
                 result = dict(zip(columns, row))
                 # Convert nse_stock to boolean for easier use
@@ -608,7 +631,7 @@ class KiteInstruments:
         """Convenience method to get all NSE stocks"""
         stocks = self.get_equities(
             column_names="instrument_token,tradingsymbol,name,last_price,nse_stock",
-            only_nse_stocks=True
+            only_nse_stocks=True,
         )
         # Convert nse_stock to boolean for easier use
         for stock in stocks:
@@ -622,7 +645,7 @@ class KiteInstruments:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
-                    UPDATE instruments 
+                    UPDATE instruments
                     SET nse_stock = ?, last_updated = datetime('now')
                     WHERE tradingsymbol = ? AND exchange = 'NSE'
                 """,
@@ -647,64 +670,38 @@ class KiteInstruments:
 
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                
+
                 # Update all instruments based on NSE symbol list
                 cursor.execute(
                     """
-                    UPDATE instruments 
+                    UPDATE instruments
                     SET nse_stock = 1, last_updated = datetime('now')
-                    WHERE exchange = 'NSE' 
+                    WHERE exchange = 'NSE'
                     AND segment = 'NSE'
                     AND instrument_type = 'EQ'
                     AND tradingsymbol IN ({})
-                    """.format(','.join(['?'] * len(nse_symbols))),
-                    list(nse_symbols)
+                    """.format(",".join(["?"] * len(nse_symbols))),
+                    list(nse_symbols),
                 )
-                
+
                 # Set nse_stock = 0 for non-matching instruments
                 cursor.execute(
                     """
-                    UPDATE instruments 
+                    UPDATE instruments
                     SET nse_stock = 0, last_updated = datetime('now')
-                    WHERE exchange = 'NSE' 
+                    WHERE exchange = 'NSE'
                     AND segment = 'NSE'
                     AND instrument_type = 'EQ'
                     AND nse_stock IS NULL
                     """
                 )
-                
+
                 conn.commit()
-                self.logger.debug(f"Migrated {cursor.rowcount} instruments to use nse_stock column")
+                self.logger.debug(
+                    f"Migrated {cursor.rowcount} instruments to use nse_stock column"
+                )
                 return True
-                
+
         except Exception as e:
             self.logger.error(f"Migration failed: {str(e)}")
             return False
-"""
-# Example usage
-if __name__ == "__main__":
-    # Configuration - load from environment in production
-    from dotenv import dotenv_values
-    local_secrets = dotenv_values(".env.dev")
-
-    API_KEY = "kitefront"
-    ACCESS_TOKEN = os.environ.get("KTOKEN",local_secrets.get("KTOKEN","You need your Kite token")),
-
-    # Initialize sync
-    sync = KiteInstruments(api_key=API_KEY, access_token=ACCESS_TOKEN)
-
-    instruments = sync.fetch_instruments()
-    if len(instruments) > 2000:
-        sync._init_db()
-    # Run sync
-    if sync.sync_instruments(instruments):
-        print(f"Current instrument count: {sync.get_instrument_count()}")
-    else:
-        print("Sync failed - check logs for details")
-    equities = sync.get_equities(segment='INDICES')
-    print(equities)
-    print(len(equities))
-    equities = sync.get_equities()
-    print(equities)
-    print(len(equities))
-"""

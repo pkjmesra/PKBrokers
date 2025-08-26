@@ -124,5 +124,7 @@ class EnvUpdater:
     def reload_env(self):
         """Reload environment variables"""
         from dotenv import load_dotenv
+        from PKDevTools.classes.Environment import PKEnvironment
 
         load_dotenv(self.dev_path, override=True)
+        PKEnvironment()._load_secrets()
