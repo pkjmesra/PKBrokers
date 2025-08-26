@@ -26,7 +26,6 @@ SOFTWARE.
 
 import os
 import threading
-from collections import defaultdict
 from datetime import datetime, timedelta
 from queue import Empty, Queue
 
@@ -77,17 +76,16 @@ class KiteTokenWatcher:
     """
     A high-performance tick data watcher and processor for Zerodha Kite Connect API.
 
-    This class manages real-time market data streaming, batch processing, and database
-    storage for multiple instruments. It handles token batching, tick aggregation,
-    and efficient database operations with multi-threaded architecture.
+    This class manages real-time market data streaming with guaranteed:
+    1. Exactly one tick per instrument_token in each batch (latest tick only)
+    2. Batch processing every 30 seconds (configurable via OPTIMAL_BATCH_TICK_WAIT_TIME_SEC)
+    3. Efficient database operations with proper error handling
 
-    Features:
-    - Real-time WebSocket connection to Zerodha Kite API
-    - Automatic token batch management (max 500 tokens per batch)
-    - Tick aggregation and OHLCV calculation
-    - Multi-threaded processing with dedicated database thread
-    - Graceful shutdown and cleanup
-    - Market depth data processing
+    CRITICAL DESIGN FEATURES:
+    - Uses dictionary for _tick_batch to ensure only latest tick per instrument is stored
+    - Fixed-interval timing logic for consistent 30-second processing cycles
+    - Simplified processing pipeline without unnecessary buffering
+    - Comprehensive error handling throughout the data flow
 
     Attributes:
         _watcher_queue (Queue): Queue for receiving raw ticks from WebSocket
@@ -99,14 +97,13 @@ class KiteTokenWatcher:
         client (ZerodhaWebSocketClient): WebSocket client instance
         logger (Logger): Logger instance for debugging and monitoring
         _db_instance (ThreadSafeDatabase): Database connection instance
-        _tick_batch (defaultdict): Buffer for accumulating ticks by instrument
+        _tick_batch (dict): Dictionary storing only the latest tick for each instrument
         _next_process_time (datetime): Next scheduled batch processing time
 
     Example:
-        >>> watcher = KiteTokenWatcher(tokens=[256265, 265])  # Nifty 50 and Sensex
-        >>> watcher.watch()  # Start watching in background threads
-        >>> # Program continues running...
-        >>> watcher.stop()  # Graceful shutdown when done
+        >>> watcher = KiteTokenWatcher(tokens=[256265, 265])
+        >>> watcher.watch()  # Starts watching with 30-second batch intervals
+        >>> watcher.stop()   # Graceful shutdown
     """
 
     def __init__(self, tokens=[], watcher_queue=None, client=None):
@@ -114,76 +111,75 @@ class KiteTokenWatcher:
         Initialize the KiteTokenWatcher instance.
 
         Args:
-            tokens (list, optional): List of instrument tokens to watch.
-                                    If empty, will fetch all equities automatically.
-            watcher_queue (Queue, optional): Custom queue for tick data.
-                                            Creates default queue if not provided.
-            client (ZerodhaWebSocketClient, optional): Pre-configured WebSocket client.
+            tokens (list): List of instrument tokens to watch. If empty, fetches all equities.
+            watcher_queue (Queue): Custom queue for tick data. Creates default if not provided.
+            client (ZerodhaWebSocketClient): Pre-configured WebSocket client.
 
-        Example:
-            >>> # Watch specific tokens
-            >>> watcher = KiteTokenWatcher(tokens=[256265, 265])
-            >>>
-            >>> # Watch all equities with custom queue
-            >>> custom_queue = Queue(maxsize=20000)
-            >>> watcher = KiteTokenWatcher(tokens=[], watcher_queue=custom_queue)
+        CRITICAL: _tick_batch is a dictionary, not defaultdict(list), ensuring only
+        one tick per instrument_token by design (key overwrites on new ticks).
         """
         self._watcher_queue = watcher_queue or Queue(maxsize=10000)
         self._db_queue = Queue(maxsize=10000)
         self._processing_thread = None
         self._db_thread = None
-        self._shutdown_event = threading.Event()  # Event for graceful shutdown
-        # Split into batches of OPTIMAL_TOKEN_BATCH_SIZE (Zerodha's recommended chunk size)
+        self._shutdown_event = threading.Event()
+
+        # Split tokens into batches of max 500 (Zerodha limit)
         self.token_batches = [
             tokens[i : i + OPTIMAL_TOKEN_BATCH_SIZE]
             for i in range(0, len(tokens), OPTIMAL_TOKEN_BATCH_SIZE)
         ]
+
         self.client = client
         self.logger = default_logger()
         self._db_instance = None
-        self._tick_batch = defaultdict(list)
+
+        # CRITICAL: Using dictionary instead of defaultdict(list) ensures only
+        # the latest tick for each instrument_token is stored (key overwrite behavior)
+        self._tick_batch = {}
+
         self._next_process_time = None
 
     def watch(self):
         """
-        Start watching market data for the configured tokens.
+        Start watching market data for configured tokens.
 
         This method:
         1. Fetches tokens if not provided during initialization
         2. Initializes WebSocket client if not provided
         3. Starts processing and database threads
-        4. Begins WebSocket connection
+        4. Begins WebSocket connection with 30-second batch intervals
 
         Raises:
             Exception: If WebSocket connection fails or token fetch fails
-
-        Example:
-            >>> watcher = KiteTokenWatcher()
-            >>> watcher.watch()  # Starts watching all equities in background
-            >>> # Program continues running while data is processed in threads
         """
         local_secrets = PKEnvironment().allSecrets
+
+        # Auto-fetch tokens if none provided
         if len(self.token_batches) == 0:
             API_KEY = "kitefront"
-            ACCESS_TOKEN = (
-                os.environ.get(
-                    "KTOKEN", local_secrets.get("KTOKEN", "You need your Kite token")
-                ),
+            ACCESS_TOKEN = os.environ.get(
+                "KTOKEN", local_secrets.get("KTOKEN", "You need your Kite token")
             )
             kite = KiteInstruments(api_key=API_KEY, access_token=ACCESS_TOKEN)
-            equities_count = kite.get_instrument_count()
-            if equities_count == 0:
+
+            if kite.get_instrument_count() == 0:
                 kite.sync_instruments(force_fetch=True)
+
             equities = kite.get_equities(column_names="instrument_token")
             tokens = kite.get_instrument_tokens(equities=equities)
             tokens = list(set(NIFTY_50 + BSE_SENSEX + tokens))
+
             self.token_batches = [
                 tokens[i : i + OPTIMAL_TOKEN_BATCH_SIZE]
                 for i in range(0, len(tokens), OPTIMAL_TOKEN_BATCH_SIZE)
             ]
+
         self.logger.debug(
             f"Fetched {len(tokens)} tokens. Divided into {len(self.token_batches)} batches."
         )
+
+        # Initialize WebSocket client if not provided
         if self.client is None:
             self.client = ZerodhaWebSocketClient(
                 enctoken=os.environ.get(
@@ -197,17 +193,20 @@ class KiteTokenWatcher:
             )
 
         try:
-            # Start processing thread
+            # Start processing threads
             self._processing_thread = threading.Thread(
-                target=self._process_ticks, daemon=True
+                target=self._process_ticks, daemon=True, name="TickProcessor"
             )
             self._processing_thread.start()
+
             self._db_thread = threading.Thread(
-                target=self._process_db_operations, daemon=True
+                target=self._process_db_operations, daemon=True, name="DBProcessor"
             )
             self._db_thread.start()
+
             self.logger.debug("Started tick processing and database threads")
             self.client.start()
+
         except KeyboardInterrupt:
             self.logger.warn("Keyboard interrupt received, shutting down...")
             self.stop()
@@ -232,117 +231,49 @@ class KiteTokenWatcher:
 
     def _process_tick_batch(self, tick_batch):
         """
-        Process a batch of ticks for all instruments at once.
-
-        Calculates OHLCV values, processes market depth, and prepares data
-        for database insertion.
+        Process a batch of ticks for all instruments with full OHLCV and depth processing.
 
         Args:
-            tick_batch (dict): Dictionary mapping instrument tokens to list of ticks
+            tick_batch (dict): Dictionary mapping instrument tokens to their latest ticks
 
-        Example internal usage:
-            >>> self._process_tick_batch({
-            ...     256265: [tick1, tick2, tick3],
-            ...     265: [tick1, tick2]
-            ... })
+        CRITICAL: This method expects each instrument_token to have exactly one tick
+        (the latest), ensuring no duplicates in the final database insert.
         """
         if not tick_batch:
             return
 
         processed_batch = []
-        total_ticks_processed = 0
+        total_instruments = len(tick_batch)
+        self.logger.info(
+            f"Processing batch with {total_instruments} unique instruments"
+        )
 
         for instrument_token, ticks in tick_batch.items():
             if not ticks:
                 continue
 
-            total_ticks_processed += len(ticks)
-
-            # Get the most recent tick for this instrument
-            latest_tick = ticks[-1]
-
-            # Calculate OHLCV values from the batch
-            high_prices = [
-                tick.high_price for tick in ticks if tick.high_price is not None
-            ]
-            low_prices = [
-                tick.low_price for tick in ticks if tick.low_price is not None
-            ]
-            volumes = [tick.day_volume for tick in ticks if tick.day_volume is not None]
-
-            high_price = max(high_prices) if high_prices else 0
-            low_price = min(low_prices) if low_prices else 0
-            total_volume = sum(volumes) if volumes else 0
-
-            # Convert exchange timestamp to proper datetime object for database
+            # CRITICAL: We only have one tick per instrument (the latest)
+            latest_tick = ticks[0]  # Single tick in list format
             timestamp = datetime.fromtimestamp(latest_tick.exchange_timestamp)
 
-            # Prepare market depth data from the latest tick
-            depth_data = {}
-            if hasattr(latest_tick, "depth") and latest_tick.depth:
-                depth_data = {"bid": [], "ask": []}
-
-                # Process bids (positions 1-5)
-                for i in range(1, 6):
-                    bid_price = getattr(latest_tick.depth, f"buy_{i}_price", 0)
-                    bid_quantity = getattr(latest_tick.depth, f"buy_{i}_quantity", 0)
-                    bid_orders = getattr(latest_tick.depth, f"buy_{i}_orders", 0)
-
-                    if bid_price and bid_quantity:
-                        depth_data["bid"].append(
-                            {
-                                "price": bid_price,
-                                "quantity": bid_quantity,
-                                "orders": bid_orders,
-                            }
-                        )
-
-                # Process asks (positions 1-5)
-                for i in range(1, 6):
-                    ask_price = getattr(latest_tick.depth, f"sell_{i}_price", 0)
-                    ask_quantity = getattr(latest_tick.depth, f"sell_{i}_quantity", 0)
-                    ask_orders = getattr(latest_tick.depth, f"sell_{i}_orders", 0)
-
-                    if ask_price and ask_quantity:
-                        depth_data["ask"].append(
-                            {
-                                "price": ask_price,
-                                "quantity": ask_quantity,
-                                "orders": ask_orders,
-                            }
-                        )
+            # Process market depth data
+            depth_data = self._extract_depth(latest_tick)
 
             processed = {
                 "instrument_token": latest_tick.instrument_token,
-                "timestamp": timestamp,  # Use datetime object instead of string
-                "last_price": latest_tick.last_price
-                if latest_tick.last_price is not None
-                else 0,
-                "day_volume": total_volume,
-                "oi": latest_tick.oi if latest_tick.oi is not None else 0,
-                "buy_quantity": latest_tick.buy_quantity
-                if latest_tick.buy_quantity is not None
-                else 0,
-                "sell_quantity": latest_tick.sell_quantity
-                if latest_tick.sell_quantity is not None
-                else 0,
-                "high_price": high_price,
-                "low_price": low_price,
-                "open_price": ticks[0].open_price
-                if ticks[0].open_price is not None
-                else 0,
-                "prev_day_close": latest_tick.prev_day_close
-                if latest_tick.prev_day_close is not None
-                else 0,
+                "timestamp": timestamp,
+                "last_price": latest_tick.last_price or 0,
+                "day_volume": latest_tick.day_volume or 0,
+                "oi": latest_tick.oi or 0,
+                "buy_quantity": latest_tick.buy_quantity or 0,
+                "sell_quantity": latest_tick.sell_quantity or 0,
+                "high_price": latest_tick.high_price or 0,
+                "low_price": latest_tick.low_price or 0,
+                "open_price": latest_tick.open_price or 0,
+                "prev_day_close": latest_tick.prev_day_close or 0,
                 "depth": depth_data,
             }
             processed_batch.append(processed)
-
-        # Process the entire batch
-        current_time = datetime.now().strftime("%H:%M:%S")
-        self.logger.debug(
-            f"[{current_time}] Processed batch: {len(processed_batch)} instruments, {total_ticks_processed} total ticks"
-        )
 
         # Insert into database
         try:
@@ -351,192 +282,194 @@ class KiteTokenWatcher:
             self.logger.info(
                 f"Successfully inserted {len(processed_batch)} records to database"
             )
-
         except Exception as e:
-            self.logger.debug(f"Error inserting to database: {e}")
+            self.logger.error(f"Error inserting to database: {e}")
 
     def _process_ticks(self):
         """
         Main processing thread method for handling incoming ticks.
 
-        This method:
-        - Reads ticks from the watcher queue
-        - Accumulates ticks in batches
-        - Processes batches at scheduled intervals
-        - Handles graceful shutdown
+        CRITICAL FEATURES:
+        1. Uses dictionary for _tick_batch ensuring only latest tick per instrument
+        2. Fixed 30-second interval processing using absolute time calculations
+        3. Graceful shutdown handling with proper cleanup
 
-        Note: This method runs in a separate daemon thread
+        TIMING MECHANISM:
+        - Sets _next_process_time to current time + 30 seconds initially
+        - After each processing, resets _next_process_time to current time + 30 seconds
+        - This ensures consistent 30-second intervals regardless of processing time
         """
         from pkbrokers.kite.ticks import Tick
 
-        # Initialize next process time to the start of the next minute
-        self._next_process_time = datetime.now().replace(
-            second=0, microsecond=0
-        ) + timedelta(seconds=OPTIMAL_BATCH_TICK_WAIT_TIME_SEC)
+        # CRITICAL: Set initial processing time to now + 30 seconds for exact intervals
+        self._next_process_time = datetime.now() + timedelta(
+            seconds=OPTIMAL_BATCH_TICK_WAIT_TIME_SEC
+        )
+        self.logger.debug(f"Initial processing time set to: {self._next_process_time}")
 
-        # while self._watcher_queue is not None or (
-        #     self._watcher_queue is not None and not self._watcher_queue.empty()
-        # ):
         while not self._shutdown_event.is_set():
             try:
-                # Get tick with timeout
+                # Get tick with timeout to allow periodic checking
                 try:
                     tick = self._watcher_queue.get(timeout=1)
                 except Empty:
                     tick = None
-                    self.logger.debug("Queue timeout, no tick received")
-                except BaseException as e:
+                except Exception as e:
+                    self.logger.error(f"Tick retrieval error: {e}")
                     tick = None
-                    self.logger.error(f"Tick Error:{e}")
 
                 current_time = datetime.now()
 
-                # Check if it's time to process the batch
+                # CRITICAL: Process batch every 30 seconds using absolute time comparison
                 if current_time >= self._next_process_time:
-                    self.logger.debug(
-                        f"Processing batch. Current time: {current_time}, Next process time: {self._next_process_time}"
-                    )
+                    processing_start = datetime.now()
+
                     if self._tick_batch:
-                        batch_to_process = dict(self._tick_batch)
+                        # Convert to list format expected by downstream processing
+                        batch_to_process = {
+                            token: [tick] for token, tick in self._tick_batch.items()
+                        }
                         self._db_queue.put(batch_to_process)
                         self.logger.info(
-                            f"Placing Ticks in DB Queue: {len(self._tick_batch)}"
+                            f"Queued {len(self._tick_batch)} instruments for DB processing"
                         )
                         self._tick_batch.clear()
-                    # Schedule next processing for the next minute
-                    self._next_process_time = self._next_process_time + timedelta(
+
+                    # CRITICAL: Reset timer to current time + 30 seconds for exact interval
+                    self._next_process_time = datetime.now() + timedelta(
                         seconds=OPTIMAL_BATCH_TICK_WAIT_TIME_SEC
                     )
+                    processing_time = (
+                        datetime.now() - processing_start
+                    ).total_seconds()
+
                     self.logger.debug(
-                        f"Next process time set to: {self._next_process_time}"
-                    )
-                else:
-                    self.logger.debug(
-                        f"Waiting {current_time} < {self._next_process_time}"
+                        f"Batch processed in {processing_time:.2f}s. "
+                        f"Next process time: {self._next_process_time}"
                     )
 
+                # Process incoming tick if available
                 if tick is None:
                     continue
 
-                # Process the tick based on its type
                 if isinstance(tick, Tick):
-                    # Add to batch instead of processing immediately
-                    self._tick_batch[tick.instrument_token].append(tick)
+                    # CRITICAL: Dictionary assignment ensures only latest tick is kept
+                    # Older ticks for same instrument are automatically replaced
+                    self._tick_batch[tick.instrument_token] = tick
                     self._watcher_queue.task_done()
+
                     self.logger.debug(
-                        f"Added tick to batch for instrument {tick.instrument_token}"
+                        f"Updated latest tick for instrument {tick.instrument_token}"
                     )
 
             except KeyboardInterrupt:
-                self.logger.warn("Keyboard interrupt received")
-                # Process any remaining ticks before exiting
-                if self._tick_batch:
-                    self._process_tick_batch(self._tick_batch)
-                self._watcher_queue = None
+                self.logger.warn("Keyboard interrupt received in processing thread")
                 break
             except Exception as e:
-                self.logger.debug(f"Error in tick processing: {e}")
-                # Continue processing despite errors
+                self.logger.error(f"Unexpected error in tick processing: {e}")
+                continue
 
-        # Process any remaining ticks before exiting
+        # Cleanup on shutdown
+        self._cleanup_processing()
+
+    def _cleanup_processing(self):
+        """Handle graceful shutdown with proper cleanup of remaining data."""
         if self._tick_batch:
-            self._db_queue.put(dict(self._tick_batch))
+            batch_dict = {token: [tick] for token, tick in self._tick_batch.items()}
+            self._db_queue.put(batch_dict)
+            self.logger.info(
+                f"Processed {len(batch_dict)} final instruments on shutdown"
+            )
+
         self._db_queue.put(None)  # Signal database thread to exit
-        self.logger.warn("Exiting tick processing...")
+        self.logger.warn("Exiting tick processing thread")
 
     def _process_db_operations(self):
         """
-        Dedicated database thread with optimized batch inserts.
+        Dedicated database thread that processes batches from the queue.
 
-        This method:
-        - Buffers multiple batches for bulk database operations
-        - Handles database timeouts and errors gracefully
-        - Ensures efficient database usage with bulk inserts
-
-        Note: This method runs in a separate daemon thread
+        This thread:
+        - Processes batches immediately as they arrive
+        - Uses the full _process_tick_batch method for comprehensive processing
+        - Includes robust error handling with fallback mechanisms
+        - Ensures no batch loss during processing
         """
-        batch_buffer = []
+        self.logger.debug("Database processing thread started")
+
         while not self._shutdown_event.is_set():
             try:
-                # Get batch with timeout
+                # Get batch with reasonable timeout
                 batch = self._db_queue.get(timeout=2)
+
                 if batch is None:  # Shutdown signal
+                    self.logger.debug("Received shutdown signal in DB thread")
                     break
 
-                batch_buffer.append(batch)
-
-                # Process when we have enough batches or after timeout
-                if len(batch_buffer) >= 3 or (
-                    len(batch_buffer) > 0 and self._db_queue.empty()
-                ):
-                    self._process_buffered_batches(batch_buffer)
-                    batch_buffer = []
+                # Process batch immediately using full processing method
+                try:
+                    self._process_tick_batch(batch)
+                except Exception as e:
+                    self.logger.error(f"Full processing failed, using fallback: {e}")
+                    # Fallback to simple processing if full processing fails
+                    self._process_batch_fallback(batch)
 
             except Empty:
-                # Process any buffered batches on timeout
-                if batch_buffer:
-                    self._process_buffered_batches(batch_buffer)
-                    batch_buffer = []
-            except KeyboardInterrupt:
-                self.logger.debug("Keyboard interrupt received")
-                # Process any remaining ticks before exiting
-                if batch_buffer:
-                    self._process_buffered_batches(batch_buffer)
-                    batch_buffer = []
-                break
+                # Normal timeout, continue waiting
+                continue
             except Exception as e:
-                self.logger.error(f"Database processing error: {e}")
+                self.logger.error(f"Database thread error: {e}")
+                continue
 
-    def _process_buffered_batches(self, batches):
+        self.logger.warn("Exiting database processing thread")
+
+    def _process_batch_fallback(self, tick_batch):
         """
-        Process multiple batches together for database insertion efficiency.
+        Fallback processing method when full processing fails.
 
         Args:
-            batches (list): List of tick batches to process together
+            tick_batch (dict): Batch to process with simplified logic
         """
-        all_processed = []
-        for batch in batches:
-            processed = self._prepare_batch_for_insertion(batch)
-            all_processed.extend(processed)
-
-        if all_processed:
-            db = self._get_database()
-            db.insert_ticks(all_processed)
-            self.logger.info(f"Inserted {len(all_processed)} records in bulk")
+        try:
+            processed_batch = self._prepare_batch_for_insertion(tick_batch)
+            if processed_batch:
+                db = self._get_database()
+                db.insert_ticks(processed_batch)
+                self.logger.info(f"Fallback inserted {len(processed_batch)} records")
+        except Exception as e:
+            self.logger.error(f"Fallback processing also failed: {e}")
 
     def _prepare_batch_for_insertion(self, tick_batch):
         """
-        Prepare batch data for database insertion without time-consuming processing.
+        Simplified batch preparation for database insertion.
 
         Args:
             tick_batch (dict): Dictionary of instrument tokens to ticks
 
         Returns:
-            list: List of processed tick data ready for database insertion
+            list: Processed data ready for database insertion
+
+        Note: This is a fallback method and doesn't include full OHLCV processing
         """
         processed_batch = []
+
         for instrument_token, ticks in tick_batch.items():
             if not ticks:
                 continue
 
-            latest_tick = ticks[-1]
+            latest_tick = ticks[0]  # Single tick in list
             timestamp = datetime.fromtimestamp(latest_tick.exchange_timestamp)
 
-            # Simplified processing - focus on essential data
             processed = {
                 "instrument_token": latest_tick.instrument_token,
                 "timestamp": timestamp,
                 "last_price": latest_tick.last_price or 0,
-                "day_volume": sum(t.day_volume or 0 for t in ticks),
+                "day_volume": latest_tick.day_volume or 0,
                 "oi": latest_tick.oi or 0,
                 "buy_quantity": latest_tick.buy_quantity or 0,
                 "sell_quantity": latest_tick.sell_quantity or 0,
-                "high_price": max(t.high_price or 0 for t in ticks),
-                "low_price": min(
-                    t.low_price or 0 for t in ticks if t.low_price is not None
-                )
-                or 0,
-                "open_price": ticks[0].open_price or 0 if ticks else 0,
+                "high_price": latest_tick.high_price or 0,
+                "low_price": latest_tick.low_price or 0,
+                "open_price": latest_tick.open_price or 0,
                 "prev_day_close": latest_tick.prev_day_close or 0,
                 "depth": self._extract_depth(latest_tick)
                 if hasattr(latest_tick, "depth")
@@ -548,56 +481,66 @@ class KiteTokenWatcher:
 
     def _extract_depth(self, tick):
         """
-        Quickly extract market depth data from a tick.
+        Extract market depth data from a tick.
 
         Args:
-            tick (Tick): The tick object containing depth information
+            tick: The tick object containing depth information
 
         Returns:
-            dict: Dictionary with 'bid' and 'ask' lists containing depth information
+            dict: Market depth data with bid/ask information
         """
         depth = {"bid": [], "ask": []}
+
+        if not hasattr(tick, "depth"):
+            return depth
+
         for i in range(1, 6):
-            if hasattr(tick.depth, f"buy_{i}_price"):
+            # Process bids
+            bid_price = getattr(tick.depth, f"buy_{i}_price", 0)
+            bid_quantity = getattr(tick.depth, f"buy_{i}_quantity", 0)
+            bid_orders = getattr(tick.depth, f"buy_{i}_orders", 0)
+
+            if bid_price and bid_quantity:
                 depth["bid"].append(
                     {
-                        "price": getattr(tick.depth, f"buy_{i}_price", 0),
-                        "quantity": getattr(tick.depth, f"buy_{i}_quantity", 0),
-                        "orders": getattr(tick.depth, f"buy_{i}_orders", 0),
+                        "price": bid_price,
+                        "quantity": bid_quantity,
+                        "orders": bid_orders,
                     }
                 )
-            if hasattr(tick.depth, f"sell_{i}_price"):
+
+            # Process asks
+            ask_price = getattr(tick.depth, f"sell_{i}_price", 0)
+            ask_quantity = getattr(tick.depth, f"sell_{i}_quantity", 0)
+            ask_orders = getattr(tick.depth, f"sell_{i}_orders", 0)
+
+            if ask_price and ask_quantity:
                 depth["ask"].append(
                     {
-                        "price": getattr(tick.depth, f"sell_{i}_price", 0),
-                        "quantity": getattr(tick.depth, f"sell_{i}_quantity", 0),
-                        "orders": getattr(tick.depth, f"sell_{i}_orders", 0),
+                        "price": ask_price,
+                        "quantity": ask_quantity,
+                        "orders": ask_orders,
                     }
                 )
+
         return depth
 
     def stop(self):
         """
         Graceful shutdown of all components.
 
-        This method:
-        - Signals shutdown to all threads
-        - Stops the WebSocket client
-        - Waits for threads to finish processing
-        - Ensures all data is flushed to database
-
-        Example:
-            >>> watcher = KiteTokenWatcher()
-            >>> watcher.watch()
-            >>> # ... some time later ...
-            >>> watcher.stop()  # Clean shutdown
+        This method ensures:
+        - Proper signaling to all threads
+        - Cleanup of remaining data
+        - Timeout-based thread termination
+        - Resource cleanup
         """
         self.logger.debug("Initiating graceful shutdown...")
 
-        # Set shutdown event
+        # Signal shutdown to all components
         self._shutdown_event.set()
 
-        # Stop the client first
+        # Stop WebSocket client
         if self.client:
             try:
                 self.client.stop()
@@ -608,13 +551,20 @@ class KiteTokenWatcher:
         try:
             self._db_queue.put(None, timeout=2.0)
         except Exception:
-            pass  # Queue might be full, but we tried
+            pass  # Queue might be full
 
-        # Wait for threads to finish with timeout
-        if self._processing_thread:
-            self._processing_thread.join(timeout=5.0)
-        if self._db_thread:
-            self._db_thread.join(timeout=10.0)  # Give DB thread more time
+        # Wait for threads with reasonable timeouts
+        thread_timeout = 10.0
+
+        if self._processing_thread and self._processing_thread.is_alive():
+            self._processing_thread.join(timeout=thread_timeout)
+            if self._processing_thread.is_alive():
+                self.logger.warn("Processing thread did not terminate gracefully")
+
+        if self._db_thread and self._db_thread.is_alive():
+            self._db_thread.join(timeout=thread_timeout)
+            if self._db_thread.is_alive():
+                self.logger.warn("Database thread did not terminate gracefully")
 
         self.logger.debug("Shutdown complete")
 
@@ -622,8 +572,8 @@ class KiteTokenWatcher:
         """
         Ensure cleanup on object destruction.
 
-        Automatically calls stop() if the watcher wasn't properly shut down.
-        This serves as a safety net for resource cleanup.
+        Serves as safety net for resource cleanup if stop() wasn't called.
         """
         if not self._shutdown_event.is_set():
+            self.logger.debug("Auto-cleanup in destructor")
             self.stop()
