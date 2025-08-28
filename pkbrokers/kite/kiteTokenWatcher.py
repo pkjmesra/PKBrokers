@@ -24,14 +24,19 @@ SOFTWARE.
 
 """
 
+import json
+import multiprocessing
 import os
 import threading
 import time
+from collections import defaultdict
 from datetime import datetime, timedelta
 from queue import Empty, Queue
 
+from PKDevTools.classes import Archiver, log
 from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
+from PKDevTools.classes.PKJoinableQueue import PKJoinableQueue
 
 from pkbrokers.kite.instruments import KiteInstruments
 from pkbrokers.kite.zerodhaWebSocketClient import ZerodhaWebSocketClient
@@ -74,9 +79,185 @@ OTHER_INDICES = [
 ]
 
 
+class JSONFileWriter:
+    """Multiprocessing process to write ticks to JSON file with instrument_token as primary key"""
+
+    def __init__(self, json_file_path, max_queue_size=100000, log_level=0):
+        self.json_file_path = json_file_path
+        self.mp_context = multiprocessing.get_context("spawn")
+        self.data_queue = PKJoinableQueue(maxsize=max_queue_size, ctx=self.mp_context)
+        self.stop_event = self.mp_context.Event()
+        self.process = None
+        self.log_level = log_level
+        self.logger = None
+
+    def start(self):
+        """Start the JSON writer process"""
+        self.process = self.mp_context.Process(target=self._writer_loop)
+        self.process.daemon = True
+        self.process.start()
+
+    def setupLogger(self):
+        if self.log_level > 0:
+            os.environ["PKDevTools_Default_Log_Level"] = str(self.log_level)
+        log.setup_custom_logger(
+            "pkbrokersDB",
+            self.log_level,
+            trace=False,
+            log_file_path="PKBrokers-DBlog.txt",
+            filter=None,
+        )
+
+    def _writer_loop(self):
+        """Main writer loop running in separate process"""
+
+        self.setupLogger()
+        self.logger = default_logger()
+        self.logger.info(f"JSON file writer started for {self.json_file_path}")
+        # Load existing data if file exists
+        data = defaultdict(dict)
+        if os.path.exists(self.json_file_path):
+            try:
+                with open(self.json_file_path, "r") as f:
+                    data.update(json.load(f))
+                self.logger.info(
+                    f"Loaded existing data from {self.json_file_path} with {len(data.keys())} instruments."
+                )
+            except Exception as e:
+                self.logger.error(f"Error loading JSON file: {e}")
+
+        last_save_time = time.time()
+        save_interval = 5  # Save to file every 5 seconds
+
+        while not self.stop_event.is_set() or not self.data_queue.empty():
+            try:
+                # Process all available ticks in the queue
+                processed_count = 0
+                while True:
+                    try:
+                        tick_data = self.data_queue.get_nowait()
+                        self._update_instrument_data(data, tick_data)
+                        processed_count += 1
+                    except Empty:
+                        break
+
+                # Save to file periodically
+                current_time = time.time()
+                if current_time - last_save_time >= save_interval:
+                    self._save_to_file(data)
+                    last_save_time = current_time
+
+                    if processed_count > 0:
+                        self.logger.debug(
+                            f"JSON writer processed {processed_count} ticks, total instruments: {len(data)}"
+                        )
+
+                # Small sleep to prevent CPU spinning
+                time.sleep(0.1)
+
+            except Exception as e:
+                self.logger.error(f"JSON writer error: {e}")
+                time.sleep(1)
+
+        # Final save
+        self._save_to_file(data)
+        self.logger.warn("JSON writer process stopped")
+
+    def _update_instrument_data(self, data, tick_data):
+        """Update instrument data with latest tick information"""
+        instrument_token = tick_data["instrument_token"]
+
+        if instrument_token not in data:
+            # Initialize new instrument entry
+            data[instrument_token] = {
+                "instrument_token": instrument_token,
+                "ohlcv": {
+                    "open": tick_data["open_price"],
+                    "high": tick_data["high_price"],
+                    "low": tick_data["low_price"],
+                    "close": tick_data["last_price"],
+                    "volume": tick_data.get("day_volume", 0),
+                    "timestamp": tick_data["timestamp"].isoformat()
+                    if hasattr(tick_data["timestamp"], "isoformat")
+                    else tick_data["timestamp"],
+                },
+                "prev_day_close": tick_data["prev_day_close"],
+                "buy_quantity": tick_data["buy_quantity"],
+                "sell_quantity": tick_data["sell_quantity"],
+                "oi": tick_data["oi"],
+                "market_depth": tick_data.get("depth", {"bid": [], "ask": []}),
+                "last_updated": datetime.now().isoformat(),
+                "tick_count": 0,
+            }
+
+        # Update OHLCV
+        current_ohlcv = data[instrument_token]["ohlcv"]
+        current_price = tick_data["last_price"]
+
+        # Update high and low
+        if current_price > current_ohlcv["high"]:
+            current_ohlcv["high"] = current_price
+        if current_price < current_ohlcv["low"]:
+            current_ohlcv["low"] = current_price
+
+        # Update close and volume
+        current_ohlcv["close"] = current_price
+        current_ohlcv["volume"] = tick_data.get("day_volume", 0)
+        current_ohlcv["timestamp"] = (
+            tick_data["timestamp"].isoformat()
+            if hasattr(tick_data["timestamp"], "isoformat")
+            else tick_data["timestamp"]
+        )
+
+        # Update OI, buy_quantity, sell_quantity, prev_day_close
+        data[instrument_token]["oi"] = tick_data["oi"]
+        data[instrument_token]["buy_quantity"] = tick_data["buy_quantity"]
+        data[instrument_token]["sell_quantity"] = tick_data["sell_quantity"]
+        data[instrument_token]["prev_day_close"] = tick_data["prev_day_close"]
+
+        # Update market depth (always use latest depth)
+        if "depth" in tick_data and tick_data["depth"]:
+            data[instrument_token]["market_depth"] = tick_data["depth"]
+
+        # Update metadata
+        data[instrument_token]["last_updated"] = datetime.now().isoformat()
+        data[instrument_token]["tick_count"] += 1
+
+    def _save_to_file(self, data):
+        """Save data to JSON file atomically"""
+        try:
+            # Write to temporary file first
+            temp_file = self.json_file_path + ".tmp"
+            with open(temp_file, "w") as f:
+                json.dump(dict(data), f, indent=2, default=str)
+
+            # Atomically replace the original file
+            os.replace(temp_file, self.json_file_path)
+
+        except Exception as e:
+            self.logger.error(f"Error saving JSON file: {e}")
+
+    def add_tick(self, tick_data):
+        """Add tick data to the write queue"""
+        try:
+            self.data_queue.put(tick_data, timeout=0.1)
+            return True
+        except Exception:
+            self.logger.warning("JSON writer queue full, dropping tick")
+            return False
+
+    def stop(self):
+        """Stop the JSON writer"""
+        self.stop_event.set()
+        if self.process and self.process.is_alive():
+            self.process.join(timeout=5)
+        self.logger.info("JSON writer stopped")
+
+
 class KiteTokenWatcher:
     """
     A high-performance tick data watcher and processor for Zerodha Kite Connect API.
+    Now includes JSON file writing capability alongside database operations.
 
     This class manages real-time market data streaming with guaranteed:
     1. Exactly one tick per instrument_token in each batch (latest tick only)
@@ -108,7 +289,9 @@ class KiteTokenWatcher:
         >>> watcher.stop()   # Graceful shutdown
     """
 
-    def __init__(self, tokens=[], watcher_queue=None, client=None):
+    def __init__(
+        self, tokens=[], watcher_queue=None, client=None, json_output_path=None
+    ):
         """
         Initialize the KiteTokenWatcher instance.
 
@@ -116,6 +299,7 @@ class KiteTokenWatcher:
             tokens (list): List of instrument tokens to watch. If empty, fetches all equities.
             watcher_queue (Queue): Custom queue for tick data. Creates default if not provided.
             client (ZerodhaWebSocketClient): Pre-configured WebSocket client.
+            json_output_path (str): Path for JSON output file. If None, uses default.
 
         CRITICAL: _tick_batch is a dictionary, not defaultdict(list), ensuring only
         one tick per instrument_token by design (key overwrites on new ticks).
@@ -125,6 +309,11 @@ class KiteTokenWatcher:
         self._processing_thread = None
         self._db_thread = None
         self._shutdown_event = threading.Event()
+        self.log_level = (
+            0
+            if "PKDevTools_Default_Log_Level" not in os.environ.keys()
+            else int(os.environ["PKDevTools_Default_Log_Level"])
+        )
 
         # Split tokens into batches of max 500 (Zerodha limit)
         self.token_batches = [
@@ -135,6 +324,14 @@ class KiteTokenWatcher:
         self.client = client
         self.logger = default_logger()
         self._db_instance = None
+
+        # JSON file writer
+        self.json_output_path = json_output_path or os.path.join(
+            Archiver.get_user_data_dir(), "ticks.json"
+        )
+        self.json_writer = JSONFileWriter(
+            json_file_path=self.json_output_path, log_level=self.log_level
+        )
 
         # CRITICAL: Using dictionary instead of defaultdict(list) ensures only
         # the latest tick for each instrument_token is stored (key overwrite behavior)
@@ -157,6 +354,11 @@ class KiteTokenWatcher:
         """
         local_secrets = PKEnvironment().allSecrets
         self._db_instance = self._get_database()
+
+        # Start JSON writer first
+        self.json_writer.start()
+        time.sleep(1)  # Let JSON writer initialize
+
         # Auto-fetch tokens if none provided
         if len(self.token_batches) == 0:
             API_KEY = "kitefront"
@@ -280,6 +482,12 @@ class KiteTokenWatcher:
             }
             processed_batch.append(processed)
 
+            # Send to JSON writer
+            try:
+                self.json_writer.add_tick(processed)
+            except Exception as e:
+                self.logger.error(f"Error sending to JSON writer: {e}")
+
         # Insert into database
         try:
             db = self._get_database()
@@ -336,7 +544,7 @@ class KiteTokenWatcher:
                         }
                         self._db_queue.put(batch_to_process)
                         self.logger.info(
-                            f"Queued {len(self._tick_batch)} instruments for DB processing"
+                            f"Queued {len(self._tick_batch)} instruments for processing"
                         )
                         self._tick_batch.clear()
 
@@ -544,6 +752,9 @@ class KiteTokenWatcher:
 
         # Signal shutdown to all components
         self._shutdown_event.set()
+
+        # Stop JSON writer
+        self.json_writer.stop()
 
         # Stop WebSocket client
         if self.client:
