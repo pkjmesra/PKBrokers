@@ -26,6 +26,7 @@ SOFTWARE.
 
 import argparse
 import logging
+import multiprocessing
 import os
 import sys
 
@@ -36,6 +37,9 @@ LOG_LEVEL = (
     if "PKDevTools_Default_Log_Level" not in os.environ.keys()
     else int(os.environ["PKDevTools_Default_Log_Level"])
 )
+
+if __name__ == "__main__":
+    multiprocessing.freeze_support()
 
 # Argument Parsing for test purpose
 argParser = argparse.ArgumentParser()
@@ -186,6 +190,12 @@ def setupLogger(logLevel=LOG_LEVEL):
 
 
 def pkkite():
+    if sys.platform.startswith("darwin"):
+        try:
+            multiprocessing.set_start_method("fork")
+        except RuntimeError as e:  # pragma: no cover
+            pass
+
     if not validate_credentials():
         sys.exit()
 

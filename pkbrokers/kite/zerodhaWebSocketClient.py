@@ -30,6 +30,7 @@ import json
 import multiprocessing
 import os
 import queue
+import sys
 import threading
 import time
 from datetime import datetime
@@ -44,6 +45,19 @@ from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 from pkbrokers.kite.threadSafeDatabase import ThreadSafeDatabase
 from pkbrokers.kite.ticks import Tick
 from pkbrokers.kite.zerodhaWebSocketParser import ZerodhaWebSocketParser
+
+if __name__ == "__main__":
+    multiprocessing.freeze_support()
+
+try:
+    # Python 3.4+
+    if sys.platform.startswith("win"):
+        import multiprocessing.popen_spawn_win32 as forking
+    else:
+        import multiprocessing.popen_fork as forking
+except ImportError:
+    print("Contact developer! Your platform does not support multiprocessing!")
+
 
 DEFAULT_PATH = Archiver.get_user_data_dir()
 
@@ -111,6 +125,7 @@ class WebSocketProcess:
         self.watcher_queue = watcher_queue
         self.log_level = log_level
         self.logger = None
+        self.multiprocessingForWindows()
 
     def _build_websocket_url(self):
         """Build WebSocket URL for this process."""
@@ -326,6 +341,31 @@ class WebSocketProcess:
 
         self.logger.info(f"Starting WebSocket process {self.websocket_index}")
         asyncio.run(self._connect_websocket())
+
+    def multiprocessingForWindows(self):
+        if sys.platform.startswith("win"):
+            # First define a modified version of Popen.
+            class _Popen(forking.Popen):
+                def __init__(self, *args, **kw):
+                    if hasattr(sys, "frozen"):
+                        # We have to set original _MEIPASS2 value from sys._MEIPASS
+                        # to get --onefile mode working.
+                        os.putenv("_MEIPASS2", sys._MEIPASS)
+                    try:
+                        super(_Popen, self).__init__(*args, **kw)
+                    finally:
+                        if hasattr(sys, "frozen"):
+                            # On some platforms (e.g. AIX) 'os.unsetenv()' is not
+                            # available. In those cases we cannot delete the variable
+                            # but only set it to the empty string. The bootloader
+                            # can handle this case.
+                            if hasattr(os, "unsetenv"):
+                                os.unsetenv("_MEIPASS2")
+                            else:
+                                os.putenv("_MEIPASS2", "")
+
+            # Second override 'Popen' class with our modified version.
+            forking.Popen = _Popen
 
 
 def websocket_process_worker(args):
@@ -545,7 +585,9 @@ class ZerodhaWebSocketClient:
 
     def _monitor_processes(self, process_args):
         """Monitor and restart failed processes"""
-        ctx = multiprocessing.get_context("spawn")
+        ctx = multiprocessing.get_context(
+            "spawn" if not sys.platform.startswith("darwin") else "fork"
+        )
 
         try:
             while not self.stop_event.is_set():
@@ -613,7 +655,9 @@ class ZerodhaWebSocketClient:
             process_args.append(args)
 
         # Start WebSocket processes using spawn context for cross-platform compatibility
-        ctx = multiprocessing.get_context("spawn")
+        ctx = multiprocessing.get_context(
+            "spawn" if not sys.platform.startswith("darwin") else "fork"
+        )
         self.ws_processes = []
 
         for args in process_args:
