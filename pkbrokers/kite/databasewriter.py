@@ -348,7 +348,7 @@ class DatabaseWriterProcess:
 
                 # Recreate connection if we have persistent errors
                 if consecutive_errors >= max_consecutive_errors:
-                    self.logger.warning(
+                    self.logger.warn(
                         "Recreating database connection due to persistent errors"
                     )
                     try:

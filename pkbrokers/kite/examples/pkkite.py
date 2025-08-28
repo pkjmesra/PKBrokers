@@ -192,7 +192,7 @@ def setupLogger(logLevel=LOG_LEVEL):
 def pkkite():
     if sys.platform.startswith("darwin"):
         try:
-            multiprocessing.set_start_method("fork")
+            multiprocessing.set_start_method("spawn", force=True)
         except RuntimeError:  # pragma: no cover
             pass
 

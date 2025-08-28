@@ -416,10 +416,10 @@ class ZerodhaWebSocketClient:
 
         # Use consistent multiprocessing context
         self.mp_context = multiprocessing.get_context(
-            "spawn" if not sys.platform.startswith("darwin") else "fork"
+            "spawn" #if not sys.platform.startswith("darwin") else "fork"
         )
         self.manager = self.mp_context.Manager()
-        self.data_queue = self.manager.Queue(maxsize=10000)
+        self.data_queue = self.manager.Queue(maxsize=0)
         self.stop_event = self.mp_context.Event()
 
         self.db_conn = ThreadSafeDatabase()
@@ -596,9 +596,7 @@ class ZerodhaWebSocketClient:
                 # Check WebSocket processes
                 for i, p in enumerate(self.ws_processes):
                     if not p.is_alive():
-                        self.logger.warning(
-                            f"WebSocket process {i} died, restarting..."
-                        )
+                        self.logger.warn(f"WebSocket process {i} died, restarting...")
                         args = process_args[i]
                         new_p = self.mp_context.Process(
                             target=websocket_process_worker, args=(args,)

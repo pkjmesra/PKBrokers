@@ -118,8 +118,8 @@ class KiteTokenWatcher:
         CRITICAL: _tick_batch is a dictionary, not defaultdict(list), ensuring only
         one tick per instrument_token by design (key overwrites on new ticks).
         """
-        self._watcher_queue = watcher_queue or Queue(maxsize=10000)
-        self._db_queue = Queue(maxsize=10000)
+        self._watcher_queue = watcher_queue or Queue(maxsize=0)
+        self._db_queue = Queue(maxsize=0)
         self._processing_thread = None
         self._db_thread = None
         self._shutdown_event = threading.Event()
@@ -280,7 +280,7 @@ class KiteTokenWatcher:
             db = self._get_database()
             db.insert_ticks(processed_batch)
             self.logger.info(
-                f"Successfully inserted {len(processed_batch)} records to database"
+                f"Successfully added {len(processed_batch)} records to database queue"
             )
         except Exception as e:
             self.logger.error(f"Error inserting to database: {e}")

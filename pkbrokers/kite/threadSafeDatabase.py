@@ -24,14 +24,18 @@ SOFTWARE.
 
 """
 
+import multiprocessing
 import os
+import queue
 import sqlite3
+import sys
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from PKDevTools.classes import Archiver
+from PKDevTools.classes import Archiver, log
 from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
 
@@ -39,213 +43,149 @@ DEFAULT_PATH = Archiver.get_user_data_dir()
 DEFAULT_DB_PATH = os.path.join(DEFAULT_PATH, "ticks.db")
 
 
-class ThreadSafeDatabase:
+class HighPerformanceTursoWriter:
+    """Dedicated writer process for high-throughput Turso inserts"""
+
     def __init__(
         self,
-        db_type: str = PKEnvironment().DB_TYPE,  # "local" or "turso"
-        db_path: Optional[str] = None,
-        turso_url: Optional[str] = PKEnvironment().TDU,
-        turso_auth_token: Optional[str] = PKEnvironment().TAT,
+        db_config,
+        batch_size=200,
+        max_queue_size=0,
+        mp_context=None,
+        log_level=0
+        if "PKDevTools_Default_Log_Level" not in os.environ.keys()
+        else int(os.environ["PKDevTools_Default_Log_Level"]),
     ):
-        self.db_type = db_type.lower()
-        self.db_path = db_path or os.path.join(DEFAULT_PATH, "ticks.db")
-        self.turso_url = turso_url
-        self.turso_auth_token = turso_auth_token
-        self.local = threading.local()
-        self.lock = threading.Lock()
+        self.db_config = db_config
+        self.batch_size = batch_size
+        self.mp_context = mp_context or multiprocessing.get_context(
+            "spawn" #if not sys.platform.startswith("darwin") else "fork"
+        )
+        self.data_queue = self.mp_context.Queue(maxsize=max_queue_size)
+        self.stop_event = self.mp_context.Event()
+        self.log_level = log_level
+        self.setupLogger()
         self.logger = default_logger()
+        self.logger.info("Starting HighPerformanceTursoWriter logger...")
 
-        # Initialize the appropriate database
-        self._initialize_db()
+    def setupLogger(self):
+        if self.log_level > 0:
+            os.environ["PKDevTools_Default_Log_Level"] = str(self.log_level)
+        log.setup_custom_logger(
+            "pkbrokers",
+            self.log_level,
+            trace=False,
+            log_file_path="PKBrokers-log.txt",
+            filter=None,
+        )
 
-    def _initialize_db(self, force_drop: bool = False):
-        """Initialize database schema for either local or turso"""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
+    def start(self):
+        """Start the writer process with proper context"""
+        self.process = self.mp_context.Process(target=self._writer_loop)
+        self.process.daemon = True
+        self.process.start()
 
-            if force_drop and self.db_type == "local":
-                self.logger.debug("Dropping tables market_depth, ticks.")
-                cursor.execute("DROP TABLE IF EXISTS market_depth")
-                cursor.execute("DROP TABLE IF EXISTS ticks")
-
-            # Enable strict mode if supported
-            if self.db_type == "local":
-                cursor.execute("PRAGMA strict=ON")
-
-            # Main ticks table - remove primary key constraint to allow multiple entries
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS ticks (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    instrument_token INTEGER,
-                    timestamp INTEGER,  -- Unix timestamp
-                    last_price REAL,
-                    day_volume INTEGER,
-                    oi INTEGER,
-                    buy_quantity INTEGER,
-                    sell_quantity INTEGER,
-                    high_price REAL,
-                    low_price REAL,
-                    open_price REAL,
-                    prev_day_close REAL
-                )
-            """)
-
-            # Market depth table - remove primary key constraint
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS market_depth (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    instrument_token INTEGER,
-                    timestamp INTEGER,  -- Unix timestamp
-                    depth_type TEXT CHECK(depth_type IN ('bid', 'ask')),
-                    position INTEGER CHECK(position BETWEEN 1 AND 5),
-                    price REAL,
-                    quantity INTEGER,
-                    orders INTEGER
-                )
-            """)
-
-            # Indexes for faster queries
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_ticks_instrument ON ticks(instrument_token)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_ticks_timestamp ON ticks(timestamp)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_ticks_instrument_timestamp ON ticks(instrument_token, timestamp)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_depth_instrument ON market_depth(instrument_token)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_depth_timestamp ON market_depth(timestamp)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_depth_instrument_timestamp ON market_depth(instrument_token, timestamp)
-            """)
-
-            # Remove the instrument_last_update table and triggers since we're not updating
-            if self.db_type == "local":
-                cursor.execute("DROP TABLE IF EXISTS instrument_last_update")
-                cursor.execute("DROP TRIGGER IF EXISTS update_timestamp_insert")
-                cursor.execute("DROP TRIGGER IF EXISTS update_timestamp_update")
-
-            # Local database optimizations
-            if self.db_type == "local":
-                cursor.execute("PRAGMA journal_mode=WAL")
-                cursor.execute("PRAGMA synchronous = NORMAL")
-                cursor.execute("PRAGMA cache_size = -70000")  # 70MB cache
-
-            conn.commit()
-
-    def _get_local_connection(self):
-        """Get a local SQLite connection"""
-        if not hasattr(self.local, "conn"):
-            self.local.conn = sqlite3.connect(self.db_path, timeout=30)
-            self.local.conn.execute("PRAGMA journal_mode=WAL")
-        return self.local.conn
-
-    def _get_turso_connection(self, force_connect=False):
-        """Get a Turso database connection using libsql"""
+    def _writer_loop(self):
+        """Main writer loop running in separate process"""
         try:
             import libsql
-
-            if not hasattr(self.local, "conn") or force_connect:
-                if self.turso_url and self.turso_auth_token:
-                    self.local.conn = libsql.connect(
-                        database=self.turso_url, auth_token=self.turso_auth_token
-                    )
-                else:
-                    raise ValueError(
-                        "Turso URL and auth token are required for remote database"
-                    )
-            return self.local.conn
         except ImportError:
-            raise ImportError(
-                "libsql package is required for Turso database support. Install with: pip install libsql"
-            )
-
-    @contextmanager
-    def get_connection(self, force_connect=False):
-        """Get a thread-local database connection for either local or turso"""
-        if self.db_type == "local":
-            conn = self._get_local_connection()
-        elif self.db_type == "turso":
-            conn = self._get_turso_connection(force_connect=force_connect)
-        else:
-            raise ValueError(f"Unsupported database type: {self.db_type}")
-
-        try:
-            yield conn
-        except Exception as e:
-            try:
-                if hasattr(conn, "rollback"):
-                    conn.rollback()
-            except BaseException:
-                pass
-            raise e
-
-    def close_all(self):
-        """Close all thread connections"""
-        if hasattr(self.local, "conn"):
-            try:
-                self.local.conn.close()
-                delattr(self.local, "conn")
-            except BaseException:
-                pass
-
-    def insert_ticks(
-        self, ticks: List[Dict[str, Any]], force_connect=False, retrial=False
-    ):
-        """Thread-safe batch insert with market depth for both local and turso"""
-        if not ticks:
+            self.logger.error("libsql package required for Turso support")
             return
 
-        with self.lock, self.get_connection(force_connect=force_connect) as conn:
+        # Create connection
+        conn = libsql.connect(
+            database=self.db_config["turso_url"],
+            auth_token=self.db_config["turso_auth_token"],
+        )
+
+        batch = []
+        last_flush = time.time()
+        total_inserted = 0
+        consecutive_errors = 0
+
+        while not self.stop_event.is_set() or not self.data_queue.empty():
             try:
+                # Get data from queue
+                try:
+                    tick_data = self.data_queue.get(timeout=0.1)
+                    batch.append(tick_data)
+                except queue.Empty:
+                    pass
+
+                # Flush if batch size reached or timeout
+                current_time = time.time()
+                should_flush = (
+                    len(batch) >= self.batch_size or (current_time - last_flush) > 1.0
+                )
+
+                if should_flush and batch:
+                    success = self._insert_batch(conn, batch)
+                    if success:
+                        total_inserted += len(batch)
+                        batch = []
+                        last_flush = current_time
+                        consecutive_errors = 0
+
+                        # Log every 1000 inserts
+                        if total_inserted % 1000 == 0:
+                            self.logger.info(f"Inserted {total_inserted} ticks total")
+                    else:
+                        consecutive_errors += 1
+                        # Backoff on consecutive errors
+                        time.sleep(min(0.1 * (2**consecutive_errors), 5.0))
+
+            except Exception as e:
+                self.logger.error(f"Writer loop error: {str(e)}")
+                consecutive_errors += 1
+                time.sleep(min(0.1 * (2**consecutive_errors), 5.0))
+
+        # Final flush
+        if batch:
+            self._insert_batch(conn, batch)
+
+        try:
+            conn.close()
+        except BaseException:
+            pass
+
+    def _insert_batch(self, conn, batch):
+        """Insert a batch of ticks"""
+        try:
+            with conn:
                 cursor = conn.cursor()
 
-                # Prepare tick data - convert to proper numeric timestamp (Unix timestamp)
-                tick_data = [
-                    (
-                        t["instrument_token"],
-                        t["timestamp"].timestamp()
-                        if hasattr(t["timestamp"], "timestamp")
-                        else t["timestamp"],
-                        t["last_price"],
-                        t["day_volume"],
-                        t["oi"],
-                        t["buy_quantity"],
-                        t["sell_quantity"],
-                        t["high_price"],
-                        t["low_price"],
-                        t["open_price"],
-                        t["prev_day_close"],
-                    )
-                    for t in ticks
-                ]
-
-                # Simple INSERT for ticks (no UPSERT)
-                insert_sql = """
-                    INSERT INTO ticks (
-                        instrument_token, timestamp, last_price, day_volume, oi,
-                        buy_quantity, sell_quantity, high_price, low_price,
-                        open_price, prev_day_close
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """
-
-                cursor.executemany(insert_sql, tick_data)
-
-                # Insert market depth data
+                # Prepare tick data
+                tick_data = []
                 depth_data = []
-                for tick in ticks:
-                    if "depth" in tick and tick["depth"]:
-                        # Convert timestamp to numeric (Unix timestamp)
-                        ts = (
-                            tick["timestamp"].timestamp()
-                            if hasattr(tick["timestamp"], "timestamp")
-                            else tick["timestamp"]
+
+                for tick in batch:
+                    # Convert timestamp
+                    ts = (
+                        tick["timestamp"].timestamp()
+                        if hasattr(tick["timestamp"], "timestamp")
+                        else tick["timestamp"]
+                    )
+
+                    # Tick data
+                    tick_data.append(
+                        (
+                            tick["instrument_token"],
+                            ts,
+                            tick["last_price"],
+                            tick["day_volume"],
+                            tick["oi"],
+                            tick["buy_quantity"],
+                            tick["sell_quantity"],
+                            tick["high_price"],
+                            tick["low_price"],
+                            tick["open_price"],
+                            tick["prev_day_close"],
                         )
+                    )
+
+                    # Depth data
+                    if "depth" in tick and tick["depth"]:
                         inst = tick["instrument_token"]
 
                         # Process bids
@@ -276,46 +216,354 @@ class ThreadSafeDatabase:
                                 )
                             )
 
-                if depth_data:
-                    # Simple INSERT for market depth (no UPSERT)
-                    depth_insert_sql = """
-                        INSERT INTO market_depth (
-                            instrument_token, timestamp, depth_type,
-                            position, price, quantity, orders
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """
+                # Batch insert ticks
+                if tick_data:
+                    cursor.executemany(TICK_INSERT_SQL, tick_data)
 
-                    cursor.executemany(depth_insert_sql, depth_data)
+                # Batch insert depth
+                if depth_data:
+                    cursor.executemany(DEPTH_INSERT_SQL, depth_data)
+
+                return True
+
+        except Exception as e:
+            self.logger.error(f"Batch insert failed: {str(e)}")
+            return False
+
+    def add_ticks(self, ticks):
+        """Add ticks to the write queue"""
+        for tick in ticks:
+            try:
+                self.data_queue.put(tick, timeout=0.1)
+            except queue.Full:
+                self.logger.warn("Write queue full, dropping ticks")
+                break
+
+    def stop(self):
+        """Stop the writer"""
+        self.stop_event.set()
+        try:
+            self.process.join(timeout=5)
+        except BaseException:
+            pass
+
+
+# SQL templates for batch inserts
+TICK_INSERT_SQL = """
+INSERT INTO ticks (
+    instrument_token, timestamp, last_price, day_volume, oi,
+    buy_quantity, sell_quantity, high_price, low_price,
+    open_price, prev_day_close
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
+DEPTH_INSERT_SQL = """
+INSERT INTO market_depth (
+    instrument_token, timestamp, depth_type,
+    position, price, quantity, orders
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+"""
+
+
+class ThreadSafeDatabase:
+    def __init__(
+        self,
+        db_type: str = PKEnvironment().DB_TYPE,  # "local" or "turso"
+        db_path: Optional[str] = None,
+        turso_url: Optional[str] = PKEnvironment().TDU,
+        turso_auth_token: Optional[str] = PKEnvironment().TAT,
+        max_batch_size: int = 200,
+        num_writers: int = 3,  # Multiple writers for Turso
+        mp_context=None,  # Explicit multiprocessing context
+        log_level=0
+        if "PKDevTools_Default_Log_Level" not in os.environ.keys()
+        else int(os.environ["PKDevTools_Default_Log_Level"]),
+    ):
+        self.db_type = db_type.lower()
+        self.db_path = db_path or os.path.join(DEFAULT_PATH, "ticks.db")
+        self.turso_url = turso_url
+        self.turso_auth_token = turso_auth_token
+        self.max_batch_size = max_batch_size
+        self.num_writers = num_writers if db_type == "turso" else 1
+        self.log_level = log_level
+        # Use consistent multiprocessing context
+        self.mp_context = mp_context or multiprocessing.get_context(
+            "spawn" #if not sys.platform.startswith("darwin") else "fork"
+        )
+
+        self.local = threading.local()
+        self.lock = threading.Lock()
+        # Initialize process-specific logger
+        self.setupLogger()
+        self.logger = default_logger()
+        self.logger.info("Starting ThreadSafeDatabase logger...")
+
+        # For Turso: use dedicated writer processes
+        self.turso_writers = []
+        self.write_queue = queue.Queue(maxsize=0)
+
+        # Initialize the appropriate database
+        self._initialize_db()
+
+        # Start Turso writers if needed
+        if self.db_type == "turso":
+            self._start_turso_writers()
+
+    def _start_turso_writers(self):
+        """Start multiple writer processes for Turso with proper context"""
+        for i in range(self.num_writers):
+            writer = HighPerformanceTursoWriter(
+                db_config={
+                    "turso_url": self.turso_url,
+                    "turso_auth_token": self.turso_auth_token,
+                },
+                batch_size=self.max_batch_size,
+                mp_context=self.mp_context,  # Pass the same context
+                log_level=self.log_level
+            )
+            writer.start()
+            self.turso_writers.append(writer)
+            self.logger.info(f"Started Turso writer process {i + 1}")
+
+    def _initialize_db(self, force_drop: bool = False):
+        """Initialize database schema - optimized for batch inserts"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            if force_drop and self.db_type == "local":
+                cursor.execute("DROP TABLE IF EXISTS market_depth")
+                cursor.execute("DROP TABLE IF EXISTS ticks")
+
+            # Main ticks table - optimized structure
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ticks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    instrument_token INTEGER,
+                    timestamp INTEGER,
+                    last_price REAL,
+                    day_volume INTEGER,
+                    oi INTEGER,
+                    buy_quantity INTEGER,
+                    sell_quantity INTEGER,
+                    high_price REAL,
+                    low_price REAL,
+                    open_price REAL,
+                    prev_day_close REAL,
+                    created_at INTEGER DEFAULT (strftime('%s', 'now'))
+                ) STRICT
+            """)
+
+            # Market depth table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS market_depth (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    instrument_token INTEGER,
+                    timestamp INTEGER,
+                    depth_type TEXT CHECK(depth_type IN ('bid', 'ask')),
+                    position INTEGER CHECK(position BETWEEN 1 AND 5),
+                    price REAL,
+                    quantity INTEGER,
+                    orders INTEGER,
+                    created_at INTEGER DEFAULT (strftime('%s', 'now'))
+                ) STRICT
+            """)
+
+            # Optimized indexes for batch inserts
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_ticks_main
+                ON ticks(instrument_token, timestamp)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_depth_main
+                ON market_depth(instrument_token, timestamp, depth_type)
+            """)
+
+            # Local database optimizations
+            if self.db_type == "local":
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA synchronous = NORMAL")
+                cursor.execute("PRAGMA cache_size = -100000")  # 100MB cache
+                cursor.execute("PRAGMA temp_store = MEMORY")
+                cursor.execute("PRAGMA mmap_size = 30000000000")  # 30GB mmap
+
+            conn.commit()
+
+    def _get_local_connection(self):
+        """Get optimized local SQLite connection"""
+        if not hasattr(self.local, "conn"):
+            self.local.conn = sqlite3.connect(self.db_path, timeout=30)
+            # Optimize connection for batch inserts
+            self.local.conn.execute("PRAGMA journal_mode=WAL")
+            self.local.conn.execute("PRAGMA synchronous = NORMAL")
+            self.local.conn.execute("PRAGMA cache_size = -100000")
+            self.local.conn.execute("PRAGMA temp_store = MEMORY")
+        return self.local.conn
+
+    def _get_turso_connection(self, force_connect=False):
+        """Get Turso connection - only for queries, not for inserts"""
+        try:
+            import libsql
+
+            if not hasattr(self.local, "conn") or force_connect:
+                self.local.conn = libsql.connect(
+                    database=self.turso_url, auth_token=self.turso_auth_token
+                )
+            return self.local.conn
+        except ImportError:
+            raise ImportError("libsql package required for Turso support")
+
+    def setupLogger(self):
+        if self.log_level > 0:
+            os.environ["PKDevTools_Default_Log_Level"] = str(self.log_level)
+        log.setup_custom_logger(
+            "pkbrokers",
+            self.log_level,
+            trace=False,
+            log_file_path="PKBrokers-log.txt",
+            filter=None,
+        )
+
+    @contextmanager
+    def get_connection(self, force_connect=False):
+        """Get connection for queries"""
+        if self.db_type == "local":
+            conn = self._get_local_connection()
+        elif self.db_type == "turso":
+            conn = self._get_turso_connection(force_connect=force_connect)
+        else:
+            raise ValueError(f"Unsupported database type: {self.db_type}")
+
+        try:
+            yield conn
+        except Exception as e:
+            try:
+                conn.rollback()
+            except BaseException:
+                pass
+            raise e
+
+    def insert_ticks(
+        self, ticks: List[Dict[str, Any]], force_connect=False, retrial=False
+    ):
+        """High-performance batch insert"""
+        if not ticks:
+            return
+
+        # For Turso: use dedicated writers
+        if self.db_type == "turso":
+            for writer in self.turso_writers:
+                writer.add_ticks(ticks)
+            return
+
+        # For local: optimized batch insert
+        with self.lock, self.get_connection(force_connect=force_connect) as conn:
+            try:
+                cursor = conn.cursor()
+
+                # Prepare data in bulk
+                tick_data = []
+                depth_data = []
+
+                for tick in ticks:
+                    # Convert timestamp
+                    ts = (
+                        tick["timestamp"].timestamp()
+                        if hasattr(tick["timestamp"], "timestamp")
+                        else tick["timestamp"]
+                    )
+
+                    # Tick data
+                    tick_data.append(
+                        (
+                            tick["instrument_token"],
+                            ts,
+                            tick["last_price"],
+                            tick["day_volume"],
+                            tick["oi"],
+                            tick["buy_quantity"],
+                            tick["sell_quantity"],
+                            tick["high_price"],
+                            tick["low_price"],
+                            tick["open_price"],
+                            tick["prev_day_close"],
+                        )
+                    )
+
+                    # Depth data
+                    if "depth" in tick and tick["depth"]:
+                        inst = tick["instrument_token"]
+
+                        # Process bids
+                        for i, bid in enumerate(tick["depth"].get("bid", [])[:5], 1):
+                            depth_data.append(
+                                (
+                                    inst,
+                                    ts,
+                                    "bid",
+                                    i,
+                                    bid.get("price", 0),
+                                    bid.get("quantity", 0),
+                                    bid.get("orders", 0),
+                                )
+                            )
+
+                        # Process asks
+                        for i, ask in enumerate(tick["depth"].get("ask", [])[:5], 1):
+                            depth_data.append(
+                                (
+                                    inst,
+                                    ts,
+                                    "ask",
+                                    i,
+                                    ask.get("price", 0),
+                                    ask.get("quantity", 0),
+                                    ask.get("orders", 0),
+                                )
+                            )
+
+                # Batch insert ticks
+                if tick_data:
+                    cursor.executemany(TICK_INSERT_SQL, tick_data)
+
+                # Batch insert depth
+                if depth_data:
+                    cursor.executemany(DEPTH_INSERT_SQL, depth_data)
 
                 conn.commit()
-                self.logger.info(
-                    f"Inserted {len(ticks)} ticks to {self.db_type} database."
-                )
+
+                # Log performance
+                if len(ticks) > 50:
+                    self.logger.debug(f"Inserted {len(ticks)} ticks in batch")
 
             except Exception as e:
-                self.logger.error(f"Database insert error: {str(e)}")
+                self.logger.error(f"Batch insert error: {str(e)}")
                 try:
-                    if hasattr(conn, "rollback"):
-                        conn.rollback()
+                    conn.rollback()
                 except BaseException:
                     pass
-                if (
-                    self.db_type == "turso"
-                    and "stream not found" in str(e).lower()
-                    and not retrial
-                ):
-                    self.logger.error(
-                        "Reinitializing turso database connection due to stream error"
-                    )
+
+                # Handle reconnection
+                if "operational" in str(e).lower() and not retrial:
                     self.close_all()
                     self.insert_ticks(ticks=ticks, force_connect=True, retrial=True)
-                # For local database, reinitialize on operational errors
-                if self.db_type == "local" and "operational" in str(e).lower():
-                    self.logger.error(
-                        "Reinitializing local database due to operational error"
-                    )
-                    self.close_all()
-                    self._initialize_db(force_drop=True)
+
+    def close_all(self):
+        """Close all connections and writers"""
+        # Close thread connections
+        if hasattr(self.local, "conn"):
+            try:
+                self.local.conn.close()
+                delattr(self.local, "conn")
+            except BaseException:
+                pass
+
+        # Stop Turso writers
+        for writer in self.turso_writers:
+            try:
+                writer.stop()
+            except BaseException:
+                pass
+        self.turso_writers = []
 
     def get_ohlcv(
         self,

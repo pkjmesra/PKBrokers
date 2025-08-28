@@ -1086,7 +1086,7 @@ class TestProcessTicks(unittest.TestCase):
             enctoken="dummy_token", user_id="DUMMY_USER"
         )
         self.client.stop_event = MagicMock()
-        self.client.data_queue = Queue(maxsize=10000)
+        self.client.data_queue = Queue(maxsize=0)
         self.client.db_conn = MagicMock()
 
         # Sample tick data
