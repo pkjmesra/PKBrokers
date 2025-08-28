@@ -413,9 +413,15 @@ class ZerodhaWebSocketClient:
         self.user_id = user_id
         self.api_key = api_key
         self.logger = default_logger()
-        self.manager = multiprocessing.Manager()
+        
+        # Use consistent multiprocessing context
+        self.mp_context = multiprocessing.get_context(
+            "spawn" if not sys.platform.startswith("darwin") else "fork"
+        )
+        self.manager = self.mp_context.Manager()
         self.data_queue = self.manager.Queue(maxsize=10000)
-        self.stop_event = multiprocessing.Event()
+        self.stop_event = self.mp_context.Event()
+        
         self.db_conn = ThreadSafeDatabase()
         self.token_batches = token_batches
         self.token_timestamp = 0
@@ -585,10 +591,6 @@ class ZerodhaWebSocketClient:
 
     def _monitor_processes(self, process_args):
         """Monitor and restart failed processes"""
-        ctx = multiprocessing.get_context(
-            "spawn" if not sys.platform.startswith("darwin") else "fork"
-        )
-
         try:
             while not self.stop_event.is_set():
                 # Check WebSocket processes
@@ -598,7 +600,7 @@ class ZerodhaWebSocketClient:
                             f"WebSocket process {i} died, restarting..."
                         )
                         args = process_args[i]
-                        new_p = ctx.Process(
+                        new_p = self.mp_context.Process(
                             target=websocket_process_worker, args=(args,)
                         )
                         new_p.daemon = True
@@ -654,40 +656,15 @@ class ZerodhaWebSocketClient:
             )
             process_args.append(args)
 
-        # Start WebSocket processes using spawn context for cross-platform compatibility
-        ctx = multiprocessing.get_context(
-            "spawn" if not sys.platform.startswith("darwin") else "fork"
-        )
+        # Start WebSocket processes using the same context
         self.ws_processes = []
 
         for args in process_args:
-            p = ctx.Process(target=websocket_process_worker, args=(args,))
+            p = self.mp_context.Process(target=websocket_process_worker, args=(args,))
             p.daemon = True
             p.start()
             self.ws_processes.append(p)
 
-        # Monitor processes
-        try:
-            while not self.stop_event.is_set():
-                # Check if any process has died and restart if needed
-                for i, p in enumerate(self.ws_processes):
-                    if not p.is_alive():
-                        self.logger.warning(f"Process {i} died, restarting...")
-                        args = process_args[i]
-                        new_p = ctx.Process(
-                            target=websocket_process_worker, args=(args,)
-                        )
-                        new_p.daemon = True
-                        new_p.start()
-                        self.ws_processes[i] = new_p
-
-                time.sleep(5)
-
-        except KeyboardInterrupt:
-            self.stop()
-        except Exception as e:
-            self.logger.error(f"Error in multiprocessing: {str(e)}")
-            self.stop()
         # Monitor processes
         self._monitor_processes(process_args)
 
