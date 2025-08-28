@@ -610,7 +610,7 @@ class KiteInstruments:
         filtered_instruments = [
             inst for inst in instruments if self._filter_instrument(inst)
         ]
-        self.logger.debug(f"Updating/Inserting {len(filtered_instruments)} instruments")
+        self.logger.info(f"Updating/Inserting {len(filtered_instruments)} instruments")
         self.logger.debug(
             f"Filtered out but present in NSE_symbols:{set(self._nse_trading_symbols) - set(self._filtered_trading_symbols)}"
         )
@@ -668,7 +668,7 @@ class KiteInstruments:
                 )
 
             conn.commit()
-            self.logger.debug(f"Stored/updated {len(data)} instruments")
+            self.logger.info(f"Stored/updated {len(data)} instruments")
 
     def sync_instruments(
         self, instruments: List[Instrument] = [], force_fetch: bool = True
