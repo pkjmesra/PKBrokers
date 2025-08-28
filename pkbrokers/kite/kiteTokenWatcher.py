@@ -26,6 +26,7 @@ SOFTWARE.
 
 import os
 import threading
+import time
 from datetime import datetime, timedelta
 from queue import Empty, Queue
 
@@ -37,7 +38,7 @@ from pkbrokers.kite.zerodhaWebSocketClient import ZerodhaWebSocketClient
 
 # Optimal batch size depends on your tick frequency
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
-OPTIMAL_BATCH_TICK_WAIT_TIME_SEC = 30
+OPTIMAL_BATCH_TICK_WAIT_TIME_SEC = 5
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
 OTHER_INDICES = [
@@ -154,7 +155,7 @@ class KiteTokenWatcher:
             Exception: If WebSocket connection fails or token fetch fails
         """
         local_secrets = PKEnvironment().allSecrets
-
+        self._db_instance = self._get_database()
         # Auto-fetch tokens if none provided
         if len(self.token_batches) == 0:
             API_KEY = "kitefront"
@@ -190,19 +191,20 @@ class KiteTokenWatcher:
                 ),
                 token_batches=self.token_batches,
                 watcher_queue=self._watcher_queue,
+                db_conn=self._db_instance,
             )
 
         try:
+            self._db_thread = threading.Thread(
+                target=self._process_db_operations, daemon=True, name="DBProcessor"
+            )
+            self._db_thread.start()
+            time.sleep(1)  # Let's give time to the DB processes to get started
             # Start processing threads
             self._processing_thread = threading.Thread(
                 target=self._process_ticks, daemon=True, name="TickProcessor"
             )
             self._processing_thread.start()
-
-            self._db_thread = threading.Thread(
-                target=self._process_db_operations, daemon=True, name="DBProcessor"
-            )
-            self._db_thread.start()
 
             self.logger.debug("Started tick processing and database threads")
             self.client.start()

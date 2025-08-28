@@ -237,4 +237,10 @@ def pkkite():
 
 
 if __name__ == "__main__":
+    log_files = ["PKBrokers-log.txt", "PKBrokers-DBlog.txt"]
+    for file in log_files:
+        try:
+            os.remove(file)
+        except BaseException:
+            pass
     pkkite()

@@ -38,11 +38,11 @@ from urllib.parse import quote
 
 import pytz
 import websockets
+from kiteconnect.ticker import KiteTicker
 from PKDevTools.classes import Archiver, log
 from PKDevTools.classes.log import default_logger
 from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
-from pkbrokers.kite.threadSafeDatabase import ThreadSafeDatabase
 from pkbrokers.kite.ticks import Tick
 from pkbrokers.kite.zerodhaWebSocketParser import ZerodhaWebSocketParser
 
@@ -62,7 +62,6 @@ except ImportError:
 DEFAULT_PATH = Archiver.get_user_data_dir()
 
 PING_INTERVAL = 30
-OPTIMAL_BATCH_SIZE = 50  # Adjust based on testing
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
@@ -170,41 +169,49 @@ class WebSocketProcess:
         if self.stop_event.is_set():
             return
 
-        # Subscribe to indices first
-        self.logger.info(
-            f"Subscribing for indices on websocket_index:{self.websocket_index}"
-        )
-
-        # Subscribe to Nifty 50 index
-        self.logger.debug("Sending NIFTY_50 subscribe and mode messages")
-        await websocket.send(json.dumps({"a": "subscribe", "v": NIFTY_50}))
-        await websocket.send(json.dumps({"a": "mode", "v": ["full", NIFTY_50]}))
-
-        # Subscribe to BSE Sensex
-        self.logger.debug("Sending BSE_SENSEX subscribe and mode messages")
-        await websocket.send(json.dumps({"a": "subscribe", "v": BSE_SENSEX}))
-        await websocket.send(json.dumps({"a": "mode", "v": ["full", BSE_SENSEX]}))
-
-        if subscribe_all_indices:
-            self.logger.debug("Sending OTHER_INDICES subscribe and mode messages")
-            await websocket.send(json.dumps({"a": "subscribe", "v": OTHER_INDICES}))
-            await websocket.send(
-                json.dumps({"a": "mode", "v": ["full", OTHER_INDICES]})
+        if self.websocket_index == 0:
+            # Subscribe to indices first
+            self.logger.info(
+                f"Websocket_index:{self.websocket_index}: Subscribing for indices"
             )
+
+            # Subscribe to Nifty 50 index
+            self.logger.debug(
+                f"Websocket_index:{self.websocket_index}: Sending NIFTY_50 subscribe and mode messages"
+            )
+            await websocket.send(json.dumps({"a": "subscribe", "v": NIFTY_50}))
+            await websocket.send(
+                json.dumps({"a": "mode", "v": [KiteTicker.MODE_FULL, NIFTY_50]})
+            )
+
+            # Subscribe to BSE Sensex
+            self.logger.debug(
+                f"Websocket_index:{self.websocket_index}: Sending BSE_SENSEX subscribe and mode messages"
+            )
+            await websocket.send(json.dumps({"a": "subscribe", "v": BSE_SENSEX}))
+            await websocket.send(json.dumps({"a": "mode", "v": ["full", BSE_SENSEX]}))
+
+            if subscribe_all_indices:
+                self.logger.debug(
+                    f"Websocket_index:{self.websocket_index}: Sending OTHER_INDICES subscribe and mode messages"
+                )
+                await websocket.send(json.dumps({"a": "subscribe", "v": OTHER_INDICES}))
+                await websocket.send(
+                    json.dumps({"a": "mode", "v": ["full", OTHER_INDICES]})
+                )
 
         # Subscribe to the token batch for this process
         if self.token_batch:
-            self.logger.info(
-                f"Subscribing for batch on websocket_index:{self.websocket_index}"
-            )
             subscribe_msg = {"a": "subscribe", "v": self.token_batch}
             mode_msg = {"a": "mode", "v": ["full", self.token_batch]}
 
             self.logger.info(
-                f"Batch size: {len(self.token_batch)}. Sending subscribe message: {subscribe_msg}"
+                f"Websocket_index:{self.websocket_index}: Batch size: {len(self.token_batch)}. Sending subscribe message: {subscribe_msg}"
             )
             await websocket.send(json.dumps(subscribe_msg))
-            self.logger.debug(f"Sending mode message: {mode_msg}")
+            self.logger.debug(
+                f"Websocket_index:{self.websocket_index}: Sending mode message: {mode_msg}"
+            )
             await websocket.send(json.dumps(mode_msg))
             await asyncio.sleep(1)  # Respect rate limits
 
@@ -222,7 +229,7 @@ class WebSocketProcess:
                     max_size=2**17,
                 ) as websocket:
                     self.logger.debug(
-                        f"WebSocket {self.websocket_index} connected successfully"
+                        f"Websocket_index:{self.websocket_index}: Connected successfully"
                     )
 
                     # Wait for initial messages
@@ -236,9 +243,8 @@ class WebSocketProcess:
                             data = json.loads(message)
                             if data.get("type") in ["instruments_meta", "app_code"]:
                                 initial_messages.append(data)
-                                self.logger.debug(f"Received initial message: {data}")
                                 self.logger.info(
-                                    f"Received on websocket_index:{self.websocket_index}, initial message: {data}"
+                                    f"Websocket_index:{self.websocket_index}: Received initial message: {data}"
                                 )
                             await asyncio.sleep(1)
 
@@ -247,7 +253,8 @@ class WebSocketProcess:
 
                     # Main message loop
                     last_heartbeat = time.time()
-
+                    total_ticks_received = 0
+                    tick_batch = 0
                     while not self.stop_event.is_set():
                         try:
                             message = await asyncio.wait_for(
@@ -262,9 +269,14 @@ class WebSocketProcess:
                                 ticks = ZerodhaWebSocketParser.parse_binary_message(
                                     message
                                 )
-                                self.logger.info(
-                                    f"Received on websocket_index:{self.websocket_index}, Ticks:{len(ticks)}"
-                                )
+                                total_ticks_received += len(ticks)
+                                tick_batch += len(ticks)
+                                if tick_batch > 0 and tick_batch % 200 >= 0:
+                                    self.logger.info(
+                                        f"Websocket_index:{self.websocket_index}: Total Running Count of Ticks:{total_ticks_received}"
+                                    )
+                                    tick_batch = 0
+
                                 for tick in ticks:
                                     # Put tick data as a dictionary to avoid pickling issues
                                     tick_data = {
@@ -296,7 +308,7 @@ class WebSocketProcess:
                                     # Handle text messages if needed
                                 except json.JSONDecodeError:
                                     self.logger.warn(
-                                        f"Invalid JSON message on websocket_index:{self.websocket_index}: {message}"
+                                        f"Websocket_index:{self.websocket_index}: Invalid JSON message: {message}"
                                     )
 
                             # Send heartbeat if needed
@@ -308,17 +320,19 @@ class WebSocketProcess:
                             await websocket.ping()
                         except Exception as e:
                             self.logger.error(
-                                f"Message processing error on websocket_index:{self.websocket_index}: {str(e)}"
+                                f"Websocket_index:{self.websocket_index}: Message processing error: {str(e)}"
                             )
                             break
 
             except websockets.exceptions.ConnectionClosedError as e:
                 if hasattr(e, "code"):
-                    self.logger.error(f"Connection closed: {e.code} - {e.reason}")
+                    self.logger.error(
+                        f"Websocket_index:{self.websocket_index}: Connection closed: {e.code} - {e.reason}"
+                    )
                 await asyncio.sleep(5)
             except Exception as e:
                 self.logger.error(
-                    f"WebSocket connection error: {str(e)}. Reconnecting in 5 seconds..."
+                    f"Websocket_index:{self.websocket_index}: WebSocket connection error: {str(e)}. Reconnecting in 5 seconds..."
                 )
                 await asyncio.sleep(5)
 
@@ -338,8 +352,10 @@ class WebSocketProcess:
         # Initialize process-specific logger
         self.setupLogger()
         self.logger = default_logger()
-
-        self.logger.info(f"Starting WebSocket process {self.websocket_index}")
+        self.logger.setLevel(self.log_level)
+        self.logger.info(
+            f"Websocket_index:{self.websocket_index}: Starting WebSocket process."
+        )
         asyncio.run(self._connect_websocket())
 
     def multiprocessingForWindows(self):
@@ -407,6 +423,7 @@ class ZerodhaWebSocketClient:
         api_key="kitefront",
         token_batches=[],
         watcher_queue=None,
+        db_conn=None,
     ):
         self.watcher_queue = watcher_queue
         self.enctoken = enctoken
@@ -416,13 +433,13 @@ class ZerodhaWebSocketClient:
 
         # Use consistent multiprocessing context
         self.mp_context = multiprocessing.get_context(
-            "spawn" #if not sys.platform.startswith("darwin") else "fork"
+            "spawn"  # if not sys.platform.startswith("darwin") else "fork"
         )
         self.manager = self.mp_context.Manager()
         self.data_queue = self.manager.Queue(maxsize=0)
         self.stop_event = self.mp_context.Event()
 
-        self.db_conn = ThreadSafeDatabase()
+        self.db_conn = db_conn
         self.token_batches = token_batches
         self.token_timestamp = 0
         self.ws_processes = []
@@ -486,7 +503,6 @@ class ZerodhaWebSocketClient:
     def _process_ticks(self):
         """Process ticks from queue and store in database."""
         batch = []
-        last_flush = time.time()
 
         while not self.stop_event.is_set() or not self.data_queue.empty():
             try:
@@ -498,7 +514,6 @@ class ZerodhaWebSocketClient:
                     if batch:
                         self._flush_to_db(batch)
                         batch = []
-                        last_flush = time.time()
                     continue
 
                 if tick_data is None or tick_data.get("type") != "tick":
@@ -569,11 +584,8 @@ class ZerodhaWebSocketClient:
                 if self.watcher_queue is not None:
                     self.watcher_queue.put(tick)
 
-                # Flush batch if size limit reached or time elapsed
-                if len(batch) >= OPTIMAL_BATCH_SIZE or (time.time() - last_flush) > 5:
-                    self._flush_to_db(batch)
-                    batch = []
-                    last_flush = time.time()
+                self._flush_to_db(batch)
+                batch = []
 
             except Exception as e:
                 self.logger.error(f"Error processing ticks: {str(e)}")
@@ -588,6 +600,9 @@ class ZerodhaWebSocketClient:
             self.db_conn.insert_ticks(batch)
         except Exception as e:
             self.logger.error(f"Database error: {str(e)}")
+            import traceback
+
+            traceback.print_exc()
 
     def _monitor_processes(self, process_args):
         """Monitor and restart failed processes"""
@@ -596,7 +611,7 @@ class ZerodhaWebSocketClient:
                 # Check WebSocket processes
                 for i, p in enumerate(self.ws_processes):
                     if not p.is_alive():
-                        self.logger.warn(f"WebSocket process {i} died, restarting...")
+                        self.logger.warn(f"Websocket_index:{i} died, restarting...")
                         args = process_args[i]
                         new_p = self.mp_context.Process(
                             target=websocket_process_worker, args=(args,)
@@ -668,7 +683,7 @@ class ZerodhaWebSocketClient:
 
     def stop(self):
         """Graceful shutdown of the WebSocket client."""
-        self.logger.debug("Stopping Zerodha WebSocket client")
+        self.logger.warn("Stopping Zerodha WebSocket client")
         self.stop_event.set()
 
         # Terminate all processes
@@ -691,4 +706,4 @@ class ZerodhaWebSocketClient:
         if hasattr(self, "manager"):
             self.manager.shutdown()
 
-        self.logger.debug("Shutdown complete")
+        self.logger.warn("Shutdown complete")

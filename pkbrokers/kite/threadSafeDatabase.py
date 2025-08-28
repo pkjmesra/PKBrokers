@@ -38,216 +38,16 @@ from typing import Any, Dict, List, Optional
 from PKDevTools.classes import Archiver, log
 from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
+from PKDevTools.classes.PKJoinableQueue import PKJoinableQueue
 
 DEFAULT_PATH = Archiver.get_user_data_dir()
 DEFAULT_DB_PATH = os.path.join(DEFAULT_PATH, "ticks.db")
-
-
-class HighPerformanceTursoWriter:
-    """Dedicated writer process for high-throughput Turso inserts"""
-
-    def __init__(
-        self,
-        db_config,
-        batch_size=200,
-        max_queue_size=0,
-        mp_context=None,
-        log_level=0
-        if "PKDevTools_Default_Log_Level" not in os.environ.keys()
-        else int(os.environ["PKDevTools_Default_Log_Level"]),
-    ):
-        self.db_config = db_config
-        self.batch_size = batch_size
-        self.mp_context = mp_context or multiprocessing.get_context(
-            "spawn" #if not sys.platform.startswith("darwin") else "fork"
-        )
-        self.data_queue = self.mp_context.Queue(maxsize=max_queue_size)
-        self.stop_event = self.mp_context.Event()
-        self.log_level = log_level
-        self.setupLogger()
-        self.logger = default_logger()
-        self.logger.info("Starting HighPerformanceTursoWriter logger...")
-
-    def setupLogger(self):
-        if self.log_level > 0:
-            os.environ["PKDevTools_Default_Log_Level"] = str(self.log_level)
-        log.setup_custom_logger(
-            "pkbrokers",
-            self.log_level,
-            trace=False,
-            log_file_path="PKBrokers-log.txt",
-            filter=None,
-        )
-
-    def start(self):
-        """Start the writer process with proper context"""
-        self.process = self.mp_context.Process(target=self._writer_loop)
-        self.process.daemon = True
-        self.process.start()
-
-    def _writer_loop(self):
-        """Main writer loop running in separate process"""
-        try:
-            import libsql
-        except ImportError:
-            self.logger.error("libsql package required for Turso support")
-            return
-
-        # Create connection
-        conn = libsql.connect(
-            database=self.db_config["turso_url"],
-            auth_token=self.db_config["turso_auth_token"],
-        )
-
-        batch = []
-        last_flush = time.time()
-        total_inserted = 0
-        consecutive_errors = 0
-
-        while not self.stop_event.is_set() or not self.data_queue.empty():
-            try:
-                # Get data from queue
-                try:
-                    tick_data = self.data_queue.get(timeout=0.1)
-                    batch.append(tick_data)
-                except queue.Empty:
-                    pass
-
-                # Flush if batch size reached or timeout
-                current_time = time.time()
-                should_flush = (
-                    len(batch) >= self.batch_size or (current_time - last_flush) > 1.0
-                )
-
-                if should_flush and batch:
-                    success = self._insert_batch(conn, batch)
-                    if success:
-                        total_inserted += len(batch)
-                        batch = []
-                        last_flush = current_time
-                        consecutive_errors = 0
-
-                        # Log every 1000 inserts
-                        if total_inserted % 1000 == 0:
-                            self.logger.info(f"Inserted {total_inserted} ticks total")
-                    else:
-                        consecutive_errors += 1
-                        # Backoff on consecutive errors
-                        time.sleep(min(0.1 * (2**consecutive_errors), 5.0))
-
-            except Exception as e:
-                self.logger.error(f"Writer loop error: {str(e)}")
-                consecutive_errors += 1
-                time.sleep(min(0.1 * (2**consecutive_errors), 5.0))
-
-        # Final flush
-        if batch:
-            self._insert_batch(conn, batch)
-
-        try:
-            conn.close()
-        except BaseException:
-            pass
-
-    def _insert_batch(self, conn, batch):
-        """Insert a batch of ticks"""
-        try:
-            with conn:
-                cursor = conn.cursor()
-
-                # Prepare tick data
-                tick_data = []
-                depth_data = []
-
-                for tick in batch:
-                    # Convert timestamp
-                    ts = (
-                        tick["timestamp"].timestamp()
-                        if hasattr(tick["timestamp"], "timestamp")
-                        else tick["timestamp"]
-                    )
-
-                    # Tick data
-                    tick_data.append(
-                        (
-                            tick["instrument_token"],
-                            ts,
-                            tick["last_price"],
-                            tick["day_volume"],
-                            tick["oi"],
-                            tick["buy_quantity"],
-                            tick["sell_quantity"],
-                            tick["high_price"],
-                            tick["low_price"],
-                            tick["open_price"],
-                            tick["prev_day_close"],
-                        )
-                    )
-
-                    # Depth data
-                    if "depth" in tick and tick["depth"]:
-                        inst = tick["instrument_token"]
-
-                        # Process bids
-                        for i, bid in enumerate(tick["depth"].get("bid", [])[:5], 1):
-                            depth_data.append(
-                                (
-                                    inst,
-                                    ts,
-                                    "bid",
-                                    i,
-                                    bid.get("price", 0),
-                                    bid.get("quantity", 0),
-                                    bid.get("orders", 0),
-                                )
-                            )
-
-                        # Process asks
-                        for i, ask in enumerate(tick["depth"].get("ask", [])[:5], 1):
-                            depth_data.append(
-                                (
-                                    inst,
-                                    ts,
-                                    "ask",
-                                    i,
-                                    ask.get("price", 0),
-                                    ask.get("quantity", 0),
-                                    ask.get("orders", 0),
-                                )
-                            )
-
-                # Batch insert ticks
-                if tick_data:
-                    cursor.executemany(TICK_INSERT_SQL, tick_data)
-
-                # Batch insert depth
-                if depth_data:
-                    cursor.executemany(DEPTH_INSERT_SQL, depth_data)
-
-                return True
-
-        except Exception as e:
-            self.logger.error(f"Batch insert failed: {str(e)}")
-            return False
-
-    def add_ticks(self, ticks):
-        """Add ticks to the write queue"""
-        for tick in ticks:
-            try:
-                self.data_queue.put(tick, timeout=0.1)
-            except queue.Full:
-                self.logger.warn("Write queue full, dropping ticks")
-                break
-
-    def stop(self):
-        """Stop the writer"""
-        self.stop_event.set()
-        try:
-            self.process.join(timeout=5)
-        except BaseException:
-            pass
-
-
+OPTIMAL_BATCH_SIZE = 500  # Adjust based on testing
+MAX_CONNECTION_ATTEMPTS = 5
+FLUSH_INTERVAL_SEC = 0.5
+MAX_EXPONENTIAL_BACKOFF_INTERVAL_SEC = 10
+MAX_LOG_STATS_INTERVAL_SEC = 60
+BID_ASK_DEPTH = 5
 # SQL templates for batch inserts
 TICK_INSERT_SQL = """
 INSERT INTO ticks (
@@ -263,6 +63,369 @@ INSERT INTO market_depth (
     position, price, quantity, orders
 ) VALUES (?, ?, ?, ?, ?, ?, ?)
 """
+# macOS fork safety
+if sys.platform.startswith("darwin"):
+    os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+
+# Set spawn context globally
+multiprocessing.set_start_method("spawn", force=True)
+
+
+class HighPerformanceTursoWriter:
+    """Dedicated writer process for high-throughput Turso inserts"""
+
+    def __init__(
+        self,
+        db_config,
+        batch_size=200,
+        max_queue_size=100000,  # Increased queue size
+        writer_id=0,
+        mp_context=None,
+        log_level=0,
+    ):
+        self.db_config = db_config
+        self.batch_size = batch_size
+        self.writer_id = writer_id
+        self.mp_context = mp_context or multiprocessing.get_context(
+            "spawn"  # if not sys.platform.startswith("darwin") else "fork"
+        )
+        self.data_queue = PKJoinableQueue(maxsize=max_queue_size, ctx=self.mp_context)
+        self.stop_event = self.mp_context.Event()
+        self.log_level = log_level
+        self.logger = None
+        self.last_stats_time = time.time()
+        self.total_inserted = 0
+        self.total_dropped = 0
+        self.total_added = 0
+        self.last_log_time = time.time()
+        self.last_log_count = 0
+
+    def setupLogger(self):
+        if self.log_level > 0:
+            os.environ["PKDevTools_Default_Log_Level"] = str(self.log_level)
+        log.setup_custom_logger(
+            "pkbrokersDB",
+            self.log_level,
+            trace=False,
+            log_file_path="PKBrokers-DBlog.txt",
+            filter=None,
+        )
+
+    def start(self):
+        """Start the writer process"""
+        self.process = self.mp_context.Process(target=self._writer_loop)
+        self.process.daemon = True
+        self.process.start()
+
+    def _get_connection(self):
+        # Import inside process to avoid macOS issues
+        try:
+            import libsql
+        except ImportError as e:
+            self.logger.error(f"Import error in writer process {self.writer_id}: {e}")
+            return
+
+        # Create connection with retry logic
+        conn = None
+        connection_attempts = 0
+
+        while conn is None and connection_attempts < MAX_CONNECTION_ATTEMPTS:
+            try:
+                conn = libsql.connect(
+                    database=self.db_config["turso_url"],
+                    auth_token=self.db_config["turso_auth_token"],
+                    timeout=30,
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Writer {self.writer_id}: Connection attempt {connection_attempts + 1} failed: {e}"
+                )
+                connection_attempts += 1
+                time.sleep(2**connection_attempts)  # Exponential backoff
+
+        if conn is None:
+            self.logger.error(
+                f"Writer {self.writer_id}: Failed to connect after {MAX_CONNECTION_ATTEMPTS} attempts"
+            )
+        return conn
+
+    def _writer_loop(self):
+        """Main writer loop running in separate process"""
+        self.setupLogger()
+        self.logger = default_logger()
+        self.logger.info("Starting HighPerformanceTursoWriter logger...")
+        conn = self._get_connection()
+        batch = []
+        last_flush = time.time()
+        consecutive_errors = 0
+        batch_count = 0
+
+        # Statistics
+        insert_count = 0
+        last_stat_time = time.time()
+        self.logger.info(f"Writer {self.writer_id}: Connected to Turso successfully")
+        while not self.stop_event.is_set() or not self.data_queue.empty():
+            try:
+                # Get multiple items at once to reduce queue overhead
+                items_to_get = min(OPTIMAL_BATCH_SIZE, self.data_queue.qsize() + 1)
+                got_items = 0
+
+                for _ in range(items_to_get):
+                    try:
+                        tick_data = self.data_queue.get_nowait()
+                        batch.append(tick_data)
+                        got_items += 1
+                    except queue.Empty:
+                        break
+
+                # Flush based on size or time
+                current_time = time.time()
+                should_flush = (
+                    len(batch) >= self.batch_size
+                    or (current_time - last_flush) > FLUSH_INTERVAL_SEC
+                )  # Flush every 500ms max
+
+                if should_flush and batch:
+                    success, processed_count = self._insert_batch(conn, batch)
+                    if success:
+                        insert_count += processed_count
+                        batch_count += 1
+                        batch = []
+                        last_flush = current_time
+                        consecutive_errors = 0
+                    else:
+                        consecutive_errors += 1
+                        # Backoff on consecutive errors
+                        time.sleep(
+                            min(
+                                FLUSH_INTERVAL_SEC * (2**consecutive_errors),
+                                MAX_EXPONENTIAL_BACKOFF_INTERVAL_SEC,
+                            )
+                        )
+                        conn = self._get_connection()
+
+                # Log statistics every 60 seconds
+                if current_time - last_stat_time > MAX_LOG_STATS_INTERVAL_SEC:
+                    queue_size = self.data_queue.qsize()
+                    self.logger.info(
+                        f"Writer {self.writer_id}: {insert_count} ticks, "
+                        f"queue: {queue_size}, batches: {batch_count}"
+                    )
+                    insert_count = 0
+                    last_stat_time = current_time
+
+                # Small sleep to prevent CPU spinning
+                if got_items == 0 and not should_flush:
+                    time.sleep(0.01)
+
+            except Exception as e:
+                self.logger.error(f"Writer {self.writer_id} loop error: {e}")
+                import traceback
+
+                traceback.print_exc()
+                consecutive_errors += 1
+                time.sleep(
+                    min(
+                        FLUSH_INTERVAL_SEC * (2**consecutive_errors),
+                        MAX_EXPONENTIAL_BACKOFF_INTERVAL_SEC,
+                    )
+                )
+                conn = self._get_connection()
+
+        # Final flush
+        if batch:
+            self._insert_batch(conn, batch)
+
+        try:
+            conn.close()
+            self.logger.warn(f"Writer {self.writer_id}: Closed connection")
+        except BaseException:
+            pass
+
+    def _insert_batch(self, conn, batch, retrial=False):
+        """Insert a batch of ticks with deduplication"""
+        try:
+            # Deduplicate: keep only the latest tick per instrument
+            latest_ticks = {}
+            depth_data = []
+
+            for tick in batch:
+                instrument_token = tick["instrument_token"]
+
+                # Convert timestamp
+                ts = (
+                    tick["timestamp"].timestamp()
+                    if hasattr(tick["timestamp"], "timestamp")
+                    else tick["timestamp"]
+                )
+
+                # Keep only the latest tick for each instrument
+                if (
+                    instrument_token not in latest_ticks
+                    or ts > latest_ticks[instrument_token]["timestamp"]
+                ):
+                    latest_ticks[instrument_token] = {
+                        "instrument_token": instrument_token,
+                        "timestamp": ts,
+                        "last_price": tick["last_price"],
+                        "day_volume": tick["day_volume"],
+                        "oi": tick["oi"],
+                        "buy_quantity": tick["buy_quantity"],
+                        "sell_quantity": tick["sell_quantity"],
+                        "high_price": tick["high_price"],
+                        "low_price": tick["low_price"],
+                        "open_price": tick["open_price"],
+                        "prev_day_close": tick["prev_day_close"],
+                        "depth": tick.get("depth"),
+                    }
+
+            # Prepare tick data from deduplicated ticks
+            tick_data = []
+            for tick in latest_ticks.values():
+                tick_data.append(
+                    (
+                        tick["instrument_token"],
+                        tick["timestamp"],
+                        tick["last_price"],
+                        tick["day_volume"],
+                        tick["oi"],
+                        tick["buy_quantity"],
+                        tick["sell_quantity"],
+                        tick["high_price"],
+                        tick["low_price"],
+                        tick["open_price"],
+                        tick["prev_day_close"],
+                    )
+                )
+
+                # Depth data from the latest tick
+                if tick.get("depth"):
+                    inst = tick["instrument_token"]
+                    ts = tick["timestamp"]
+
+                    for i, bid in enumerate(
+                        tick["depth"].get("bid", [])[:BID_ASK_DEPTH], 1
+                    ):
+                        depth_data.append(
+                            (
+                                inst,
+                                ts,
+                                "bid",
+                                i,
+                                bid.get("price", 0),
+                                bid.get("quantity", 0),
+                                bid.get("orders", 0),
+                            )
+                        )
+
+                    for i, ask in enumerate(
+                        tick["depth"].get("ask", [])[:BID_ASK_DEPTH], 1
+                    ):
+                        depth_data.append(
+                            (
+                                inst,
+                                ts,
+                                "ask",
+                                i,
+                                ask.get("price", 0),
+                                ask.get("quantity", 0),
+                                ask.get("orders", 0),
+                            )
+                        )
+
+            with conn:
+                cursor = conn.cursor()
+
+                # Batch insert ticks
+                if tick_data:
+                    cursor.executemany(TICK_INSERT_SQL, tick_data)
+
+                # Batch insert depth
+                if depth_data:
+                    cursor.executemany(DEPTH_INSERT_SQL, depth_data)
+
+                self.logger.info(
+                    f"Writer {self.writer_id}: batch insert succeeded: {len(tick_data)}"
+                )
+                return True, len(tick_data)
+
+        except Exception as e:
+            self.logger.error(
+                f"Writer {self.writer_id} batch insert for {len(tick_data)} failed: {e}"
+            )
+            if not retrial:
+                conn = self._get_connection()
+                try:
+                    return self._insert_batch(conn=conn, batch=batch, retrial=True)
+                except BaseException:
+                    pass
+            return False, 0
+
+    def add_ticks(self, ticks):
+        """Add ticks to the write queue with non-blocking put with logging every 1000th message"""
+        added_count = 0
+        dropped_count = 0
+        current_time = time.time()
+
+        for tick in ticks:
+            try:
+                # Non-blocking put with timeout
+                self.data_queue.put(tick, block=False)
+                added_count += 1
+                self.total_added += 1
+
+                # Log every 1000th tick (1000, 2000, 3000, etc.)
+                if self.total_added > 0 and self.total_added % 1000 == 0:
+                    queue_size = self.data_queue.qsize()
+                    time_since_last_log = current_time - self.last_log_time
+                    ticks_per_sec = (
+                        (self.total_added - self.last_log_count) / time_since_last_log
+                        if time_since_last_log > 0
+                        else 0
+                    )
+
+                    self.logger.info(
+                        f"Writer {self.writer_id}: ✓ {self.total_added} ticks total | "
+                        f"Queue: {queue_size} | Rate: {ticks_per_sec:.1f}/s"
+                    )
+
+                    self.last_log_time = current_time
+                    self.last_log_count = self.total_added
+            except queue.Full:
+                dropped_count += 1
+                self.total_dropped += 1
+                # For critical metrics, you might want to log this occasionally
+                pass
+
+        # Log if we're dropping too many ticks, every minute
+        if (
+            dropped_count > 0
+            and time.time() - self.last_stats_time > MAX_LOG_STATS_INTERVAL_SEC
+        ):
+            queue_size = self.data_queue.qsize()
+            self.logger.warn(
+                f"Writer {self.writer_id}: Queue {queue_size} full, dropped {dropped_count} ticks"
+            )
+            self.last_stats_time = time.time()
+
+        return added_count, dropped_count
+
+    def get_stats(self):
+        """Get writer statistics"""
+        return {
+            "queue_size": self.data_queue.qsize(),
+            "total_added": self.total_added,
+            "total_inserted": self.total_inserted,
+            "total_dropped": self.total_dropped,
+        }
+
+    def stop(self):
+        """Stop the writer"""
+        self.stop_event.set()
+        try:
+            self.process.join(timeout=3)
+        except BaseException:
+            pass
 
 
 class ThreadSafeDatabase:
@@ -272,8 +435,9 @@ class ThreadSafeDatabase:
         db_path: Optional[str] = None,
         turso_url: Optional[str] = PKEnvironment().TDU,
         turso_auth_token: Optional[str] = PKEnvironment().TAT,
-        max_batch_size: int = 200,
-        num_writers: int = 3,  # Multiple writers for Turso
+        max_batch_size: int = 300,
+        num_writers: int = 8,  # Multiple writers for Turso
+        max_queue_size: int = 100000,  # Infinite queue
         mp_context=None,  # Explicit multiprocessing context
         log_level=0
         if "PKDevTools_Default_Log_Level" not in os.environ.keys()
@@ -286,9 +450,10 @@ class ThreadSafeDatabase:
         self.max_batch_size = max_batch_size
         self.num_writers = num_writers if db_type == "turso" else 1
         self.log_level = log_level
+        self.max_queue_size = max_queue_size
         # Use consistent multiprocessing context
         self.mp_context = mp_context or multiprocessing.get_context(
-            "spawn" #if not sys.platform.startswith("darwin") else "fork"
+            "spawn"  # if not sys.platform.startswith("darwin") else "fork"
         )
 
         self.local = threading.local()
@@ -296,11 +461,11 @@ class ThreadSafeDatabase:
         # Initialize process-specific logger
         self.setupLogger()
         self.logger = default_logger()
+        self.logger.setLevel(self.log_level)
         self.logger.info("Starting ThreadSafeDatabase logger...")
-
+        self.writer_index = 0  # For round-robin distribution
         # For Turso: use dedicated writer processes
         self.turso_writers = []
-        self.write_queue = queue.Queue(maxsize=0)
 
         # Initialize the appropriate database
         self._initialize_db()
@@ -308,22 +473,6 @@ class ThreadSafeDatabase:
         # Start Turso writers if needed
         if self.db_type == "turso":
             self._start_turso_writers()
-
-    def _start_turso_writers(self):
-        """Start multiple writer processes for Turso with proper context"""
-        for i in range(self.num_writers):
-            writer = HighPerformanceTursoWriter(
-                db_config={
-                    "turso_url": self.turso_url,
-                    "turso_auth_token": self.turso_auth_token,
-                },
-                batch_size=self.max_batch_size,
-                mp_context=self.mp_context,  # Pass the same context
-                log_level=self.log_level
-            )
-            writer.start()
-            self.turso_writers.append(writer)
-            self.logger.info(f"Started Turso writer process {i + 1}")
 
     def _initialize_db(self, force_drop: bool = False):
         """Initialize database schema - optimized for batch inserts"""
@@ -349,7 +498,8 @@ class ThreadSafeDatabase:
                     low_price REAL,
                     open_price REAL,
                     prev_day_close REAL,
-                    created_at INTEGER DEFAULT (strftime('%s', 'now'))
+                    created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                    UNIQUE(instrument_token, timestamp)  -- Prevent duplicates
                 ) STRICT
             """)
 
@@ -364,7 +514,8 @@ class ThreadSafeDatabase:
                     price REAL,
                     quantity INTEGER,
                     orders INTEGER,
-                    created_at INTEGER DEFAULT (strftime('%s', 'now'))
+                    created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                    UNIQUE(instrument_token, timestamp, depth_type, position)
                 ) STRICT
             """)
 
@@ -412,17 +563,6 @@ class ThreadSafeDatabase:
         except ImportError:
             raise ImportError("libsql package required for Turso support")
 
-    def setupLogger(self):
-        if self.log_level > 0:
-            os.environ["PKDevTools_Default_Log_Level"] = str(self.log_level)
-        log.setup_custom_logger(
-            "pkbrokers",
-            self.log_level,
-            trace=False,
-            log_file_path="PKBrokers-log.txt",
-            filter=None,
-        )
-
     @contextmanager
     def get_connection(self, force_connect=False):
         """Get connection for queries"""
@@ -442,24 +582,62 @@ class ThreadSafeDatabase:
                 pass
             raise e
 
-    def insert_ticks(
-        self, ticks: List[Dict[str, Any]], force_connect=False, retrial=False
-    ):
-        """High-performance batch insert"""
+    def _start_turso_writers(self):
+        """Start multiple writer processes for Turso"""
+        self.logger.info(f"Starting {self.num_writers} Turso writers...")
+
+        for i in range(self.num_writers):
+            writer = HighPerformanceTursoWriter(
+                db_config={
+                    "turso_url": self.turso_url,
+                    "turso_auth_token": self.turso_auth_token,
+                },
+                batch_size=self.max_batch_size,
+                max_queue_size=self.max_queue_size // self.num_writers,
+                writer_id=i,
+                log_level=self.log_level,
+            )
+            writer.start()
+            self.turso_writers.append(writer)
+            time.sleep(1)  # Stagger startup
+
+        self.logger.info("All Turso writers started")
+
+    def insert_ticks(self, ticks: List[Dict[str, Any]]):
+        """Distribute ticks to writers using round-robin"""
+        if not ticks or self.db_type != "turso":
+            # Fallback to local implementation
+            self._insert_ticks_local(ticks)
+            return
+
+        # Distribute ticks to writers in round-robin fashion
+        total_added = 0
+        total_dropped = 0
+
+        for i, tick in enumerate(ticks):
+            writer = self.turso_writers[self.writer_index]
+            added, dropped = writer.add_ticks([tick])
+            total_added += added
+            total_dropped += dropped
+            if i > 0 and i % 10000 == 0:
+                self.logger.info(
+                    f"Statistics from all writers:{self.get_writer_stats()}"
+                )
+            # Move to next writer
+            self.writer_index = (self.writer_index + 1) % self.num_writers
+
+        # Log performance occasionally
+        if total_dropped > 0:
+            self.logger.warning(f"Dropped {total_dropped} ticks due to full queues")
+
+    def _insert_ticks_local(self, ticks: List[Dict[str, Any]]):
+        """Local SQLite implementation as fallback"""
         if not ticks:
             return
 
-        # For Turso: use dedicated writers
-        if self.db_type == "turso":
-            for writer in self.turso_writers:
-                writer.add_ticks(ticks)
-            return
-
-        # For local: optimized batch insert
-        with self.lock, self.get_connection(force_connect=force_connect) as conn:
+        with self.lock, self.get_connection() as conn:
             try:
                 cursor = conn.cursor()
-
                 # Prepare data in bulk
                 tick_data = []
                 depth_data = []
@@ -528,42 +706,38 @@ class ThreadSafeDatabase:
                 # Batch insert depth
                 if depth_data:
                     cursor.executemany(DEPTH_INSERT_SQL, depth_data)
-
                 conn.commit()
-
-                # Log performance
-                if len(ticks) > 50:
-                    self.logger.debug(f"Inserted {len(ticks)} ticks in batch")
-
             except Exception as e:
-                self.logger.error(f"Batch insert error: {str(e)}")
+                self.logger.error(f"Local insert error: {e}")
                 try:
                     conn.rollback()
                 except BaseException:
                     pass
 
-                # Handle reconnection
-                if "operational" in str(e).lower() and not retrial:
-                    self.close_all()
-                    self.insert_ticks(ticks=ticks, force_connect=True, retrial=True)
+    def get_writer_stats(self):
+        """Get statistics from all writers"""
+        stats = []
+        for i, writer in enumerate(self.turso_writers):
+            stats.append({"writer_id": i, **writer.get_stats()})
+        return stats
 
     def close_all(self):
         """Close all connections and writers"""
-        # Close thread connections
-        if hasattr(self.local, "conn"):
-            try:
-                self.local.conn.close()
-                delattr(self.local, "conn")
-            except BaseException:
-                pass
-
-        # Stop Turso writers
+        self.logger.warn("Stopping all writers...")
         for writer in self.turso_writers:
-            try:
-                writer.stop()
-            except BaseException:
-                pass
+            writer.stop()
         self.turso_writers = []
+
+    def setupLogger(self):
+        if self.log_level > 0:
+            os.environ["PKDevTools_Default_Log_Level"] = str(self.log_level)
+        log.setup_custom_logger(
+            "pkbrokersDB",
+            self.log_level,
+            trace=False,
+            log_file_path="PKBrokers-DBlog.txt",
+            filter=None,
+        )
 
     def get_ohlcv(
         self,
