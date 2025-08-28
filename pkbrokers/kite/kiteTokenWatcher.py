@@ -39,6 +39,7 @@ from pkbrokers.kite.zerodhaWebSocketClient import ZerodhaWebSocketClient
 # Optimal batch size depends on your tick frequency
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
 OPTIMAL_BATCH_TICK_WAIT_TIME_SEC = 5
+DP_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 0.5
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
 OTHER_INDICES = [
@@ -199,7 +200,9 @@ class KiteTokenWatcher:
                 target=self._process_db_operations, daemon=True, name="DBProcessor"
             )
             self._db_thread.start()
-            time.sleep(1)  # Let's give time to the DB processes to get started
+            time.sleep(
+                DP_PROCESS_SPIN_OFF_WAIT_TIME_SEC
+            )  # Let's give time to the DB processes to get started
             # Start processing threads
             self._processing_thread = threading.Thread(
                 target=self._process_ticks, daemon=True, name="TickProcessor"

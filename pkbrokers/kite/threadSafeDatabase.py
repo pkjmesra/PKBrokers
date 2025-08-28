@@ -47,6 +47,8 @@ MAX_CONNECTION_ATTEMPTS = 5
 FLUSH_INTERVAL_SEC = 0.5
 MAX_EXPONENTIAL_BACKOFF_INTERVAL_SEC = 10
 MAX_LOG_STATS_INTERVAL_SEC = 60
+MIN_CPU_SPIN_INTERVAL_SEC = 0.01
+TURSO_WRITER_STAGGERED_INTERVAL_SEC = 1
 BID_ASK_DEPTH = 5
 # SQL templates for batch inserts
 TICK_INSERT_SQL = """
@@ -216,7 +218,7 @@ class HighPerformanceTursoWriter:
 
                 # Small sleep to prevent CPU spinning
                 if got_items == 0 and not should_flush:
-                    time.sleep(0.01)
+                    time.sleep(MIN_CPU_SPIN_INTERVAL_SEC)
 
             except Exception as e:
                 self.logger.error(f"Writer {self.writer_id} loop error: {e}")
@@ -599,7 +601,7 @@ class ThreadSafeDatabase:
             )
             writer.start()
             self.turso_writers.append(writer)
-            time.sleep(1)  # Stagger startup
+            time.sleep(TURSO_WRITER_STAGGERED_INTERVAL_SEC)  # Stagger startup
 
         self.logger.info("All Turso writers started")
 

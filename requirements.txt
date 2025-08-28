@@ -1,5 +1,5 @@
 gitpython #>=3.1.43
-PKDevTools>=0.13.20250126.278
+PKDevTools>=0.13.20250126.279
 PKNSETools>=0.1.20250224.139
 pyotp
 pytz #>=2024.2
