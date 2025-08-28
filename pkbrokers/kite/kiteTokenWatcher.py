@@ -27,6 +27,7 @@ SOFTWARE.
 import json
 import multiprocessing
 import os
+import sys
 import threading
 import time
 from collections import defaultdict
@@ -78,11 +79,18 @@ OTHER_INDICES = [
     281865,
 ]
 
+# macOS fork safety
+if sys.platform.startswith("darwin"):
+    os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+
+# Set spawn context globally
+multiprocessing.set_start_method("spawn", force=True)
+
 
 class JSONFileWriter:
     """Multiprocessing process to write ticks to JSON file with instrument_token as primary key"""
 
-    def __init__(self, json_file_path, max_queue_size=100000, log_level=0):
+    def __init__(self, json_file_path, max_queue_size=10000, log_level=0):
         self.json_file_path = json_file_path
         self.mp_context = multiprocessing.get_context("spawn")
         self.data_queue = PKJoinableQueue(maxsize=max_queue_size, ctx=self.mp_context)
@@ -329,6 +337,7 @@ class KiteTokenWatcher:
         self.json_output_path = json_output_path or os.path.join(
             Archiver.get_user_data_dir(), "ticks.json"
         )
+
         self.json_writer = JSONFileWriter(
             json_file_path=self.json_output_path, log_level=self.log_level
         )

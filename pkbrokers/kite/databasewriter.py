@@ -450,11 +450,15 @@ class DatabaseWriterProcess:
             high_price=tick_data.get("high_price", 0),
             low_price=tick_data.get("low_price", 0),
             prev_day_close=tick_data.get("prev_day_close", 0),
-            last_trade_timestamp=tick_data.get("last_trade_timestamp", 0),
+            last_trade_timestamp=tick_data.get(
+                "last_trade_timestamp", PKDateUtilities.currentDateTimestamp()
+            ),
             oi=tick_data.get("oi", 0),
             oi_day_high=tick_data.get("oi_day_high", 0),
             oi_day_low=tick_data.get("oi_day_low", 0),
-            exchange_timestamp=tick_data.get("exchange_timestamp", 0),
+            exchange_timestamp=tick_data.get(
+                "exchange_timestamp", PKDateUtilities.currentDateTimestamp()
+            ),
             depth=tick_data.get("depth", {}),
         )
         return tick
