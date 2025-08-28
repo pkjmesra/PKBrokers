@@ -32,8 +32,9 @@ Handles instrument data synchronization and querying from Zerodha's Kite Connect
 import csv
 import os
 import sqlite3
+import time
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -700,7 +701,7 @@ class KiteInstruments:
                 )
             return True
         except Exception as e:
-            self.logger.error(f"Sync failed: {str(e)}", exc_info=True)
+            self.logger.error(f"Sync failed: {str(e)}")
             return False
 
     def get_instrument_count(self) -> int:

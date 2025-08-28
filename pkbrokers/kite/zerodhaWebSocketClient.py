@@ -545,22 +545,26 @@ class ZerodhaWebSocketClient:
 
     def _monitor_processes(self, process_args):
         """Monitor and restart failed processes"""
-        ctx = multiprocessing.get_context('spawn')
-        
+        ctx = multiprocessing.get_context("spawn")
+
         try:
             while not self.stop_event.is_set():
                 # Check WebSocket processes
                 for i, p in enumerate(self.ws_processes):
                     if not p.is_alive():
-                        self.logger.warning(f"WebSocket process {i} died, restarting...")
+                        self.logger.warning(
+                            f"WebSocket process {i} died, restarting..."
+                        )
                         args = process_args[i]
-                        new_p = ctx.Process(target=websocket_process_worker, args=(args,))
+                        new_p = ctx.Process(
+                            target=websocket_process_worker, args=(args,)
+                        )
                         new_p.daemon = True
                         new_p.start()
                         self.ws_processes[i] = new_p
-                
+
                 time.sleep(5)
-                
+
         except KeyboardInterrupt:
             self.stop()
         except Exception as e:
