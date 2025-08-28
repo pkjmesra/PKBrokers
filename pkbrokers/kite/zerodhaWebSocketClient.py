@@ -413,7 +413,7 @@ class ZerodhaWebSocketClient:
         self.user_id = user_id
         self.api_key = api_key
         self.logger = default_logger()
-        
+
         # Use consistent multiprocessing context
         self.mp_context = multiprocessing.get_context(
             "spawn" if not sys.platform.startswith("darwin") else "fork"
@@ -421,7 +421,7 @@ class ZerodhaWebSocketClient:
         self.manager = self.mp_context.Manager()
         self.data_queue = self.manager.Queue(maxsize=10000)
         self.stop_event = self.mp_context.Event()
-        
+
         self.db_conn = ThreadSafeDatabase()
         self.token_batches = token_batches
         self.token_timestamp = 0

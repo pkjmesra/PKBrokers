@@ -193,7 +193,7 @@ def pkkite():
     if sys.platform.startswith("darwin"):
         try:
             multiprocessing.set_start_method("fork")
-        except RuntimeError as e:  # pragma: no cover
+        except RuntimeError:  # pragma: no cover
             pass
 
     if not validate_credentials():
