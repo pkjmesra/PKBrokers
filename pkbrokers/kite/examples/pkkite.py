@@ -126,8 +126,8 @@ def kite_auth():
         ),
     }
     authenticator = KiteAuthenticator(timeout=10)
-    req_token = authenticator.get_enctoken(**credentials)
-    print(req_token)
+    authenticator.get_enctoken(**credentials)
+    # print(req_token)
 
 
 def kite_history():
@@ -205,6 +205,7 @@ def pkkite():
 
     if args.ticks:
         setupLogger()
+        kite_auth()
         kite_ticks()
 
     if args.history:
@@ -217,14 +218,17 @@ def pkkite():
             )
         else:
             setupLogger()
+            kite_auth()
             kite_history()
 
     if args.instruments:
         setupLogger()
+        kite_auth()
         kite_instruments()
 
     if args.pickle:
         setupLogger()
+        kite_auth()
         kite_fetch_save_pickle()
 
     print(
