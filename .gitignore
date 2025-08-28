@@ -24,6 +24,9 @@ kite/__pycache__
 *.egg-*/*
 *.json
 *.html
+*.csv
+*.pkl
+LICENSE
 .coverage.*
 .coverage
 *.exe
