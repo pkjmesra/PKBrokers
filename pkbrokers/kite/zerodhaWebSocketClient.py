@@ -296,7 +296,7 @@ class WebSocketProcess:
                                         "oi": tick.oi,
                                         "oi_day_high": tick.oi_day_high,
                                         "oi_day_low": tick.oi_day_low,
-                                        "exchange_timestamp": tick.exchange_timestamp,
+                                        "exchange_timestamp": tick.exchange_timestamp or PKDateUtilities.currentDateTimestamp(),
                                         "depth": tick.depth,
                                         "websocket_index": self.websocket_index,
                                     }
@@ -433,7 +433,7 @@ class ZerodhaWebSocketClient:
 
         # Use consistent multiprocessing context
         self.mp_context = multiprocessing.get_context(
-            "spawn"  # if not sys.platform.startswith("darwin") else "fork"
+            "spawn" if sys.platform.startswith("darwin") else "spawn"  # if not sys.platform.startswith("darwin") else "spawn"
         )
         self.manager = self.mp_context.Manager()
         self.data_queue = self.manager.Queue(maxsize=0)
@@ -522,7 +522,8 @@ class ZerodhaWebSocketClient:
 
                 if tick_data is None or tick_data.get("type") != "tick":
                     continue
-
+                if tick_data["exchange_timestamp"] is None:
+                    tick_data["exchange_timestamp"] = PKDateUtilities.currentDateTimestamp()
                 # Convert back to Tick object for processing
                 tick = self._convert_tick_data_to_object(tick_data)
 

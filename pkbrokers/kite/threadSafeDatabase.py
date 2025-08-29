@@ -43,7 +43,9 @@ from PKDevTools.classes.PKJoinableQueue import PKJoinableQueue
 DEFAULT_PATH = Archiver.get_user_data_dir()
 DEFAULT_DB_PATH = os.path.join(DEFAULT_PATH, "ticks.db")
 OPTIMAL_BATCH_SIZE = 500  # Adjust based on testing
+OPTIMAL_MAX_QUEUE_SIZE = 200000  # Adjust based on testing
 MAX_CONNECTION_ATTEMPTS = 5
+MAX_TURSO_WRITERS = 8
 FLUSH_INTERVAL_SEC = 0.5
 MAX_EXPONENTIAL_BACKOFF_INTERVAL_SEC = 10
 MAX_LOG_STATS_INTERVAL_SEC = 60
@@ -70,7 +72,7 @@ if sys.platform.startswith("darwin"):
     os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
 
 # Set spawn context globally
-multiprocessing.set_start_method("spawn", force=True)
+multiprocessing.set_start_method("spawn" if sys.platform.startswith("darwin") else "spawn", force=True)
 
 
 class HighPerformanceTursoWriter:
@@ -79,8 +81,8 @@ class HighPerformanceTursoWriter:
     def __init__(
         self,
         db_config,
-        batch_size=200,
-        max_queue_size=100000,  # Increased queue size
+        batch_size=OPTIMAL_BATCH_SIZE,
+        max_queue_size=OPTIMAL_MAX_QUEUE_SIZE,  # Increased queue size
         writer_id=0,
         mp_context=None,
         log_level=0,
@@ -89,12 +91,12 @@ class HighPerformanceTursoWriter:
         self.batch_size = batch_size
         self.writer_id = writer_id
         self.mp_context = mp_context or multiprocessing.get_context(
-            "spawn"  # if not sys.platform.startswith("darwin") else "fork"
+            "spawn" if sys.platform.startswith("darwin") else "spawn"  # if not sys.platform.startswith("darwin") else "spawn"
         )
         self.data_queue = PKJoinableQueue(maxsize=max_queue_size, ctx=self.mp_context)
         self.stop_event = self.mp_context.Event()
         self.log_level = log_level
-        self.logger = None
+        self.logger = default_logger()
         self.last_stats_time = time.time()
         self.total_inserted = 0
         self.total_dropped = 0
@@ -437,9 +439,9 @@ class ThreadSafeDatabase:
         db_path: Optional[str] = None,
         turso_url: Optional[str] = PKEnvironment().TDU,
         turso_auth_token: Optional[str] = PKEnvironment().TAT,
-        max_batch_size: int = 300,
-        num_writers: int = 8,  # Multiple writers for Turso
-        max_queue_size: int = 100000,  # Infinite queue
+        max_batch_size: int = OPTIMAL_BATCH_SIZE,
+        num_writers: int = MAX_TURSO_WRITERS,  # Multiple writers for Turso
+        max_queue_size: int = OPTIMAL_MAX_QUEUE_SIZE,  # Infinite queue
         mp_context=None,  # Explicit multiprocessing context
         log_level=0
         if "PKDevTools_Default_Log_Level" not in os.environ.keys()
@@ -455,7 +457,7 @@ class ThreadSafeDatabase:
         self.max_queue_size = max_queue_size
         # Use consistent multiprocessing context
         self.mp_context = mp_context or multiprocessing.get_context(
-            "spawn"  # if not sys.platform.startswith("darwin") else "fork"
+            "spawn" if sys.platform.startswith("darwin") else "spawn"  # if not sys.platform.startswith("darwin") else "spawn"
         )
 
         self.local = threading.local()
@@ -618,6 +620,8 @@ class ThreadSafeDatabase:
 
         for i, tick in enumerate(ticks):
             writer = self.turso_writers[self.writer_index]
+            if writer.logger is None:
+                writer.setupLogger()
             added, dropped = writer.add_ticks([tick])
             total_added += added
             total_dropped += dropped
@@ -630,7 +634,7 @@ class ThreadSafeDatabase:
 
         # Log performance occasionally
         if total_dropped > 0:
-            self.logger.warning(f"Dropped {total_dropped} ticks due to full queues")
+            self.logger.warn(f"Dropped {total_dropped} ticks due to full queues")
 
     def _insert_ticks_local(self, ticks: List[Dict[str, Any]]):
         """Local SQLite implementation as fallback"""

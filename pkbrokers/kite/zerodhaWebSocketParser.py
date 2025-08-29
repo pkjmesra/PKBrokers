@@ -27,6 +27,7 @@ SOFTWARE.
 import struct
 
 from PKDevTools.classes.log import default_logger
+from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
 from pkbrokers.kite.ticks import DepthEntry, IndexTick, Tick
 
@@ -137,7 +138,7 @@ class ZerodhaWebSocketParser:
             low_price=index_tick.low_price,
             open_price=index_tick.open_price,
             prev_day_close=index_tick.prev_day_close,
-            exchange_timestamp=index_tick.exchange_timestamp,
+            exchange_timestamp=index_tick.exchange_timestamp or PKDateUtilities.currentDateTimestamp(),
             # Set all unused fields to None explicitly
             last_quantity=None,
             avg_price=None,
@@ -273,7 +274,7 @@ class ZerodhaWebSocketParser:
                 "oi": None,
                 "oi_day_high": None,
                 "oi_day_low": None,
-                "exchange_timestamp": None,
+                "exchange_timestamp": PKDateUtilities.currentDateTimestamp(),
                 "depth": None,
             }
 
@@ -347,6 +348,8 @@ class ZerodhaWebSocketParser:
 
             if len(packet) >= 64:
                 data["exchange_timestamp"] = struct.unpack_from(">i", packet, offset)[0]
+                if data["exchange_timestamp"] is None:
+                    data["exchange_timestamp"] = PKDateUtilities.currentDateTimestamp()
                 offset += 4
 
             # Parse market depth if available (64-184 bytes)

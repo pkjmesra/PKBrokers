@@ -377,6 +377,8 @@ class DatabaseWriterProcess:
 
     def _process_tick_data(self, tick_data):
         """Process tick data for database insertion"""
+        if tick_data["exchange_timestamp"] is None:
+            tick_data["exchange_timestamp"] = PKDateUtilities.currentDateTimestamp()
         tick = self._convert_tick_data_to_object(tick_data)
 
         if tick.exchange_timestamp is None:

@@ -80,6 +80,7 @@ jobs:
         KPWD: ${{ secrets.KPWD }}
         KTOTP: ${{ secrets.KTOTP }}
         DB_TYPE: ${{ secrets.DB_TYPE }}
+        TBTOKEN: ${{ secrets.TBTOKEN }}
       run: |
         cat > .env.dev << EOF
         CHAT_ID=$CHAT_ID
@@ -100,6 +101,7 @@ jobs:
         KPWD=$KPWD
         KTOTP=$KTOTP
         DB_TYPE=$DB_TYPE
+        TBTOKEN=$TBTOKEN
         PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
         EOF
         
@@ -114,9 +116,9 @@ jobs:
         # Run pkkite directly from the source module
         echo "Running pkkite --ticks from PKBrokers source..."
         pwd
-        cp .env.dev pkbrokers/kite/examples/.env.dev
-        cd pkbrokers/kite/examples/
-        python pkkite.py --ticks --verbose 2>&1 | while IFS= read -r line; do
+        cp .env.dev pkbrokers/bot/.env.dev
+        cd pkbrokers/bot/
+        python orchestrator.py --verbose 2>&1 | while IFS= read -r line; do
           # Print timestamp with each log line for better debugging
           echo "[$(date '+%Y-%m-%d %H:%M:%S')] $line"
         done

@@ -46,6 +46,7 @@ from pkbrokers.kite.zerodhaWebSocketClient import ZerodhaWebSocketClient
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
 OPTIMAL_BATCH_TICK_WAIT_TIME_SEC = 5
 DP_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 0.5
+OPTIMAL_MAX_QUEUE_SIZE = 10000
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
 OTHER_INDICES = [
@@ -84,20 +85,21 @@ if sys.platform.startswith("darwin"):
     os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
 
 # Set spawn context globally
-multiprocessing.set_start_method("spawn", force=True)
+multiprocessing.set_start_method("spawn" if sys.platform.startswith("darwin") else "spawn", force=True)
 
 
 class JSONFileWriter:
     """Multiprocessing process to write ticks to JSON file with instrument_token as primary key"""
 
-    def __init__(self, json_file_path, max_queue_size=10000, log_level=0):
+    def __init__(self, json_file_path, max_queue_size=OPTIMAL_MAX_QUEUE_SIZE, log_level=0):
         self.json_file_path = json_file_path
-        self.mp_context = multiprocessing.get_context("spawn")
+        self.mp_context = multiprocessing.get_context("spawn" if sys.platform.startswith("darwin") else "spawn")
         self.data_queue = PKJoinableQueue(maxsize=max_queue_size, ctx=self.mp_context)
         self.stop_event = self.mp_context.Event()
         self.process = None
         self.log_level = log_level
-        self.logger = None
+        self.setupLogger()
+        self.logger = default_logger()
 
     def start(self):
         """Start the JSON writer process"""
@@ -251,7 +253,7 @@ class JSONFileWriter:
             self.data_queue.put(tick_data, timeout=0.1)
             return True
         except Exception:
-            self.logger.warning("JSON writer queue full, dropping tick")
+            self.logger.warn("JSON writer queue full, dropping tick")
             return False
 
     def stop(self):
@@ -341,6 +343,7 @@ class KiteTokenWatcher:
         self.json_writer = JSONFileWriter(
             json_file_path=self.json_output_path, log_level=self.log_level
         )
+        self.json_writer.setupLogger()
 
         # CRITICAL: Using dictionary instead of defaultdict(list) ensures only
         # the latest tick for each instrument_token is stored (key overwrite behavior)
