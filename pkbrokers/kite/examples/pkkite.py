@@ -213,9 +213,9 @@ def pkkite():
 
         supported_intervals = [member.value for member in Historical_Interval]
         if args.history not in supported_intervals:
-            print(
-                f"--history= requires at least one of the following parameters: {', '.join(map(lambda x: x.value, Historical_Interval))}\nFor example:\n--history={'--history='.join(map(lambda x: x.value + '\n', Historical_Interval))}"
-            )
+            intervals = ', '.join(map(lambda x: x.value, Historical_Interval))
+            example_lines = '\n'.join(map(lambda x: f"--history={x.value}", Historical_Interval))
+            print(f"--history= requires at least one of the following parameters: {intervals}\nFor example:\n{example_lines}")
         else:
             setupLogger()
             kite_auth()
