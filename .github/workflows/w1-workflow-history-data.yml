@@ -1,4 +1,4 @@
-name: 1. PKBrokers Historical Data Update
+name: 1. PKBrokers Historical Data Update - Multi Period
 on:
   schedule:
     - cron: '59 9 * * 1-6'  # Monday-Saturday at 3:30 PM IST, 10AM UTC
@@ -9,29 +9,20 @@ on:
         required: false
         default: 20
         type: number
-      period:
-        description: 'history period. Can be day, minute, 5minute, 10minute, 15minute, 30minute, 60minute'
+      periods:
+        description: 'Comma-separated history periods (default: all)'
         required: false
-        default: 'day'
+        default: 'minute,5minute,10minute,15minute,30minute,60minute,day'
         type: string
 
 jobs:
-  market-runner:
+  holiday-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 355  # Just under 6 hours (5h55m) to avoid being cutoff
-    env:
-      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
-      period: ${{ github.event.inputs.period || 'day' }}
-    
+    outputs:
+      is_holiday: ${{ steps.check_holiday.outputs.is_holiday }}
     steps:
-    - name: Checkout PKBrokers code
-      uses: actions/checkout@v4
-      with:
-        repository: pkjmesra/PKBrokers
-        ref: main
-
     - name: Check for holidays
-      id: holiday_check
+      id: check_holiday
       run: |
         # Download the holidays JSON file
         curl -s -o holidays.json https://raw.githubusercontent.com/pkjmesra/PKScreener/main/.github/dependencies/nse-holidays.json
@@ -48,11 +39,46 @@ jobs:
           echo "is_holiday=false" >> $GITHUB_OUTPUT
         fi
 
-    - name: Exit if holiday (scheduled runs only)
-      if: github.event_name == 'schedule' && steps.holiday_check.outputs.is_holiday == 'true'
-      run: |
-        echo "Skipping execution due to market holiday."
-        exit 0
+  historical-data-update:
+    needs: holiday-check
+    if: needs.holiday-check.outputs.is_holiday == 'false' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 355  # Just under 6 hours (5h55m) to avoid being cutoff
+    strategy:
+      matrix:
+        period: 
+          - minute
+          - 5minute
+          - 10minute
+          - 15minute
+          - 30minute
+          - 60minute
+          - day
+        include:
+          # You can add period-specific configurations here if needed
+          - period: minute
+            display_name: "1 Minute"
+          - period: 5minute
+            display_name: "5 Minute"
+          - period: 10minute
+            display_name: "10 Minute"
+          - period: 15minute
+            display_name: "15 Minute"
+          - period: 30minute
+            display_name: "30 Minute"
+          - period: 60minute
+            display_name: "60 Minute (1 Hour)"
+          - period: day
+            display_name: "Daily"
+    env:
+      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
+    
+    steps:
+    - name: Checkout PKBrokers code
+      uses: actions/checkout@v4
+      with:
+        repository: pkjmesra/PKBrokers
+        ref: main
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -107,32 +133,33 @@ jobs:
         KTOTP=$KTOTP
         DB_TYPE=$DB_TYPE
         TBTOKEN=$TBTOKEN
+        PERIOD=${{ matrix.period }}
         PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
         EOF
         
-        echo "Created .env.dev file with secrets"
+        echo "Created .env.dev file for period: ${{ matrix.period }}"
         echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
 
-    - name: Run pkkite from source for history data update
+    - name: Run pkkite from source for ${{ matrix.period }} historical data
       env:
         PYTHONUNBUFFERED: 1  # Force unbuffered output
         PKDevTools_Default_Log_Level: ${{ env.PKDevTools_Default_Log_Level }}
       run: |
-        # Run pkkite directly from the source module
-        echo "Running pkkite --history=day from PKBrokers source..."
+        # Run pkkite with specific period parameter
+        echo "Running pkkite --history=${{ matrix.period }} from PKBrokers source..."
         pwd
         cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
-        python pkkite.py --history=${{ env.period }} --verbose 2>&1 | while IFS= read -r line; do
+        python pkkite.py --history=${{ matrix.period }} --verbose 2>&1 | while IFS= read -r line; do
           # Print timestamp with each log line for better debugging
-          echo "[$(date '+%Y-%m-%d %H:%M:%S')] $line"
+          echo "[$(date '+%Y-%m-%d %H:%M:%S') - ${{ matrix.period }}] $line"
         done
         
         EXIT_CODE=${PIPESTATUS[0]}
-        echo "pkkite exited with code $EXIT_CODE"
+        echo "pkkite for ${{ matrix.period }} exited with code $EXIT_CODE"
 
     - name: Cleanup .env.dev file
       if: always()
       run: |
-        echo "Cleaning up .env.dev file"
+        echo "Cleaning up .env.dev file for ${{ matrix.period }}"
         rm -f .env.dev
