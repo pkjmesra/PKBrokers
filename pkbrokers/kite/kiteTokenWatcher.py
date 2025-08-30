@@ -45,7 +45,8 @@ from pkbrokers.kite.zerodhaWebSocketClient import ZerodhaWebSocketClient
 # Optimal batch size depends on your tick frequency
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
 OPTIMAL_BATCH_TICK_WAIT_TIME_SEC = 5
-DP_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 0.5
+DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 0.5
+JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 1
 OPTIMAL_MAX_QUEUE_SIZE = 10000
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
@@ -97,14 +98,16 @@ class JSONFileWriter:
         self.data_queue = PKJoinableQueue(maxsize=max_queue_size, ctx=self.mp_context)
         self.stop_event = self.mp_context.Event()
         self.process = None
+        self.kite_instruments = {}
         self.log_level = log_level
         self.setupLogger()
         self.logger = default_logger()
 
-    def start(self):
+    def start(self, kite_instruments={}):
         """Start the JSON writer process"""
         self.process = self.mp_context.Process(target=self._writer_loop)
         self.process.daemon = True
+        self.kite_instruments = kite_instruments
         self.process.start()
 
     def setupLogger(self):
@@ -179,8 +182,18 @@ class JSONFileWriter:
 
         if instrument_token not in data:
             # Initialize new instrument entry
+            try:
+                trading_symbol = "NA"
+                trading_symbol = self.kite_instruments[instrument_token].tradingsymbol
+            except BaseException:
+                if instrument_token in NIFTY_50:
+                    trading_symbol = "NIFTY 50"
+                elif instrument_token in BSE_SENSEX:
+                    trading_symbol = "SENSEX"
+                pass
             data[instrument_token] = {
                 "instrument_token": instrument_token,
+                "trading_symbol": trading_symbol,
                 "ohlcv": {
                     "open": tick_data["open_price"],
                     "high": tick_data["high_price"],
@@ -367,10 +380,6 @@ class KiteTokenWatcher:
         local_secrets = PKEnvironment().allSecrets
         self._db_instance = self._get_database()
 
-        # Start JSON writer first
-        self.json_writer.start()
-        time.sleep(1)  # Let JSON writer initialize
-
         # Auto-fetch tokens if none provided
         if len(self.token_batches) == 0:
             API_KEY = "kitefront"
@@ -381,6 +390,10 @@ class KiteTokenWatcher:
 
             if kite.get_instrument_count() == 0:
                 kite.sync_instruments(force_fetch=True)
+            instruments = kite.fetch_instruments()
+            # Start JSON writer first
+            self.json_writer.start(kite_instruments=kite.kite_instruments if len(instruments) > 0 else {})
+            time.sleep(JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC)  # Let JSON writer initialize
 
             equities = kite.get_equities(column_names="instrument_token")
             tokens = kite.get_instrument_tokens(equities=equities)
@@ -415,7 +428,7 @@ class KiteTokenWatcher:
             )
             self._db_thread.start()
             time.sleep(
-                DP_PROCESS_SPIN_OFF_WAIT_TIME_SEC
+                DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC
             )  # Let's give time to the DB processes to get started
             # Start processing threads
             self._processing_thread = threading.Thread(
@@ -766,7 +779,8 @@ class KiteTokenWatcher:
         self._shutdown_event.set()
 
         # Stop JSON writer
-        self.json_writer.stop()
+        if self.json_writer:
+            self.json_writer.stop()
 
         # Stop WebSocket client
         if self.client:

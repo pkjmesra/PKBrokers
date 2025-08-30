@@ -24,6 +24,8 @@ kite/__pycache__
 *.egg-*/*
 *.json
 *.html
+*.tmp
+*.json
 *.csv
 *.pkl
 LICENSE

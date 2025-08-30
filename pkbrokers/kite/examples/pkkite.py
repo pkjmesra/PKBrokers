@@ -162,7 +162,7 @@ def kite_instruments():
 
     authenticator = KiteAuthenticator()
     enctoken = authenticator.get_enctoken()
-    instruments = KiteInstruments(api_key="kitefront", access_token=enctoken)
+    instruments = KiteInstruments(api_key="kitefront", access_token=enctoken, recreate_schema=False)
     instruments.get_or_fetch_instrument_tokens(all_columns=True)
 
 

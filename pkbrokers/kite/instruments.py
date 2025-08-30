@@ -166,7 +166,7 @@ class KiteInstruments:
         access_token: str,
         db_path: str = os.path.join(DEFAULT_PATH, "instruments.db"),
         local=False,
-        recreate_schema=True,
+        recreate_schema=False,
     ):
         """
         Initialize the KiteInstruments manager with API credentials and database configuration.
@@ -206,6 +206,7 @@ class KiteInstruments:
         self.db_path = db_path
         self.local = local
         self.recreate_schema = recreate_schema
+        self.kite_instruments = {}
         self.base_url = "https://api.kite.trade"
         self.logger = default_logger()
         self.headers = {
@@ -533,6 +534,7 @@ class KiteInstruments:
                 self._filtered_trading_symbols.append(
                     instrument.tradingsymbol.replace("-BE", "").replace("-BZ", "")
                 )
+                self.kite_instruments[instrument.instrument_token] = instrument
             else:
                 if basic_conditions:
                     self.logger.debug(f"Filtered Out:{instrument.tradingsymbol}")
@@ -565,6 +567,9 @@ class KiteInstruments:
             Fetches CSV data from Kite API and converts to structured objects.
             Includes error handling and logging for failed requests.
         """
+        if self.kite_instruments is not None and len(self.kite_instruments.keys()) > 0:
+            return self.kite_instruments.values()
+        
         url = f"{self.base_url}/instruments/NSE"
         self.logger.debug(f"Fetching instruments from {url}")
 
@@ -583,7 +588,11 @@ class KiteInstruments:
                     instruments.append(instrument)
 
             self.logger.debug(f"Fetched {len(instruments)} valid instruments")
-            return instruments
+            filtered_instruments = [inst for inst in instruments if self._filter_instrument(inst)]
+            self.logger.debug(
+                f"Filtered out but present in NSE_symbols:{set(self._nse_trading_symbols) - set(self._filtered_trading_symbols)}"
+            )
+            return filtered_instruments
 
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Failed to fetch instruments: {str(e)}")
@@ -592,7 +601,7 @@ class KiteInstruments:
             self.logger.error(f"Unexpected error processing instruments: {str(e)}")
             raise
 
-    def store_instruments(self, instruments: List[Instrument]) -> None:
+    def _store_instruments(self, instruments: List[Instrument]) -> None:
         """
         Bulk upsert instruments into database with efficient batch operations.
 
@@ -607,12 +616,9 @@ class KiteInstruments:
             self.logger.warn("No instruments to store")
             return
 
-        filtered_instruments = [
-            inst for inst in instruments if self._filter_instrument(inst)
-        ]
-        self.logger.info(f"Updating/Inserting {len(filtered_instruments)} instruments")
+        self.logger.info(f"Updating/Inserting {len(instruments)} instruments")
         self.logger.debug(
-            f"Filtered out but present in NSE_symbols:{set(self._nse_trading_symbols) - set(self._filtered_trading_symbols)}"
+            f"Filtered out but present in NSE_symbols:{set(self._nse_trading_symbols) - set(instruments)}"
         )
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -635,7 +641,7 @@ class KiteInstruments:
                     datetime.now().isoformat(),
                     1 if i.nse_stock else 0,  # nse_stock column as INTEGER
                 )
-                for i in filtered_instruments
+                for i in instruments
             ]
 
             if self.recreate_schema:
@@ -695,7 +701,7 @@ class KiteInstruments:
                 begin_time = time.time()
                 self._init_db(drop_table=True)
                 instruments = self.fetch_instruments() if force_fetch else instruments
-                self.store_instruments(instruments)
+                self._store_instruments(instruments)
                 self.logger.info(
                     f"Synced NSE Instruments in: {'%.3f' % (time.time() - begin_time)} sec."
                 )
@@ -797,7 +803,7 @@ class KiteInstruments:
             return [dict(zip(requested_columns, row)) for row in cursor.fetchall()]
 
     def get_or_fetch_instrument_tokens(
-        self, all_columns: bool = False, only_nse_stocks: bool = False
+        self, all_columns: bool = True, only_nse_stocks: bool = False
     ) -> List[int]:
         """
         Get instrument tokens, fetching from API if database is empty.

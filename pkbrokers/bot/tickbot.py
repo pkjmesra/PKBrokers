@@ -69,7 +69,8 @@ class PKTickBot:
     ):
         self.bot_token = bot_token
         self.ticks_file_path = ticks_file_path
-        self.chat_id = chat_id
+        self.chat_id = chat_id or PKEnvironment().CHAT_ID
+        self.chat_id = f"-{self.chat_id}" if not str(self.chat_id).startswith("-") else self.chat_id
         self.updater = None
         self.logger = logging.getLogger(__name__)
 
@@ -224,15 +225,15 @@ class PKTickBot:
         top_limit = sorted(instruments, key=lambda x: x.get('tick_count', 0), reverse=True)[:limit]
         output = None
         if len(top_limit) > 0:
-            output = "Symbol     | Tick Count | Price\n"
-            output += "-----------|------------|--------\n"
+            output = "Symbol         |Tick|Price\n"
+            output += "---------------|----|-------\n"
             
             for i, instrument in enumerate(top_limit, 1):
                 symbol = instrument.get('trading_symbol', 'N/A')
                 tick_count = instrument.get('tick_count', 0)
                 price = instrument.get('ohlcv', {}).get('close', 0)
                 
-                output += f"{symbol:10} | {tick_count:10} | {price:6.2f}\n"
+                output += f"{symbol:15}|{tick_count:4} | {price:6.1f}\n"
         
         return output
 
@@ -253,10 +254,11 @@ class PKTickBot:
             if os.path.exists(self.ticks_file_path):
                 file_size = os.path.getsize(self.ticks_file_path)
                 file_mtime = Archiver.get_last_modified_datetime(self.ticks_file_path)
+                file_mtime_str = file_mtime.strftime("%Y-%m-%d %H:%M:%S %Z")
                 curr = datetime.now(pytz.timezone("Asia/Kolkata"))
                 seconds_ago = (curr - file_mtime).seconds
                 status_msg += f"📁 ticks.json: {file_size:,} bytes\n"
-                status_msg += f"📁 Modified {seconds_ago} sec ago: {file_mtime:,}\n"
+                status_msg += f"📁 Modified {seconds_ago} sec ago: {file_mtime_str}\n"
 
                 # Check zip size
                 try:

@@ -54,7 +54,7 @@ TURSO_WRITER_STAGGERED_INTERVAL_SEC = 1
 BID_ASK_DEPTH = 5
 # SQL templates for batch inserts
 TICK_INSERT_SQL = """
-INSERT INTO ticks (
+INSERT or IGNORE INTO ticks (
     instrument_token, timestamp, last_price, day_volume, oi,
     buy_quantity, sell_quantity, high_price, low_price,
     open_price, prev_day_close
@@ -62,7 +62,7 @@ INSERT INTO ticks (
 """
 
 DEPTH_INSERT_SQL = """
-INSERT INTO market_depth (
+INSERT or IGNORE INTO market_depth (
     instrument_token, timestamp, depth_type,
     position, price, quantity, orders
 ) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -211,10 +211,11 @@ class HighPerformanceTursoWriter:
                 # Log statistics every 60 seconds
                 if current_time - last_stat_time > MAX_LOG_STATS_INTERVAL_SEC:
                     queue_size = self.data_queue.qsize()
-                    self.logger.info(
-                        f"Writer {self.writer_id}: {insert_count} ticks, "
-                        f"queue: {queue_size}, batches: {batch_count}"
-                    )
+                    if insert_count > 0 or queue_size > 0:
+                        self.logger.info(
+                            f"Writer {self.writer_id}: {insert_count} ticks, "
+                            f"queue: {queue_size}, batches: {batch_count}"
+                        )
                     insert_count = 0
                     last_stat_time = current_time
 
@@ -650,7 +651,7 @@ class ThreadSafeDatabase:
 
                 for tick in ticks:
                     # Convert timestamp
-                    ts = (
+                    ts = int(
                         tick["timestamp"].timestamp()
                         if hasattr(tick["timestamp"], "timestamp")
                         else tick["timestamp"]
