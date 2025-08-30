@@ -4,6 +4,7 @@ PKNSETools>=0.1.20250224.139
 pyotp
 python-telegram-bot[all]>=13.4,<20.0
 pytz #>=2024.2
+telethon
 urllib3 #>=1.26.20
 kiteconnect
 websockets<11.0,>=10.4 #pyppeteer 2.0.0 requires websockets<11.0,>=10.0

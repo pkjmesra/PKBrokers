@@ -81,6 +81,8 @@ jobs:
         KTOTP: ${{ secrets.KTOTP }}
         DB_TYPE: ${{ secrets.DB_TYPE }}
         TBTOKEN: ${{ secrets.TBTOKEN }}
+        BBTOKEN: ${{ secrets.BBTOKEN }}
+        TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
       run: |
         cat > .env.dev << EOF
         CHAT_ID=$CHAT_ID
@@ -102,23 +104,30 @@ jobs:
         KTOTP=$KTOTP
         DB_TYPE=$DB_TYPE
         TBTOKEN=$TBTOKEN
+        BBTOKEN=$BBTOKEN
+        TEL_SESSION_DATA=$TEL_SESSION_DATA
         PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
         EOF
         
         echo "Created .env.dev file with secrets"
         echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
 
-    - name: Run pkkite from source
+    - name: Create session file
+      run: |
+        echo $TEL_SESSION_DATA | base64 -d > user_session.session
+        chmod 600 user_session.session
+
+    - name: Run pkkite orchestrator from source
       env:
         PYTHONUNBUFFERED: 1  # Force unbuffered output
         PKDevTools_Default_Log_Level: ${{ env.PKDevTools_Default_Log_Level }}
       run: |
         # Run pkkite directly from the source module
-        echo "Running pkkite --ticks from PKBrokers source..."
+        echo "Running pkkite --orchestrate from PKBrokers source..."
         pwd
-        cp .env.dev pkbrokers/bot/.env.dev
-        cd pkbrokers/bot/
-        python orchestrator.py --verbose 2>&1 | while IFS= read -r line; do
+        cp .env.dev pkbrokers/kite/examples/.env.dev
+        cd pkbrokers/kite/examples/
+        python pkkite.py --orchestrate --verbose 2>&1 | while IFS= read -r line; do
           # Print timestamp with each log line for better debugging
           echo "[$(date '+%Y-%m-%d %H:%M:%S')] $line"
         done

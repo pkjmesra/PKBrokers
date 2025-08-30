@@ -24,11 +24,14 @@ kite/__pycache__
 *.egg-*/*
 *.json
 *.html
+*.zip
 *.tmp
 *.json
 *.csv
 *.pkl
 LICENSE
+*.session
+*.journal
 .coverage.*
 .coverage
 *.exe

@@ -27,19 +27,24 @@ import logging
 import os
 import re
 import time
+import asyncio
+from telethon import TelegramClient, events
 import zipfile
+
 from typing import List, Optional, Tuple
 
 import requests
-
+from PKDevTools.classes.Environment import PKEnvironment
+from PKDevTools.classes import Archiver
 
 class PKTickBotConsumer:
     """Programmatic client to interact with PKTickBot with zip handling"""
 
-    def __init__(self, bot_token: str, chat_id: str):
+    def __init__(self, bot_token: str, bridge_bot_token: str, chat_id: str):
         self.bot_token = bot_token
+        self.bridge_bot_token = bridge_bot_token
         self.chat_id = chat_id
-        self.base_url = f"https://api.telegram.org/bot{bot_token}"
+        self.bridge_base_url = f"https://api.telegram.org/bot{bridge_bot_token}"
         self.logger = logging.getLogger(__name__)
 
     def get_updates(
@@ -47,7 +52,7 @@ class PKTickBotConsumer:
     ) -> List[dict]:
         """Get recent updates from the bot"""
         try:
-            url = f"{self.base_url}/getUpdates"
+            url = f"{self.bridge_base_url}/getUpdates"
             params = {"timeout": timeout, "offset": offset}
 
             response = requests.get(url, params=params, timeout=timeout + 5)
@@ -62,8 +67,11 @@ class PKTickBotConsumer:
     def send_command(self, command: str = "/ticks") -> bool:
         """Send a command to the bot"""
         try:
-            url = f"{self.base_url}/sendMessage"
-            payload = {"chat_id": self.chat_id, "text": command}
+            url = f"{self.bridge_base_url}/sendMessage"
+            payload = {
+                "chat_id": 8423093422,  # The main bot's username
+                "text": command
+            }
 
             response = requests.post(url, json=payload, timeout=30)
             response.raise_for_status()
@@ -79,7 +87,7 @@ class PKTickBotConsumer:
         """Download a file from Telegram"""
         try:
             # Get file path
-            url = f"{self.base_url}/getFile"
+            url = f"{self.bridge_base_url}/getFile"
             payload = {"file_id": file_id}
             response = requests.post(url, json=payload, timeout=30)
             response.raise_for_status()
@@ -88,7 +96,7 @@ class PKTickBotConsumer:
 
             # Download file
             download_url = (
-                f"https://api.telegram.org/file/bot{self.bot_token}/{file_path_info}"
+                f"https://api.telegram.org/file/bot{self.bridge_bot_token}/{file_path_info}"
             )
             response = requests.get(download_url, stream=True, timeout=60)
             response.raise_for_status()
@@ -223,3 +231,70 @@ class PKTickBotConsumer:
     def get_status(self) -> bool:
         """Request bot status"""
         return self.send_command("/status")
+
+async def get_pktickbot_response_command(command: str = "/ticks"):
+    """Use the user's Telegram account to interact with the bot"""
+    api_id = PKEnvironment().Tel_API_ID
+    api_hash = PKEnvironment().Tel_API_Hash
+    phone_number = PKEnvironment().Tel_Phone_Number
+    
+    async with TelegramClient('user_session', api_id, api_hash) as client:
+        await client.start(phone=phone_number)
+        
+        completion_event = asyncio.Event()
+        
+        # Send command to the bot
+        bot_username = '@pktickbot'
+        await client.send_message(bot_username, command)
+        print("Command sent to bot")
+        
+        # Wait for the bot's response with file
+        @client.on(events.NewMessage(from_users=bot_username))
+        async def handler(event):
+            if event.message.document:
+                print("Bot sent a file!")
+                try:
+                    # Download the file
+                    file_path = await event.message.download_media(file=Archiver.get_user_data_dir())
+                    print(f"File downloaded: {file_path}")
+                    
+                    # Extract if it's a zip
+                    if file_path.endswith('.zip'):
+                        extract_dir = os.path.join(Archiver.get_user_data_dir(), "extracted")
+                        os.makedirs(extract_dir, exist_ok=True)
+                        
+                        with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                            zip_ref.extractall(extract_dir)
+                        print(f"File extracted into: {extract_dir}")
+                    
+                    completion_event.set()
+                    
+                finally:
+                    client.remove_event_handler(handler)
+        
+        # Wait for completion with timeout
+        try:
+            await asyncio.wait_for(completion_event.wait(), timeout=60)
+            print("File received and processed successfully")
+            return True
+        except asyncio.TimeoutError:
+            print("Timeout waiting for bot response")
+            return False
+
+def try_get_ticks_from_bot():
+    # Run it
+    return asyncio.run(get_pktickbot_response_command())
+
+
+# # encode_session.py (run locally)
+# import base64
+
+# with open('user_session.session', 'rb') as f:
+#     session_data = base64.b64encode(f.read()).decode('utf-8')
+
+# print(f"::add-mask::{session_data}")
+# print(f"SESSION_DATA={session_data}")
+
+# SESSION_DATA: ${{ secrets.SESSION_DATA }}
+# echo $SESSION_DATA | base64 -d > user_session.session
+# chmod 600 user_session.session

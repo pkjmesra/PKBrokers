@@ -45,10 +45,11 @@ class PKTickOrchestrator:
     """Orchestrates PKTickBot and kite_ticks in separate processes"""
 
     def __init__(
-        self, bot_token: Optional[str] = None, ticks_file_path: Optional[str] = None, chat_id: Optional[str] = None
+        self, bot_token: Optional[str] = None, bridge_bot_token: Optional[str] = None, ticks_file_path: Optional[str] = None, chat_id: Optional[str] = None
     ):
         # Store only primitive data types that can be pickled
         self.bot_token = bot_token
+        self.bridge_bot_token = bridge_bot_token
         self.ticks_file_path = ticks_file_path
         self.chat_id = chat_id
         self.bot_process = None
@@ -89,6 +90,7 @@ class PKTickOrchestrator:
             
             env = PKEnvironment()
             self.bot_token = self.bot_token or env.TBTOKEN
+            self.bridge_bot_token = self.bridge_bot_token or env.BBTOKEN
             self.chat_id = self.chat_id or env.CHAT_ID
             self.ticks_file_path = self.ticks_file_path or os.path.join(
                 Archiver.get_user_data_dir(), "ticks.json"
@@ -175,7 +177,7 @@ class PKTickOrchestrator:
         from pkbrokers.bot.consumer import PKTickBotConsumer
         if not self.chat_id:
             raise ValueError("chat_id is required for consumer functionality")
-        return PKTickBotConsumer(self.bot_token, self.chat_id)
+        return PKTickBotConsumer(self.bot_token,self.bridge_bot_token, self.chat_id)
 
     def run(self):
         """Main run method with graceful shutdown handling"""
@@ -214,28 +216,25 @@ class PKTickOrchestrator:
 
 def orchestrate():
     # Initialize with None values, they will be set from environment when needed
-    orchestrator = PKTickOrchestrator(None, None, None)
+    orchestrator = PKTickOrchestrator(None, None, None, None)
     orchestrator.run()
 
-
-if __name__ == "__main__":
-    log_files = ["PKBrokers-log.txt", "PKBrokers-DBlog.txt"]
-    for file in log_files:
-        try:
-            os.remove(file)
-        except BaseException:
-            pass
-    orchestrate()
-
-# # Programmatic usage with zip handling
-# consumer = PKTickBotConsumer('your_bot_token', 'your_chat_id')
-# success, json_path = consumer.get_ticks(output_dir="./downloads")
-
-# if success:
-#     print(f"✅ Downloaded and extracted ticks.json to: {json_path}")
-#     # Now you can use the JSON file
-#     with open(json_path, 'r') as f:
-#         data = json.load(f)
-#     print(f"Found {len(data)} instruments")
-# else:
-#     print("❌ Failed to get ticks file")
+def orchestrate_consumer():
+    from PKDevTools.classes import Archiver
+    import json
+    from pkbrokers.bot.consumer import try_get_ticks_from_bot
+    # Programmatic usage with zip handling
+    # orchestrator = PKTickOrchestrator(None, None, None, None)
+    # consumer = orchestrator.get_consumer()
+    # success, json_path = consumer.get_ticks(output_dir=os.path.join(Archiver.get_user_data_dir()))
+    success = try_get_ticks_from_bot()
+    json_path = os.path.join(Archiver.get_user_data_dir(), "extracted" ,"ticks.json")
+    success = os.path.exists(json_path)
+    if success:
+        print(f"✅ Downloaded and extracted ticks.json to: {json_path}")
+        # Now you can use the JSON file
+        with open(json_path, 'r') as f:
+            data = json.load(f)
+        print(f"Found {len(data)} instruments")
+    else:
+        print("❌ Failed to get ticks file")

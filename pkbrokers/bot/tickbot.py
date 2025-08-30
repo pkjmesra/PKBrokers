@@ -47,7 +47,10 @@ from PKDevTools.classes.Environment import PKEnvironment
 
 MINUTES_2_IN_SECONDS = 120
 OWNER_USER = "Itsonlypk"
+GROUP_CHAT_ID = 1001907892864
 start_time = datetime.now()
+APOLOGY_TEXT = "Apologies! The @pktickbot is NOT available for the time being! We are working with our host GitHub and other data source providers to sort out pending invoices and restore the services soon! Thanks for your patience and support! 🙏"
+
 # Enable logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -75,6 +78,9 @@ class PKTickBot:
         self.logger = logging.getLogger(__name__)
 
     def start(self, update: Update, context: CallbackContext) -> None:
+        if self._shouldAvoidResponse(update):
+            update.message.reply_text(APOLOGY_TEXT)
+            return
         """Send welcome message"""
         update.message.reply_text(
             "📊 PKTickBot is running!\n"
@@ -86,6 +92,9 @@ class PKTickBot:
 
     def help_command(self, update: Update, context: CallbackContext) -> None:
         """Send help message"""
+        if self._shouldAvoidResponse(update):
+            update.message.reply_text(APOLOGY_TEXT)
+            return
         update.message.reply_text(
             "🤖 PKTickBot Commands:\n"
             "/start - Start the bot\n"
@@ -144,6 +153,9 @@ class PKTickBot:
             raise
 
     def send_zipped_ticks(self, update: Update, context: CallbackContext) -> None:
+        if self._shouldAvoidResponse(update):
+            update.message.reply_text(APOLOGY_TEXT)
+            return
         """Send zipped ticks.json file to user with size handling"""
         try:
             if not os.path.exists(self.ticks_file_path):
@@ -238,6 +250,9 @@ class PKTickBot:
         return output
 
     def top_ticks(self, update: Update, context: CallbackContext) -> None:
+        if self._shouldAvoidResponse(update):
+            update.message.reply_text(APOLOGY_TEXT)
+            return
         """Send top 20 instruments by tick count"""
         top_instruments = self.get_top_ticks_formatted(limit=20)
         if not top_instruments:
@@ -247,6 +262,9 @@ class PKTickBot:
         update.message.reply_text(message)
 
     def status(self, update: Update, context: CallbackContext) -> None:
+        if self._shouldAvoidResponse(update):
+            update.message.reply_text(APOLOGY_TEXT)
+            return
         """Check bot and data status"""
         try:
             status_msg = "✅ PKTickBot is online\n"
@@ -292,6 +310,9 @@ class PKTickBot:
             update.message.reply_text("❌ Error checking status")
 
     def error_handler(self, update: object, context: CallbackContext) -> None:
+        if self._shouldAvoidResponse(update):
+            update.message.reply_text(APOLOGY_TEXT)
+            return
         Channel_Id = PKEnvironment().CHAT_ID
         """Log the error and send a telegram message to notify the developer."""
         # Log the error before we do anything else, so we can see it even if something breaks.
@@ -394,6 +415,36 @@ class PKTickBot:
         finally:
             if self.updater:
                 self.updater.stop()
+
+    def _shouldAvoidResponse(self, update):
+        Channel_Id = PKEnvironment().CHAT_ID
+        chat_idADMIN = PKEnvironment().chat_idADMIN
+        sentFrom = []
+        if update.callback_query is not None:
+            sentFrom.append(abs(update.callback_query.from_user.id))
+        if update.message is not None and update.message.from_user is not None:
+            sentFrom.append(abs(update.message.from_user.id))
+            if update.message.from_user.username is not None:
+                sentFrom.append(update.message.from_user.username)
+        if update.channel_post is not None:
+            if update.channel_post.chat is not None:
+                sentFrom.append(abs(update.channel_post.chat.id))
+                if update.channel_post.chat.username is not None:
+                    sentFrom.append(update.channel_post.chat.username)
+            if update.channel_post.sender_chat is not None:
+                sentFrom.append(abs(update.channel_post.sender_chat.id))
+                sentFrom.append(update.channel_post.sender_chat.username)
+        if update.edited_channel_post is not None:
+            sentFrom.append(abs(update.edited_channel_post.sender_chat.id))
+
+        if (
+            OWNER_USER in sentFrom
+            or abs(int(chat_idADMIN)) in sentFrom
+        ):
+            return False
+            # We want to avoid sending any help message back to channel
+            # or group in response to our own messages
+        return True
 
     def run(self):
         """Run the bot - no asyncio needed for v13.4"""

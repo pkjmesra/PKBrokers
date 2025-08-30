@@ -50,6 +50,12 @@ argParser.add_argument(
     required=False,
 )
 argParser.add_argument(
+    "--consumer",
+    action="store_true",
+    help="Starts the consumer process and downloads the daily ticks.json file from PKTickBot",
+    required=False,
+)
+argParser.add_argument(
     "--ticks",
     action="store_true",
     help="View ticks from Kite for all NSE Stocks.",
@@ -67,6 +73,13 @@ argParser.add_argument(
     help="Get instrument tokens for all NSE stocks.",
     required=False,
 )
+argParser.add_argument(
+    "--orchestrate",
+    action="store_true",
+    help="Orchestrate running the PKTickBot as well as. run the kite daily ticks processes.",
+    required=False,
+)
+
 argParser.add_argument(
     "--pickle",
     action="store_true",
@@ -239,8 +252,16 @@ def pkkite():
         kite_auth()
         kite_fetch_save_pickle()
 
+    if args.orchestrate:
+        from pkbrokers.bot.orchestrator import orchestrate
+        orchestrate()
+
+    if args.consumer:
+        from pkbrokers.bot.orchestrator import orchestrate_consumer
+        orchestrate_consumer()
+    
     print(
-        "You can use like this :\npkkite --auth\npkkite --ticks\npkkite --history\npkkite --instruments\npkkite --pickle"
+        "You can use like this :\npkkite --auth\npkkite --ticks\npkkite --history\npkkite --instruments\npkkite --pickle\npkkite --orchestrate\npkkite --consumer"
     )
 
 
