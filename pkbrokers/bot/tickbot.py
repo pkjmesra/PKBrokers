@@ -23,16 +23,39 @@ SOFTWARE.
 
 """
 
-import asyncio
 import json
+import html
 import logging
 import os
 import tempfile
 import zipfile
+import pytz
+try:
+    import thread
+except ImportError:
+    import _thread as thread
+
+import traceback
+
 from typing import Optional, Tuple
+from datetime import datetime
 
 from telegram import Update
 from telegram.ext import CommandHandler, CallbackContext, Updater, CallbackContext
+from PKDevTools.classes import Archiver
+from PKDevTools.classes.Environment import PKEnvironment
+
+MINUTES_2_IN_SECONDS = 120
+OWNER_USER = "Itsonlypk"
+start_time = datetime.now()
+# Enable logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+# set higher logging level for httpx to avoid all GET and POST requests being logged
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
 
 
 class PKTickBot:
@@ -56,6 +79,7 @@ class PKTickBot:
             "📊 PKTickBot is running!\n"
             "Use /ticks to get the latest market data JSON file (zipped)\n"
             "Use /status to check bot status\n"
+            "Use /top to Get top 20 ticking symbols\n"
             "Use /help for more information"
         )
 
@@ -199,7 +223,7 @@ class PKTickBot:
         instruments = list(data.values())
         top_limit = sorted(instruments, key=lambda x: x.get('tick_count', 0), reverse=True)[:limit]
         output = None
-        if top_limit > 0:
+        if len(top_limit) > 0:
             output = "Symbol     | Tick Count | Price\n"
             output += "-----------|------------|--------\n"
             
@@ -228,9 +252,11 @@ class PKTickBot:
 
             if os.path.exists(self.ticks_file_path):
                 file_size = os.path.getsize(self.ticks_file_path)
-                file_mtime = os.path.getmtime(self.ticks_file_path)
+                file_mtime = Archiver.get_last_modified_datetime(self.ticks_file_path)
+                curr = datetime.now(pytz.timezone("Asia/Kolkata"))
+                seconds_ago = (curr - file_mtime).seconds
                 status_msg += f"📁 ticks.json: {file_size:,} bytes\n"
-                status_msg += f"📁 Modified: {file_mtime:,} UTC\n"
+                status_msg += f"📁 Modified {seconds_ago} sec ago: {file_mtime:,}\n"
 
                 # Check zip size
                 try:
@@ -263,6 +289,72 @@ class PKTickBot:
             self.logger.error(f"Error in status command: {e}")
             update.message.reply_text("❌ Error checking status")
 
+    def error_handler(self, update: object, context: CallbackContext) -> None:
+        Channel_Id = PKEnvironment().CHAT_ID
+        """Log the error and send a telegram message to notify the developer."""
+        # Log the error before we do anything else, so we can see it even if something breaks.
+        logger.error("Exception while handling an update:", exc_info=context.error)
+
+        # traceback.format_exception returns the usual python message about an exception, but as a
+        # list of strings rather than a single string, so we have to join them together.
+        tb_list = traceback.format_exception(
+            None, context.error, context.error.__traceback__
+        )
+        tb_string = "".join(tb_list)
+        global start_time
+        timeSinceStarted = datetime.now() - start_time
+        if (
+            "telegram.error.Conflict" in tb_string
+        ):  # A newer 2nd instance was registered. We should politely shutdown.
+            if (
+                timeSinceStarted.total_seconds() >= MINUTES_2_IN_SECONDS
+            ):  # shutdown only if we have been running for over 2 minutes.
+                # This also prevents this newer instance to get shutdown.
+                # Instead the older instance will shutdown
+                print(
+                    f"Stopping due to conflict after running for {timeSinceStarted.total_seconds()/60} minutes."
+                )
+                try:
+                    # context.dispatcher.stop()
+                    thread.interrupt_main() # causes ctrl + c
+                    # sys.exit(0)
+                except RuntimeError:
+                    pass
+                except SystemExit:
+                    thread.interrupt_main()
+                # sys.exit(0)
+            else:
+                print("Other instance running!")
+                # context.application.run_polling(allowed_updates=Update.ALL_TYPES)
+        # Build the message with some markup and additional information about what happened.
+        # You might need to add some logic to deal with messages longer than the 4096 character limit.
+        update_str = update.to_dict() if isinstance(update, Update) else str(update)
+        message = (
+            f"An exception was raised while handling an update\n"
+            f"<pre>update = {html.escape(json.dumps(update_str, indent=2, ensure_ascii=False))}"
+            "</pre>\n\n"
+            f"<pre>context.chat_data = {html.escape(str(context.chat_data))}</pre>\n\n"
+            f"<pre>context.user_data = {html.escape(str(context.user_data))}</pre>\n\n"
+            f"<pre>{html.escape(tb_string)}</pre>"
+        )
+
+        try:
+            # Finally, send the message
+            if "telegram.error.Conflict" not in message and Channel_Id is not None and len(str(Channel_Id)) > 0:
+                context.bot.send_message(
+                    chat_id=int(f"-{Channel_Id}"), text=message, parse_mode="HTML"
+                )
+        except Exception:# pragma: no cover
+            try:
+                if "telegram.error.Conflict" not in tb_string and Channel_Id is not None and len(str(Channel_Id)) > 0:
+                    context.bot.send_message(
+                        chat_id=int(f"-{Channel_Id}"),
+                        text=tb_string,
+                        parse_mode="HTML",
+                    )
+            except Exception:# pragma: no cover
+                print(tb_string)
+
     def run_bot(self):
         """Run the telegram bot - synchronous version for v13.4"""
         try:
@@ -276,7 +368,7 @@ class PKTickBot:
             dispatcher.add_handler(CommandHandler("top", self.top_ticks))
             
             dispatcher.add_handler(CommandHandler("help", self.help_command))
-
+            dispatcher.add_error_handler(self.error_handler)
             self.logger.info("Starting PKTickBot...")
 
             if self.chat_id:
