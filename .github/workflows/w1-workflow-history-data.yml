@@ -1,4 +1,4 @@
-name: 1. PKBrokers Historical Data Update - Multi Period
+name: PKBrokers Historical Data Update - Sequential
 on:
   schedule:
     - cron: '59 9 * * 1-6'  # Monday-Saturday at 3:30 PM IST, 10AM UTC
@@ -10,9 +10,9 @@ on:
         default: 20
         type: number
       periods:
-        description: 'Comma-separated history periods (default: all)'
+        description: 'Comma-separated history periods in execution order'
         required: false
-        default: 'minute,5minute,10minute,15minute,30minute,60minute,day'
+        default: 'day,minute,5minute,10minute,15minute,30minute,60minute'
         type: string
 
 jobs:
@@ -39,58 +39,28 @@ jobs:
           echo "is_holiday=false" >> $GITHUB_OUTPUT
         fi
 
-  historical-data-update:
+  # Define each period as a separate job with explicit dependencies
+  historical-day:
     needs: holiday-check
     if: needs.holiday-check.outputs.is_holiday == 'false' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 355  # Just under 6 hours (5h55m) to avoid being cutoff
-    strategy:
-      matrix:
-        period: 
-          - minute
-          - 5minute
-          - 10minute
-          - 15minute
-          - 30minute
-          - 60minute
-          - day
-        include:
-          # You can add period-specific configurations here if needed
-          - period: minute
-            display_name: "1 Minute"
-          - period: 5minute
-            display_name: "5 Minute"
-          - period: 10minute
-            display_name: "10 Minute"
-          - period: 15minute
-            display_name: "15 Minute"
-          - period: 30minute
-            display_name: "30 Minute"
-          - period: 60minute
-            display_name: "60 Minute (1 Hour)"
-          - period: day
-            display_name: "Daily"
+    timeout-minutes: 120
     env:
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
-    
+      PERIOD: day
     steps:
     - name: Checkout PKBrokers code
       uses: actions/checkout@v4
       with:
         repository: pkjmesra/PKBrokers
         ref: main
-
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-
-    - name: Install PKBrokers dependencies
-      run: |
-        pip install -e .
-        pip install kiteconnect
-
-    - name: Create .env.dev file with secrets
+    - name: Install dependencies
+      run: pip install -e . kiteconnect
+    - name: Create .env.dev file
       env:
         # Map all PKBrokers related secrets to environment variables
         CHAT_ID: ${{ secrets.CHAT_ID }}
@@ -133,33 +103,458 @@ jobs:
         KTOTP=$KTOTP
         DB_TYPE=$DB_TYPE
         TBTOKEN=$TBTOKEN
-        PERIOD=${{ matrix.period }}
+        PERIOD=${{ env.period }}
         PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
         EOF
         
-        echo "Created .env.dev file for period: ${{ matrix.period }}"
+        echo "Created .env.dev file for period: ${{ env.period }}"
         echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
-
-    - name: Run pkkite from source for ${{ matrix.period }} historical data
-      env:
-        PYTHONUNBUFFERED: 1  # Force unbuffered output
-        PKDevTools_Default_Log_Level: ${{ env.PKDevTools_Default_Log_Level }}
+    - name: Run historical data for day
       run: |
-        # Run pkkite with specific period parameter
-        echo "Running pkkite --history=${{ matrix.period }} from PKBrokers source..."
-        pwd
-        cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
-        python pkkite.py --history=${{ matrix.period }} --verbose 2>&1 | while IFS= read -r line; do
-          # Print timestamp with each log line for better debugging
-          echo "[$(date '+%Y-%m-%d %H:%M:%S') - ${{ matrix.period }}] $line"
-        done
-        
-        EXIT_CODE=${PIPESTATUS[0]}
-        echo "pkkite for ${{ matrix.period }} exited with code $EXIT_CODE"
+        python pkkite.py --history=day --verbose
 
-    - name: Cleanup .env.dev file
-      if: always()
+  historical-minute:
+    needs: historical-day  # Depends on day job completing first
+    if: needs.holiday-check.outputs.is_holiday == 'false' || github.event.name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
+      PERIOD: minute
+    steps:
+    - name: Checkout PKBrokers code
+      uses: actions/checkout@v4
+      with:
+        repository: pkjmesra/PKBrokers
+        ref: main
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - name: Install dependencies
+      run: pip install -e . kiteconnect
+    - name: Create .env.dev file
+      env:
+        # Map all PKBrokers related secrets to environment variables
+        CHAT_ID: ${{ secrets.CHAT_ID }}
+        TOKEN: ${{ secrets.TOKEN }}
+        chat_idADMIN: ${{ secrets.chat_idADMIN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
+        TDU: ${{ secrets.TDU }}
+        TAT: ${{ secrets.TAT }}
+        MCU: ${{ secrets.MCU }}
+        MCAP: ${{ secrets.MCAP }}
+        MCL: ${{ secrets.MCL }}
+        MS: ${{ secrets.MS }}
+        PKG: ${{ secrets.PKG }}
+        REPO_URL: ${{ secrets.REPO_URL }}
+        KTOKEN: ${{ secrets.KTOKEN }}
+        KUSER: ${{ secrets.KUSER }}
+        KPWD: ${{ secrets.KPWD }}
+        KTOTP: ${{ secrets.KTOTP }}
+        DB_TYPE: ${{ secrets.DB_TYPE }}
+        TBTOKEN: ${{ secrets.TBTOKEN }}
       run: |
-        echo "Cleaning up .env.dev file for ${{ matrix.period }}"
-        rm -f .env.dev
+        cat > .env.dev << EOF
+        CHAT_ID=$CHAT_ID
+        TOKEN=$TOKEN
+        chat_idADMIN=$chat_idADMIN
+        GITHUB_TOKEN=$GITHUB_TOKEN
+        TURSO_TOKEN=$TURSO_TOKEN
+        TDU=$TDU
+        TAT=$TAT
+        MCU=$MCU
+        MCAP=$MCAP
+        MCL=$MCL
+        MS=$MS
+        PKG=$PKG
+        REPO_URL=$REPO_URL
+        KTOKEN=$KTOKEN
+        KUSER=$KUSER
+        KPWD=$KPWD
+        KTOTP=$KTOTP
+        DB_TYPE=$DB_TYPE
+        TBTOKEN=$TBTOKEN
+        PERIOD=${{ env.period }}
+        PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
+        EOF
+        
+        echo "Created .env.dev file for period: ${{ env.period }}"
+        echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
+    - name: Run historical data for minute
+      run: |
+        cd pkbrokers/kite/examples/
+        python pkkite.py --history=minute --verbose
+
+  historical-5minute:
+    needs: historical-minute  # Depends on minute job
+    if: needs.holiday-check.outputs.is_holiday == 'false' || github.event.name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
+      PERIOD: 5minute
+    steps:
+    - name: Checkout PKBrokers code
+      uses: actions/checkout@v4
+      with:
+        repository: pkjmesra/PKBrokers
+        ref: main
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - name: Install dependencies
+      run: pip install -e . kiteconnect
+    - name: Create .env.dev file
+      env:
+        # Map all PKBrokers related secrets to environment variables
+        CHAT_ID: ${{ secrets.CHAT_ID }}
+        TOKEN: ${{ secrets.TOKEN }}
+        chat_idADMIN: ${{ secrets.chat_idADMIN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
+        TDU: ${{ secrets.TDU }}
+        TAT: ${{ secrets.TAT }}
+        MCU: ${{ secrets.MCU }}
+        MCAP: ${{ secrets.MCAP }}
+        MCL: ${{ secrets.MCL }}
+        MS: ${{ secrets.MS }}
+        PKG: ${{ secrets.PKG }}
+        REPO_URL: ${{ secrets.REPO_URL }}
+        KTOKEN: ${{ secrets.KTOKEN }}
+        KUSER: ${{ secrets.KUSER }}
+        KPWD: ${{ secrets.KPWD }}
+        KTOTP: ${{ secrets.KTOTP }}
+        DB_TYPE: ${{ secrets.DB_TYPE }}
+        TBTOKEN: ${{ secrets.TBTOKEN }}
+      run: |
+        cat > .env.dev << EOF
+        CHAT_ID=$CHAT_ID
+        TOKEN=$TOKEN
+        chat_idADMIN=$chat_idADMIN
+        GITHUB_TOKEN=$GITHUB_TOKEN
+        TURSO_TOKEN=$TURSO_TOKEN
+        TDU=$TDU
+        TAT=$TAT
+        MCU=$MCU
+        MCAP=$MCAP
+        MCL=$MCL
+        MS=$MS
+        PKG=$PKG
+        REPO_URL=$REPO_URL
+        KTOKEN=$KTOKEN
+        KUSER=$KUSER
+        KPWD=$KPWD
+        KTOTP=$KTOTP
+        DB_TYPE=$DB_TYPE
+        TBTOKEN=$TBTOKEN
+        PERIOD=${{ env.period }}
+        PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
+        EOF
+        
+        echo "Created .env.dev file for period: ${{ env.period }}"
+        echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
+    - name: Run historical data for 5minute
+      run: |
+        cd pkbrokers/kite/examples/
+        python pkkite.py --history=5minute --verbose
+
+  # Continue this pattern for 10minute, 15minute, 30minute, 60minute
+  historical-10minute:
+    needs: historical-5minute
+    if: needs.holiday-check.outputs.is_holiday == 'false' || github.event.name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
+      PERIOD: 10minute
+    steps:
+    - name: Checkout PKBrokers code
+      uses: actions/checkout@v4
+      with:
+        repository: pkjmesra/PKBrokers
+        ref: main
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - name: Install dependencies
+      run: pip install -e . kiteconnect
+    - name: Create .env.dev file
+      env:
+        # Map all PKBrokers related secrets to environment variables
+        CHAT_ID: ${{ secrets.CHAT_ID }}
+        TOKEN: ${{ secrets.TOKEN }}
+        chat_idADMIN: ${{ secrets.chat_idADMIN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
+        TDU: ${{ secrets.TDU }}
+        TAT: ${{ secrets.TAT }}
+        MCU: ${{ secrets.MCU }}
+        MCAP: ${{ secrets.MCAP }}
+        MCL: ${{ secrets.MCL }}
+        MS: ${{ secrets.MS }}
+        PKG: ${{ secrets.PKG }}
+        REPO_URL: ${{ secrets.REPO_URL }}
+        KTOKEN: ${{ secrets.KTOKEN }}
+        KUSER: ${{ secrets.KUSER }}
+        KPWD: ${{ secrets.KPWD }}
+        KTOTP: ${{ secrets.KTOTP }}
+        DB_TYPE: ${{ secrets.DB_TYPE }}
+        TBTOKEN: ${{ secrets.TBTOKEN }}
+      run: |
+        cat > .env.dev << EOF
+        CHAT_ID=$CHAT_ID
+        TOKEN=$TOKEN
+        chat_idADMIN=$chat_idADMIN
+        GITHUB_TOKEN=$GITHUB_TOKEN
+        TURSO_TOKEN=$TURSO_TOKEN
+        TDU=$TDU
+        TAT=$TAT
+        MCU=$MCU
+        MCAP=$MCAP
+        MCL=$MCL
+        MS=$MS
+        PKG=$PKG
+        REPO_URL=$REPO_URL
+        KTOKEN=$KTOKEN
+        KUSER=$KUSER
+        KPWD=$KPWD
+        KTOTP=$KTOTP
+        DB_TYPE=$DB_TYPE
+        TBTOKEN=$TBTOKEN
+        PERIOD=${{ env.period }}
+        PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
+        EOF
+        
+        echo "Created .env.dev file for period: ${{ env.period }}"
+        echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
+    - name: Run historical data for 5minute
+      run: |
+        cd pkbrokers/kite/examples/
+        python pkkite.py --history=5minute --verbose
+
+  historical-15minute:
+    needs: historical-10minute
+    if: needs.holiday-check.outputs.is_holiday == 'false' || github.event.name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
+      PERIOD: 15minute
+    steps:
+    - name: Checkout PKBrokers code
+      uses: actions/checkout@v4
+      with:
+        repository: pkjmesra/PKBrokers
+        ref: main
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - name: Install dependencies
+      run: pip install -e . kiteconnect
+    - name: Create .env.dev file
+      env:
+        # Map all PKBrokers related secrets to environment variables
+        CHAT_ID: ${{ secrets.CHAT_ID }}
+        TOKEN: ${{ secrets.TOKEN }}
+        chat_idADMIN: ${{ secrets.chat_idADMIN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
+        TDU: ${{ secrets.TDU }}
+        TAT: ${{ secrets.TAT }}
+        MCU: ${{ secrets.MCU }}
+        MCAP: ${{ secrets.MCAP }}
+        MCL: ${{ secrets.MCL }}
+        MS: ${{ secrets.MS }}
+        PKG: ${{ secrets.PKG }}
+        REPO_URL: ${{ secrets.REPO_URL }}
+        KTOKEN: ${{ secrets.KTOKEN }}
+        KUSER: ${{ secrets.KUSER }}
+        KPWD: ${{ secrets.KPWD }}
+        KTOTP: ${{ secrets.KTOTP }}
+        DB_TYPE: ${{ secrets.DB_TYPE }}
+        TBTOKEN: ${{ secrets.TBTOKEN }}
+      run: |
+        cat > .env.dev << EOF
+        CHAT_ID=$CHAT_ID
+        TOKEN=$TOKEN
+        chat_idADMIN=$chat_idADMIN
+        GITHUB_TOKEN=$GITHUB_TOKEN
+        TURSO_TOKEN=$TURSO_TOKEN
+        TDU=$TDU
+        TAT=$TAT
+        MCU=$MCU
+        MCAP=$MCAP
+        MCL=$MCL
+        MS=$MS
+        PKG=$PKG
+        REPO_URL=$REPO_URL
+        KTOKEN=$KTOKEN
+        KUSER=$KUSER
+        KPWD=$KPWD
+        KTOTP=$KTOTP
+        DB_TYPE=$DB_TYPE
+        TBTOKEN=$TBTOKEN
+        PERIOD=${{ env.period }}
+        PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
+        EOF
+        
+        echo "Created .env.dev file for period: ${{ env.period }}"
+        echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
+    - name: Run historical data for 5minute
+      run: |
+        cd pkbrokers/kite/examples/
+        python pkkite.py --history=5minute --verbose
+
+  historical-30minute:
+    needs: historical-15minute
+    if: needs.holiday-check.outputs.is_holiday == 'false' || github.event.name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
+      PERIOD: 30minute
+    steps:
+    - name: Checkout PKBrokers code
+      uses: actions/checkout@v4
+      with:
+        repository: pkjmesra/PKBrokers
+        ref: main
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - name: Install dependencies
+      run: pip install -e . kiteconnect
+    - name: Create .env.dev file
+      env:
+        # Map all PKBrokers related secrets to environment variables
+        CHAT_ID: ${{ secrets.CHAT_ID }}
+        TOKEN: ${{ secrets.TOKEN }}
+        chat_idADMIN: ${{ secrets.chat_idADMIN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
+        TDU: ${{ secrets.TDU }}
+        TAT: ${{ secrets.TAT }}
+        MCU: ${{ secrets.MCU }}
+        MCAP: ${{ secrets.MCAP }}
+        MCL: ${{ secrets.MCL }}
+        MS: ${{ secrets.MS }}
+        PKG: ${{ secrets.PKG }}
+        REPO_URL: ${{ secrets.REPO_URL }}
+        KTOKEN: ${{ secrets.KTOKEN }}
+        KUSER: ${{ secrets.KUSER }}
+        KPWD: ${{ secrets.KPWD }}
+        KTOTP: ${{ secrets.KTOTP }}
+        DB_TYPE: ${{ secrets.DB_TYPE }}
+        TBTOKEN: ${{ secrets.TBTOKEN }}
+      run: |
+        cat > .env.dev << EOF
+        CHAT_ID=$CHAT_ID
+        TOKEN=$TOKEN
+        chat_idADMIN=$chat_idADMIN
+        GITHUB_TOKEN=$GITHUB_TOKEN
+        TURSO_TOKEN=$TURSO_TOKEN
+        TDU=$TDU
+        TAT=$TAT
+        MCU=$MCU
+        MCAP=$MCAP
+        MCL=$MCL
+        MS=$MS
+        PKG=$PKG
+        REPO_URL=$REPO_URL
+        KTOKEN=$KTOKEN
+        KUSER=$KUSER
+        KPWD=$KPWD
+        KTOTP=$KTOTP
+        DB_TYPE=$DB_TYPE
+        TBTOKEN=$TBTOKEN
+        PERIOD=${{ env.period }}
+        PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
+        EOF
+        
+        echo "Created .env.dev file for period: ${{ env.period }}"
+        echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
+    - name: Run historical data for 5minute
+      run: |
+        cd pkbrokers/kite/examples/
+        python pkkite.py --history=5minute --verbose
+
+  historical-60minute:
+    needs: historical-30minute
+    if: needs.holiday-check.outputs.is_holiday == 'false' || github.event.name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
+      PERIOD: 60minute
+    steps:
+    - name: Checkout PKBrokers code
+      uses: actions/checkout@v4
+      with:
+        repository: pkjmesra/PKBrokers
+        ref: main
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - name: Install dependencies
+      run: pip install -e . kiteconnect
+    - name: Create .env.dev file
+      env:
+        # Map all PKBrokers related secrets to environment variables
+        CHAT_ID: ${{ secrets.CHAT_ID }}
+        TOKEN: ${{ secrets.TOKEN }}
+        chat_idADMIN: ${{ secrets.chat_idADMIN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
+        TDU: ${{ secrets.TDU }}
+        TAT: ${{ secrets.TAT }}
+        MCU: ${{ secrets.MCU }}
+        MCAP: ${{ secrets.MCAP }}
+        MCL: ${{ secrets.MCL }}
+        MS: ${{ secrets.MS }}
+        PKG: ${{ secrets.PKG }}
+        REPO_URL: ${{ secrets.REPO_URL }}
+        KTOKEN: ${{ secrets.KTOKEN }}
+        KUSER: ${{ secrets.KUSER }}
+        KPWD: ${{ secrets.KPWD }}
+        KTOTP: ${{ secrets.KTOTP }}
+        DB_TYPE: ${{ secrets.DB_TYPE }}
+        TBTOKEN: ${{ secrets.TBTOKEN }}
+      run: |
+        cat > .env.dev << EOF
+        CHAT_ID=$CHAT_ID
+        TOKEN=$TOKEN
+        chat_idADMIN=$chat_idADMIN
+        GITHUB_TOKEN=$GITHUB_TOKEN
+        TURSO_TOKEN=$TURSO_TOKEN
+        TDU=$TDU
+        TAT=$TAT
+        MCU=$MCU
+        MCAP=$MCAP
+        MCL=$MCL
+        MS=$MS
+        PKG=$PKG
+        REPO_URL=$REPO_URL
+        KTOKEN=$KTOKEN
+        KUSER=$KUSER
+        KPWD=$KPWD
+        KTOTP=$KTOTP
+        DB_TYPE=$DB_TYPE
+        TBTOKEN=$TBTOKEN
+        PERIOD=${{ env.period }}
+        PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
+        EOF
+        
+        echo "Created .env.dev file for period: ${{ env.period }}"
+        echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
+    - name: Run historical data for 5minute
+      run: |
+        cd pkbrokers/kite/examples/
+        python pkkite.py --history=5minute --verbose
