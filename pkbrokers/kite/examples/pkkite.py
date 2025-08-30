@@ -75,8 +75,16 @@ argParser.add_argument(
 )
 try:
     argsv = argParser.parse_known_args()
-except BaseException:
-    pass
+except BaseException as e:
+    print(f"Could not parse arguments: Error: {e}")
+    print(
+        "You can use like this :\npkkite --auth\npkkite --ticks\npkkite --history\npkkite --instruments\npkkite --pickle\n\n"
+    )
+    from pkbrokers.kite.instrumentHistory import Historical_Interval
+    intervals = ', '.join(map(lambda x: x.value, Historical_Interval))
+    example_lines = '\n'.join(map(lambda x: f"pkkite --history={x.value}", Historical_Interval))
+    print(f"--history= requires at least one of the following parameters: {intervals}\nFor example:\n{example_lines}")
+    sys.exit(0)
 
 args = argsv[0]
 
