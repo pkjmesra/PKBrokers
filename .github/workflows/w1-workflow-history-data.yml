@@ -111,12 +111,12 @@ jobs:
         echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
     - name: Run historical data for day
       run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
         python pkkite.py --history=day --verbose
 
   historical-minute:
     needs: historical-day  # Depends on day job completing first
-    if: needs.holiday-check.outputs.is_holiday == 'false' || github.event.name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -185,12 +185,12 @@ jobs:
         echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
     - name: Run historical data for minute
       run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
         python pkkite.py --history=minute --verbose
 
   historical-5minute:
     needs: historical-minute  # Depends on minute job
-    if: needs.holiday-check.outputs.is_holiday == 'false' || github.event.name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -259,13 +259,13 @@ jobs:
         echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
     - name: Run historical data for 5minute
       run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
         python pkkite.py --history=5minute --verbose
 
   # Continue this pattern for 10minute, 15minute, 30minute, 60minute
   historical-10minute:
     needs: historical-5minute
-    if: needs.holiday-check.outputs.is_holiday == 'false' || github.event.name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -334,12 +334,12 @@ jobs:
         echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
     - name: Run historical data for 5minute
       run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
         python pkkite.py --history=5minute --verbose
 
   historical-15minute:
     needs: historical-10minute
-    if: needs.holiday-check.outputs.is_holiday == 'false' || github.event.name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -408,12 +408,12 @@ jobs:
         echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
     - name: Run historical data for 5minute
       run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
         python pkkite.py --history=5minute --verbose
 
   historical-30minute:
     needs: historical-15minute
-    if: needs.holiday-check.outputs.is_holiday == 'false' || github.event.name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -482,12 +482,12 @@ jobs:
         echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
     - name: Run historical data for 5minute
       run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
         python pkkite.py --history=5minute --verbose
 
   historical-60minute:
     needs: historical-30minute
-    if: needs.holiday-check.outputs.is_holiday == 'false' || github.event.name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -556,5 +556,6 @@ jobs:
         echo "Set PKDevTools_Default_Log_Level to ${{ env.PKDevTools_Default_Log_Level }}"
     - name: Run historical data for 5minute
       run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
         python pkkite.py --history=5minute --verbose
