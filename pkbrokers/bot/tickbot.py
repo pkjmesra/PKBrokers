@@ -66,6 +66,7 @@ class PKTickBot:
             "/start - Start the bot\n"
             "/ticks - Get zipped market data file\n"
             "/status - Check bot and data status\n"
+            "/top - Get top 20 ticking symbols\n"
             "/help - Show this help message\n\n"
             "📦 Files are automatically compressed to reduce size. "
             "If the file is too large, it will be split into multiple parts."
@@ -191,6 +192,35 @@ class PKTickBot:
         import glob
         return glob.glob(f"{base_path}.part*")
 
+    def get_top_ticks_formatted(self, limit=20):
+        with open(self.ticks_file_path, 'r') as f:
+            data = json.load(f)
+        
+        instruments = list(data.values())
+        top_limit = sorted(instruments, key=lambda x: x.get('tick_count', 0), reverse=True)[:limit]
+        output = None
+        if top_limit > 0:
+            output = "Symbol     | Tick Count | Price\n"
+            output += "-----------|------------|--------\n"
+            
+            for i, instrument in enumerate(top_limit, 1):
+                symbol = instrument.get('trading_symbol', 'N/A')
+                tick_count = instrument.get('tick_count', 0)
+                price = instrument.get('ohlcv', {}).get('close', 0)
+                
+                output += f"{symbol:10} | {tick_count:10} | {price:6.2f}\n"
+        
+        return output
+
+    def top_ticks(self, update: Update, context: CallbackContext) -> None:
+        """Send top 20 instruments by tick count"""
+        top_instruments = self.get_top_ticks_formatted(limit=20)
+        if not top_instruments:
+            update.message.reply_text("No data available or error reading ticks file.")
+            return
+        message = f"📊 Top 20 Instruments by Tick Count:\n\n{top_instruments}"
+        update.message.reply_text(message)
+
     def status(self, update: Update, context: CallbackContext) -> None:
         """Check bot and data status"""
         try:
@@ -198,7 +228,9 @@ class PKTickBot:
 
             if os.path.exists(self.ticks_file_path):
                 file_size = os.path.getsize(self.ticks_file_path)
+                file_mtime = os.path.getmtime(self.ticks_file_path)
                 status_msg += f"📁 ticks.json: {file_size:,} bytes\n"
+                status_msg += f"📁 Modified: {file_mtime:,} UTC\n"
 
                 # Check zip size
                 try:
@@ -241,6 +273,8 @@ class PKTickBot:
             dispatcher.add_handler(CommandHandler("start", self.start))
             dispatcher.add_handler(CommandHandler("ticks", self.send_zipped_ticks))
             dispatcher.add_handler(CommandHandler("status", self.status))
+            dispatcher.add_handler(CommandHandler("top", self.top_ticks))
+            
             dispatcher.add_handler(CommandHandler("help", self.help_command))
 
             self.logger.info("Starting PKTickBot...")
