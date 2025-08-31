@@ -219,22 +219,35 @@ def orchestrate():
     orchestrator = PKTickOrchestrator(None, None, None, None)
     orchestrator.run()
 
-def orchestrate_consumer():
+def orchestrate_consumer(command:str="/ticks"):
     from PKDevTools.classes import Archiver
     import json
-    from pkbrokers.bot.consumer import try_get_ticks_from_bot
+    from pkbrokers.bot.consumer import try_get_command_response_from_bot
     # Programmatic usage with zip handling
     # orchestrator = PKTickOrchestrator(None, None, None, None)
     # consumer = orchestrator.get_consumer()
     # success, json_path = consumer.get_ticks(output_dir=os.path.join(Archiver.get_user_data_dir()))
-    success = try_get_ticks_from_bot()
+    response = try_get_command_response_from_bot(command=command)
+    success = response["success"]
     json_path = os.path.join(Archiver.get_user_data_dir(), "extracted" ,"ticks.json")
-    success = os.path.exists(json_path)
-    if success:
-        print(f"✅ Downloaded and extracted ticks.json to: {json_path}")
-        # Now you can use the JSON file
-        with open(json_path, 'r') as f:
-            data = json.load(f)
-        print(f"Found {len(data)} instruments")
-    else:
-        print("❌ Failed to get ticks file")
+    if response["type"] in ["file"]:
+        if success and os.path.exists(json_path):
+            print(f"✅ Downloaded and extracted ticks.json to: {json_path}")
+            # Now you can use the JSON file
+            with open(json_path, 'r') as f:
+                data = json.load(f)
+            print(f"Found {len(data)} instruments")
+        else:
+            print("❌ Failed to get ticks file")
+    elif response["type"] in ["photo"]:
+        print("We can also get photo")
+    elif response["type"] in ["text"]:
+        if command == "/token":
+            from pkbrokers.envupdater import env_update_context
+            from PKDevTools.classes.Environment import PKEnvironment
+            print(f"Previous token:{PKEnvironment().KTOKEN}")
+            with env_update_context(".env.dev") as updater:
+                updater.update_values({"KTOKEN": response["content"]})
+                updater.reload_env()
+            print(f"Updated token:{PKEnvironment().KTOKEN}")
+        return response["content"]

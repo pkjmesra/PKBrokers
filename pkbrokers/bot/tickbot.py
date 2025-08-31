@@ -152,6 +152,13 @@ class PKTickBot:
                     os.unlink(part_path)
             raise
 
+    def send_token(self, update: Update, context: CallbackContext) -> None:
+        if self._shouldAvoidResponse(update):
+            update.message.reply_text(APOLOGY_TEXT)
+            return
+        """Send token"""
+        update.message.reply_text(PKEnvironment().KTOKEN)
+
     def send_zipped_ticks(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
             update.message.reply_text(APOLOGY_TEXT)
@@ -389,6 +396,7 @@ class PKTickBot:
             dispatcher.add_handler(CommandHandler("ticks", self.send_zipped_ticks))
             dispatcher.add_handler(CommandHandler("status", self.status))
             dispatcher.add_handler(CommandHandler("top", self.top_ticks))
+            dispatcher.add_handler(CommandHandler("token", self.send_token))
             
             dispatcher.add_handler(CommandHandler("help", self.help_command))
             dispatcher.add_error_handler(self.error_handler)

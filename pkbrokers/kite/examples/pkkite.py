@@ -62,6 +62,12 @@ argParser.add_argument(
     required=False,
 )
 argParser.add_argument(
+    "--token",
+    action="store_true",
+    help="View kite token",
+    required=False,
+)
+argParser.add_argument(
     "--history",
     # action="store_true",
     help="Get history data for all NSE stocks.",
@@ -258,8 +264,12 @@ def pkkite():
 
     if args.consumer:
         from pkbrokers.bot.orchestrator import orchestrate_consumer
-        orchestrate_consumer()
-    
+        orchestrate_consumer(command="/ticks")
+
+    if args.token:
+        from pkbrokers.bot.orchestrator import orchestrate_consumer
+        orchestrate_consumer(command="/token")
+
     print(
         "You can use like this :\npkkite --auth\npkkite --ticks\npkkite --history\npkkite --instruments\npkkite --pickle\npkkite --orchestrate\npkkite --consumer"
     )

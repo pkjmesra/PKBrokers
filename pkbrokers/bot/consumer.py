@@ -233,7 +233,7 @@ class PKTickBotConsumer:
         return self.send_command("/status")
 
 async def get_pktickbot_response_command(command: str = "/ticks"):
-    """Use the user's Telegram account to interact with the bot"""
+    """Enhanced version with better error handling and response parsing"""
     api_id = PKEnvironment().Tel_API_ID
     api_hash = PKEnvironment().Tel_API_Hash
     phone_number = PKEnvironment().Tel_Phone_Number
@@ -241,49 +241,81 @@ async def get_pktickbot_response_command(command: str = "/ticks"):
     async with TelegramClient('user_session', api_id, api_hash) as client:
         await client.start(phone=phone_number)
         
-        completion_event = asyncio.Event()
+        response_queue = asyncio.Queue()
+        response_received = asyncio.Event()
         
         # Send command to the bot
         bot_username = '@pktickbot'
         await client.send_message(bot_username, command)
-        print("Command sent to bot")
+        print(f"Command '{command}' sent to bot")
         
-        # Wait for the bot's response with file
+        # Handler for bot responses
         @client.on(events.NewMessage(from_users=bot_username))
         async def handler(event):
-            if event.message.document:
-                print("Bot sent a file!")
-                try:
-                    # Download the file
-                    file_path = await event.message.download_media(file=Archiver.get_user_data_dir())
-                    print(f"File downloaded: {file_path}")
+            try:
+                response = {"type": None, "content": None, "raw_message": event.message}
+                
+                if event.message.document:
+                    response["type"] = "file"
+                    response["file_name"] = event.message.document.attributes[0].file_name if event.message.document.attributes else "unknown"
+                    response["file_size"] = event.message.document.size
                     
-                    # Extract if it's a zip
-                    if file_path.endswith('.zip'):
-                        extract_dir = os.path.join(Archiver.get_user_data_dir(), "extracted")
-                        os.makedirs(extract_dir, exist_ok=True)
-                        
-                        with zipfile.ZipFile(file_path, 'r') as zip_ref:
-                            zip_ref.extractall(extract_dir)
-                        print(f"File extracted into: {extract_dir}")
+                elif event.message.text:
+                    response["type"] = "text"
+                    response["content"] = event.message.text
                     
-                    completion_event.set()
+                elif event.message.photo:
+                    response["type"] = "photo"
                     
-                finally:
-                    client.remove_event_handler(handler)
+                # Put response in queue and signal receipt
+                await response_queue.put(response)
+                response_received.set()
+                
+            except Exception as e:
+                error_response = {
+                    "type": "error", 
+                    "content": str(e),
+                    "success": False
+                }
+                await response_queue.put(error_response)
+                response_received.set()
+            finally:
+                client.remove_event_handler(handler)
         
-        # Wait for completion with timeout
+        # Wait for response with timeout
         try:
-            await asyncio.wait_for(completion_event.wait(), timeout=60)
-            print("File received and processed successfully")
-            return True
+            # Wait for the response received signal
+            await asyncio.wait_for(response_received.wait(), timeout=60)
+            
+            # Get the response from queue
+            response = await response_queue.get()
+            
+            # Process file downloads if needed
+            if response["type"] in ["file", "photo"] and not response.get("content"):
+                file_path = await response["raw_message"].download_media(file=Archiver.get_user_data_dir())
+                response["content"] = file_path
+                
+                # Extract zip files
+                if response["type"] == "file" and file_path.endswith('.zip'):
+                    extract_dir = os.path.join(Archiver.get_user_data_dir(), "extracted")
+                    os.makedirs(extract_dir, exist_ok=True)
+                    with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                        zip_ref.extractall(extract_dir)
+                    response["extracted_path"] = extract_dir
+            
+            response["success"] = True
+            return response
+            
         except asyncio.TimeoutError:
-            print("Timeout waiting for bot response")
-            return False
+            return {
+                "type": "timeout",
+                "content": "No response from bot within 60 seconds",
+                "success": False
+            }
 
-def try_get_ticks_from_bot():
+def try_get_command_response_from_bot(command:str="/ticks"):
     # Run it
-    return asyncio.run(get_pktickbot_response_command())
+    return asyncio.run(get_pktickbot_response_command(command=command))
 
 
 # # encode_session.py (run locally)
