@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 358
     env:
-      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
+      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || 20 }}
     steps:
     - name: Checkout PKBrokers code
       uses: actions/checkout@v4

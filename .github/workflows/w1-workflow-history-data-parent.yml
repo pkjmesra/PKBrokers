@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 358
     env:
-      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
+      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || 20 }}
     steps:
     - name: Trigger other period children jobs using API
       env:
@@ -60,7 +60,7 @@ jobs:
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/actions/workflows/w1-workflow-history-data-child.yml/dispatches \
-            -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$period\",\"logLevel\":${{ github.event.inputs.logLevel || '20' }}}}"
+            -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$period\",\"logLevel\":${{ github.event.inputs.logLevel || 20 }}}}"
           
           sleep 2
         done
