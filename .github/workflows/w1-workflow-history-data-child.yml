@@ -41,7 +41,7 @@ jobs:
     needs: holiday-check
     if: (needs.holiday-check.outputs.is_holiday == 'false' || github.event_name == 'workflow_dispatch') && (github.event.inputs.period == 'day' || github.event_name == 'schedule')
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 358
     env:
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
     steps:
