@@ -431,6 +431,8 @@ class PKTickBot:
         Channel_Id = PKEnvironment().CHAT_ID
         chat_idADMIN = PKEnvironment().chat_idADMIN
         sentFrom = []
+        if update is None:
+            return True
         if update.callback_query is not None:
             sentFrom.append(abs(update.callback_query.from_user.id))
         if update.message is not None and update.message.from_user is not None:
