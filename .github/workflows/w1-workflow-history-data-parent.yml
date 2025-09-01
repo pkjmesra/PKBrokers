@@ -48,7 +48,7 @@ jobs:
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
       TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
     outputs:
-      kite_token: ${{ steps.validate-token.outputs.kite_token }}
+      kite_token: ${{ steps.validate-token.outputs.KITE_TOKEN }}
       token_valid: ${{ steps.validate-token.outputs.token_valid }}
     steps:
     - name: Checkout PKBrokers code
