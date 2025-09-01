@@ -30,6 +30,8 @@ import os
 import tempfile
 import zipfile
 import pytz
+import signal
+import sys
 try:
     import thread
 except ImportError:
@@ -60,6 +62,8 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
+# Global variable to track conflict state
+conflict_detected = False
 
 class PKTickBot:
     """Telegram bot that sends zipped ticks.json file on command"""
@@ -76,6 +80,7 @@ class PKTickBot:
         self.chat_id = f"-{self.chat_id}" if not str(self.chat_id).startswith("-") else self.chat_id
         self.updater = None
         self.logger = logging.getLogger(__name__)
+        self.conflict_detected = False
 
     def start(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
@@ -320,6 +325,7 @@ class PKTickBot:
         if self._shouldAvoidResponse(update):
             update.message.reply_text(APOLOGY_TEXT)
             return
+        
         Channel_Id = PKEnvironment().CHAT_ID
         """Log the error and send a telegram message to notify the developer."""
         # Log the error before we do anything else, so we can see it even if something breaks.
@@ -333,31 +339,27 @@ class PKTickBot:
         tb_string = "".join(tb_list)
         global start_time
         timeSinceStarted = datetime.now() - start_time
-        if (
-            "telegram.error.Conflict" in tb_string
-        ):  # A newer 2nd instance was registered. We should politely shutdown.
+        
+        # Check for conflict error
+        if "telegram.error.Conflict" in tb_string or "409" in tb_string:
+            self.conflict_detected = True
+            logger.error("Conflict detected: Another instance is running. Shutting down gracefully.")
+            
             if (
                 timeSinceStarted.total_seconds() >= MINUTES_2_IN_SECONDS
             ):  # shutdown only if we have been running for over 2 minutes.
-                # This also prevents this newer instance to get shutdown.
-                # Instead the older instance will shutdown
-                print(
-                    f"Stopping due to conflict after running for {timeSinceStarted.total_seconds()/60} minutes."
-                )
+                logger.info(f"Stopping due to conflict after running for {timeSinceStarted.total_seconds()/60} minutes.")
                 try:
-                    # context.dispatcher.stop()
-                    thread.interrupt_main() # causes ctrl + c
-                    # sys.exit(0)
-                except RuntimeError:
-                    pass
-                except SystemExit:
-                    thread.interrupt_main()
-                # sys.exit(0)
+                    # Signal the main process to shutdown
+                    os.kill(os.getpid(), signal.SIGINT)
+                except Exception as e:
+                    logger.error(f"Error sending shutdown signal: {e}")
+                    sys.exit(1)
             else:
-                print("Other instance running!")
-                # context.application.run_polling(allowed_updates=Update.ALL_TYPES)
+                logger.info("Other instance running! This instance will exit.")
+                sys.exit(0)
+        
         # Build the message with some markup and additional information about what happened.
-        # You might need to add some logic to deal with messages longer than the 4096 character limit.
         update_str = update.to_dict() if isinstance(update, Update) else str(update)
         message = (
             f"An exception was raised while handling an update\n"
@@ -369,21 +371,21 @@ class PKTickBot:
         )
 
         try:
-            # Finally, send the message
-            if "telegram.error.Conflict" not in message and Channel_Id is not None and len(str(Channel_Id)) > 0:
+            # Finally, send the message only if it's not a conflict error
+            if "telegram.error.Conflict" not in tb_string and "409" not in tb_string and Channel_Id is not None and len(str(Channel_Id)) > 0:
                 context.bot.send_message(
                     chat_id=int(f"-{Channel_Id}"), text=message, parse_mode="HTML"
                 )
-        except Exception:# pragma: no cover
+        except Exception:
             try:
-                if "telegram.error.Conflict" not in tb_string and Channel_Id is not None and len(str(Channel_Id)) > 0:
+                if "telegram.error.Conflict" not in tb_string and "409" not in tb_string and Channel_Id is not None and len(str(Channel_Id)) > 0:
                     context.bot.send_message(
                         chat_id=int(f"-{Channel_Id}"),
                         text=tb_string,
                         parse_mode="HTML",
                     )
-            except Exception:# pragma: no cover
-                print(tb_string)
+            except Exception:
+                logger.error(tb_string)
 
     def run_bot(self):
         """Run the telegram bot - synchronous version for v13.4"""
@@ -423,6 +425,7 @@ class PKTickBot:
         finally:
             if self.updater:
                 self.updater.stop()
+                self.logger.info("Bot stopped gracefully")
 
     def _shouldAvoidResponse(self, update):
         Channel_Id = PKEnvironment().CHAT_ID
@@ -457,4 +460,3 @@ class PKTickBot:
     def run(self):
         """Run the bot - no asyncio needed for v13.4"""
         self.run_bot()
-

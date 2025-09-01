@@ -30,6 +30,7 @@ import time
 import multiprocessing
 import requests
 import json
+import signal
 from datetime import datetime, time as dt_time
 from typing import Optional
 
@@ -44,6 +45,7 @@ if __name__ == "__main__":
 # Set spawn context globally
 multiprocessing.set_start_method("spawn", force=True)
 
+WAIT_TIME_SEC_CLOSING_ANOTHER_RUNNING_INSTANCE=30
 class PKTickOrchestrator:
     """Orchestrates PKTickBot and kite_ticks in separate processes"""
 
@@ -59,6 +61,7 @@ class PKTickOrchestrator:
         self.bot_process = None
         self.kite_process = None
         self.mp_context = multiprocessing.get_context("spawn")
+        self.shutdown_requested = False
         
         # Don't initialize logger or other complex objects here
         # They will be initialized in each process separately
@@ -78,6 +81,7 @@ class PKTickOrchestrator:
         self.mp_context = multiprocessing.get_context("spawn")
         self.bot_process = None
         self.kite_process = None
+        self.shutdown_requested = False
 
     def _get_logger(self):
         """Get logger instance - initialized separately in each process"""
@@ -208,6 +212,7 @@ class PKTickOrchestrator:
 
         # Start kite_ticks process only during market hours and non-holidays
         if self.should_run_kite_process():
+            time.sleep(WAIT_TIME_SEC_CLOSING_ANOTHER_RUNNING_INSTANCE)
             self.kite_process = self.mp_context.Process(
                 target=self.run_kite_ticks, name="KiteTicksProcess"
             )
@@ -224,12 +229,22 @@ class PKTickOrchestrator:
         logger.info("Stopping processes...")
 
         if self.bot_process and self.bot_process.is_alive():
-            self.bot_process.terminate()
-            self.bot_process.join(timeout=5)
+            try:
+                self.bot_process.terminate()
+                self.bot_process.join(timeout=5)
+                if self.bot_process.is_alive():
+                    self.bot_process.kill()
+            except Exception as e:
+                logger.error(f"Error stopping bot process: {e}")
 
         if self.kite_process and self.kite_process.is_alive():
-            self.kite_process.terminate()
-            self.kite_process.join(timeout=5)
+            try:
+                self.kite_process.terminate()
+                self.kite_process.join(timeout=5)
+                if self.kite_process.is_alive():
+                    self.kite_process.kill()
+            except Exception as e:
+                logger.error(f"Error stopping kite process: {e}")
 
         logger.info("All processes stopped")
 
@@ -268,14 +283,24 @@ class PKTickOrchestrator:
             while True:
                 time.sleep(1)
                 
+                # Check if shutdown was requested (e.g., due to conflict)
+                if self.shutdown_requested:
+                    logger.info("Shutdown requested due to conflict. Stopping processes...")
+                    break
+                
                 # Check if bot process died
                 if self.bot_process and not self.bot_process.is_alive():
-                    logger.warn("Bot process died, restarting...")
-                    self.bot_process = self.mp_context.Process(
-                        target=self.run_telegram_bot, name="PKTickBotProcess"
-                    )
-                    self.bot_process.daemon = False
-                    self.bot_process.start()
+                    # Check if bot died due to conflict
+                    if self._check_bot_exit_status():
+                        logger.warning("Bot process died due to conflict. Shutting down orchestrator...")
+                        break
+                    else:
+                        logger.warning("Bot process died, restarting...")
+                        self.bot_process = self.mp_context.Process(
+                            target=self.run_telegram_bot, name="PKTickBotProcess"
+                        )
+                        self.bot_process.daemon = False
+                        self.bot_process.start()
                 
                 # Check market conditions every 30 seconds for kite process
                 current_time = time.time()
@@ -286,8 +311,26 @@ class PKTickOrchestrator:
         except KeyboardInterrupt:
             logger = self._get_logger()
             logger.info("Keyboard interrupt received")
+        except Exception as e:
+            logger.error(f"Unexpected error in orchestrator: {e}")
         finally:
             self.stop()
+            logger.info("Orchestrator stopped completely")
+
+    def _check_bot_exit_status(self):
+        """Check if bot process exited due to conflict"""
+        if self.bot_process and self.bot_process.exitcode is not None:
+            # If bot exited with non-zero code, it might be due to conflict
+            if self.bot_process.exitcode != 0:
+                return True
+        return False
+
+    def signal_handler(self, signum, frame):
+        """Handle shutdown signals"""
+        logger = self._get_logger()
+        logger.info(f"Received signal {signum}. Shutting down gracefully...")
+        self.shutdown_requested = True
+
 
     def get_consumer(self):
         """Get a consumer instance to interact with the bot"""

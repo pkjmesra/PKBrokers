@@ -82,6 +82,9 @@ jobs:
         DB_TYPE: ${{ secrets.DB_TYPE }}
         TBTOKEN: ${{ secrets.TBTOKEN }}
         BBTOKEN: ${{ secrets.BBTOKEN }}
+        Tel_API_ID: ${{ secrets.Tel_API_ID }}
+        Tel_API_Hash: ${{ secrets.Tel_API_Hash }}
+        Tel_Phone_Number: ${{ secrets.Tel_Phone_Number }}
         TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
       run: |
         cat > .env.dev << EOF
@@ -105,6 +108,10 @@ jobs:
         DB_TYPE=$DB_TYPE
         TBTOKEN=$TBTOKEN
         BBTOKEN=$BBTOKEN
+        Tel_API_ID
+        Tel_API_Hash
+        Tel_Phone_Number: ${{ secrets.Tel_Phone_Number }}
+
         TEL_SESSION_DATA=$TEL_SESSION_DATA
         PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
         EOF
