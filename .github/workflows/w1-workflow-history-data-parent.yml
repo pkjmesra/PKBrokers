@@ -85,6 +85,7 @@ jobs:
         KUSER: ${{ secrets.KUSER }}
         KPWD: ${{ secrets.KPWD }}
         KTOTP: ${{ secrets.KTOTP }}
+        KTOKEN: ${{ secrets.KTOKEN }}
         DB_TYPE: ${{ secrets.DB_TYPE }}
         TBTOKEN: ${{ secrets.TBTOKEN }}
         BBTOKEN: ${{ secrets.BBTOKEN }}
@@ -110,6 +111,7 @@ jobs:
         KUSER=$KUSER
         KPWD=$KPWD
         KTOTP=$KTOTP
+        KTOKEN=$KTOKEN
         DB_TYPE=$DB_TYPE
         TBTOKEN=$TBTOKEN
         BBTOKEN=$BBTOKEN
