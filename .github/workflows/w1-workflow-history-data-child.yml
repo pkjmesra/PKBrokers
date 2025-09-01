@@ -60,6 +60,11 @@ jobs:
         KTOTP: ${{ secrets.KTOTP }}
         DB_TYPE: ${{ secrets.DB_TYPE }}
         TBTOKEN: ${{ secrets.TBTOKEN }}
+        Tel_API_ID: ${{ secrets.Tel_API_ID }}
+        Tel_API_Hash: ${{ secrets.Tel_API_Hash }}
+        Tel_Phone_Number: ${{ secrets.Tel_Phone_Number }}
+        TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
+        PERIOD: ${{ inputs.period }}
       run: |
         cat > .env.dev << EOF
         CHAT_ID=$CHAT_ID
@@ -81,7 +86,11 @@ jobs:
         KTOTP=$KTOTP
         DB_TYPE=$DB_TYPE
         TBTOKEN=$TBTOKEN
-        PERIOD=day
+        PERIOD=$PERIOD
+        Tel_API_ID=$Tel_API_ID
+        Tel_API_Hash=$Tel_API_Hash
+        Tel_Phone_Number:$Tel_Phone_Number
+        TEL_SESSION_DATA=$TEL_SESSION_DATA
         PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
         EOF
         
