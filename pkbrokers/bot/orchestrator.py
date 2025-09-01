@@ -28,6 +28,9 @@ import os
 import sys
 import time
 import multiprocessing
+import requests
+import json
+from datetime import datetime, time as dt_time
 from typing import Optional
 
 # macOS fork safety
@@ -45,7 +48,8 @@ class PKTickOrchestrator:
     """Orchestrates PKTickBot and kite_ticks in separate processes"""
 
     def __init__(
-        self, bot_token: Optional[str] = None, bridge_bot_token: Optional[str] = None, ticks_file_path: Optional[str] = None, chat_id: Optional[str] = None
+        self, bot_token: Optional[str] = None, bridge_bot_token: Optional[str] = None, 
+        ticks_file_path: Optional[str] = None, chat_id: Optional[str] = None
     ):
         # Store only primitive data types that can be pickled
         self.bot_token = bot_token
@@ -96,6 +100,63 @@ class PKTickOrchestrator:
                 Archiver.get_user_data_dir(), "ticks.json"
             )
 
+    def is_market_hours(self):
+        """Check if current time is within NSE market hours (9:15 AM to 3:30 PM IST)"""
+        try:
+            # Get current time in IST (UTC+5:30)
+            utc_now = datetime.utcnow()
+            ist_now = utc_now.replace(hour=utc_now.hour + 5, minute=utc_now.minute + 30)
+            
+            # Market hours: 9:15 AM to 3:30 PM IST
+            market_start = dt_time(9, 15)
+            market_end = dt_time(15, 30)
+            
+            # Check if within market hours
+            current_time = ist_now.time()
+            return market_start <= current_time <= market_end
+            
+        except Exception as e:
+            print(f"Error checking market hours: {e}")
+            return False
+
+    def is_trading_holiday(self):
+        """Check if today is a trading holiday"""
+        try:
+            # Download holidays JSON
+            response = requests.get(
+                "https://raw.githubusercontent.com/pkjmesra/PKScreener/main/.github/dependencies/nse-holidays.json",
+                timeout=10
+            )
+            response.raise_for_status()
+            holidays_data = response.json()
+            
+            # Get current date in DD-MMM-YYYY format (e.g., 26-Jan-2025)
+            current_date = datetime.now().strftime("%d-%b-%Y")
+            
+            # Check if current date is in holidays list under "CM" key
+            trading_holidays = holidays_data.get("CM", [])
+            for holiday in trading_holidays:
+                if holiday.get("tradingDate") == current_date:
+                    return True
+                    
+            return False
+            
+        except Exception as e:
+            print(f"Error checking trading holidays: {e}")
+            return False  # Assume not holiday if we can't check
+
+    def should_run_kite_process(self):
+        """Determine if kite process should run based on market hours and holidays"""
+        # Check if it's a trading holiday
+        if self.is_trading_holiday():
+            return False
+            
+        # Check if it's market hours
+        if not self.is_market_hours():
+            return False
+            
+        return True
+
     def run_kite_ticks(self):
         """Run kite_ticks in a separate process"""
         try:
@@ -132,29 +193,30 @@ class PKTickOrchestrator:
             logger.error(f"Telegram bot error: {e}")
 
     def start(self):
-        """Start both processes"""
+        """Start both processes based on market conditions"""
         # Initialize logger in main process
         logger = self._get_logger()
         logger.info("Starting PKTick Orchestrator...")
         
-        # Start kite_ticks process
-        self.kite_process = self.mp_context.Process(
-            target=self.run_kite_ticks, name="KiteTicksProcess"
-        )
-        self.kite_process.daemon = False
-        self.kite_process.start()
-
-        # Wait a bit for data to start flowing
-        time.sleep(5)
-
-        # Start Telegram bot process
+        # Always start Telegram bot process
         self.bot_process = self.mp_context.Process(
             target=self.run_telegram_bot, name="PKTickBotProcess"
         )
         self.bot_process.daemon = False
         self.bot_process.start()
+        logger.info("Telegram bot process started")
 
-        logger.info("Both processes started successfully")
+        # Start kite_ticks process only during market hours and non-holidays
+        if self.should_run_kite_process():
+            self.kite_process = self.mp_context.Process(
+                target=self.run_kite_ticks, name="KiteTicksProcess"
+            )
+            self.kite_process.daemon = False
+            self.kite_process.start()
+            logger.info("Kite ticks process started (market hours)")
+        else:
+            logger.info("Kite ticks process not started (outside market hours or holiday)")
+            self.kite_process = None
 
     def stop(self):
         """Stop both processes gracefully"""
@@ -171,13 +233,28 @@ class PKTickOrchestrator:
 
         logger.info("All processes stopped")
 
-    def get_consumer(self):
-        """Get a consumer instance to interact with the bot"""
-        self._initialize_environment()
-        from pkbrokers.bot.consumer import PKTickBotConsumer
-        if not self.chat_id:
-            raise ValueError("chat_id is required for consumer functionality")
-        return PKTickBotConsumer(self.bot_token,self.bridge_bot_token, self.chat_id)
+    def restart_kite_process_if_needed(self):
+        """Restart kite process if market conditions change"""
+        logger = self._get_logger()
+        
+        current_should_run = self.should_run_kite_process()
+        kite_running = self.kite_process and self.kite_process.is_alive()
+        
+        # If kite should run but isn't running, start it
+        if current_should_run and not kite_running:
+            logger.info("Market hours started - starting kite process")
+            self.kite_process = self.mp_context.Process(
+                target=self.run_kite_ticks, name="KiteTicksProcess"
+            )
+            self.kite_process.daemon = False
+            self.kite_process.start()
+        
+        # If kite is running but shouldn't be, stop it
+        elif not current_should_run and kite_running:
+            logger.info("Market hours ended - stopping kite process")
+            self.kite_process.terminate()
+            self.kite_process.join(timeout=5)
+            self.kite_process = None
 
     def run(self):
         """Main run method with graceful shutdown handling"""
@@ -186,6 +263,8 @@ class PKTickOrchestrator:
 
             # Keep main process alive and monitor child processes
             logger = self._get_logger()
+            last_market_check = time.time()
+            
             while True:
                 time.sleep(1)
                 
@@ -198,20 +277,25 @@ class PKTickOrchestrator:
                     self.bot_process.daemon = False
                     self.bot_process.start()
                 
-                # Check if kite process died
-                if self.kite_process and not self.kite_process.is_alive():
-                    logger.warn("Kite ticks process died, restarting...")
-                    self.kite_process = self.mp_context.Process(
-                        target=self.run_kite_ticks, name="KiteTicksProcess"
-                    )
-                    self.kite_process.daemon = False
-                    self.kite_process.start()
+                # Check market conditions every 30 seconds for kite process
+                current_time = time.time()
+                if current_time - last_market_check > 30:
+                    self.restart_kite_process_if_needed()
+                    last_market_check = current_time
 
         except KeyboardInterrupt:
             logger = self._get_logger()
             logger.info("Keyboard interrupt received")
         finally:
             self.stop()
+
+    def get_consumer(self):
+        """Get a consumer instance to interact with the bot"""
+        self._initialize_environment()
+        from pkbrokers.bot.consumer import PKTickBotConsumer
+        if not self.chat_id:
+            raise ValueError("chat_id is required for consumer functionality")
+        return PKTickBotConsumer(self.bot_token, self.bridge_bot_token, self.chat_id)
 
 
 def orchestrate():
