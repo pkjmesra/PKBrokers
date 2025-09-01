@@ -245,7 +245,12 @@ def pkkite():
             print(f"--history= requires at least one of the following parameters: {intervals}\nFor example:\n{example_lines}")
         else:
             setupLogger()
-            kite_auth()
+            github_output = os.environ.get('GITHUB_OUTPUT')
+            if github_output:
+                print("GITHUB_OUTPUT env variable FOUND! Will use the bot to get the token.")
+            else:
+                print("Running locally? GITHUB_OUTPUT env variable NOT FOUND!")
+                kite_auth()
             kite_history()
 
     if args.instruments:
@@ -268,7 +273,19 @@ def pkkite():
 
     if args.token:
         from pkbrokers.bot.orchestrator import orchestrate_consumer
-        orchestrate_consumer(command="/token")
+        import os
+        
+        token = orchestrate_consumer(command="/token")
+        # For GitHub Actions, write to GITHUB_OUTPUT file if the environment variable exists
+        github_output = os.environ.get('GITHUB_OUTPUT')
+        if github_output:
+            # Append to the GITHUB_OUTPUT file with proper format
+            with open(github_output, 'a') as f:
+                f.write(f'kite_token={token}\n')
+            print("Token successfully captured for GitHub Actions")
+        else:
+            # Fallback for local execution
+            print(f"Kite token: {token}")
 
     print(
         "You can use like this :\npkkite --auth\npkkite --ticks\npkkite --history\npkkite --instruments\npkkite --pickle\npkkite --orchestrate\npkkite --consumer"

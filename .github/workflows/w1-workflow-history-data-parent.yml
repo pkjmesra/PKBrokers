@@ -1,7 +1,7 @@
 name: 1.0 PKBrokers Historical Data Update Parent
 on:
-  # schedule:
-  #   - cron: '59 9 * * 1-6'  # Monday-Saturday at 3:30 PM IST, 10AM UTC
+  schedule:
+    - cron: '59 9 * * 1-6'  # Monday-Saturday at 3:30 PM IST, 10AM UTC
   workflow_dispatch:  # Allow manual triggering
     inputs:
       logLevel:
@@ -12,7 +12,7 @@ on:
       periods:
         description: 'space-separated periods to run (default: all)'
         required: false
-        default: '("day" "minute" "5minute" "10minute" "15minute" "30minute" "60minute")'
+        default: 'day minute 5minute 10minute 15minute 30minute 60minute'
         type: string
 
 jobs:
@@ -39,31 +39,183 @@ jobs:
           echo "is_holiday=false" >> $GITHUB_OUTPUT
         fi
 
-  historical-data:
+  get-kite-token:
     needs: holiday-check
     if: (needs.holiday-check.outputs.is_holiday == 'false' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
     runs-on: ubuntu-latest
     timeout-minutes: 358
     env:
+      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
+    outputs:
+      kite_token: ${{ steps.validate-token.outputs.kite_token }}
+      token_valid: ${{ steps.validate-token.outputs.token_valid }}
+    steps:
+    - name: Checkout PKBrokers code
+      uses: actions/checkout@v4
+      with:
+        repository: pkjmesra/PKBrokers
+        ref: main
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install PKBrokers dependencies
+      run: |
+        pip install -e .
+        pip install kiteconnect
+
+    - name: Create .env.dev file with secrets
+      env:
+        CHAT_ID: ${{ secrets.CHAT_ID }}
+        TOKEN: ${{ secrets.TOKEN }}
+        chat_idADMIN: ${{ secrets.chat_idADMIN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
+        TDU: ${{ secrets.TDU }}
+        TAT: ${{ secrets.TAT }}
+        MCU: ${{ secrets.MCU }}
+        MCAP: ${{ secrets.MCAP }}
+        MCL: ${{ secrets.MCL }}
+        MS: ${{ secrets.MS }}
+        PKG: ${{ secrets.PKG }}
+        REPO_URL: ${{ secrets.REPO_URL }}
+        KUSER: ${{ secrets.KUSER }}
+        KPWD: ${{ secrets.KPWD }}
+        KTOTP: ${{ secrets.KTOTP }}
+        DB_TYPE: ${{ secrets.DB_TYPE }}
+        TBTOKEN: ${{ secrets.TBTOKEN }}
+        BBTOKEN: ${{ secrets.BBTOKEN }}
+      run: |
+        cat > .env.dev << EOF
+        CHAT_ID=$CHAT_ID
+        TOKEN=$TOKEN
+        chat_idADMIN=$chat_idADMIN
+        GITHUB_TOKEN=$GITHUB_TOKEN
+        TURSO_TOKEN=$TURSO_TOKEN
+        TDU=$TDU
+        TAT=$TAT
+        MCU=$MCU
+        MCAP=$MCAP
+        MCL=$MCL
+        MS=$MS
+        PKG=$PKG
+        REPO_URL=$REPO_URL
+        KUSER=$KUSER
+        KPWD=$KPWD
+        KTOTP=$KTOTP
+        DB_TYPE=$DB_TYPE
+        TBTOKEN=$TBTOKEN
+        BBTOKEN=$BBTOKEN
+        PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
+        EOF
+        
+        echo "Created .env.dev file with secrets"
+
+    - name: Run pkkite to get token
+      id: get-token
+      env:
+        PYTHONUNBUFFERED: 1
+      run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
+        cd pkbrokers/kite/examples/
+        
+        echo "Running pkkite --token to get Kite token..."
+        # The python script will automatically write to GITHUB_OUTPUT
+        python pkkite.py --token --verbose
+        
+        # No need to manually capture output - it's already in the outputs
+
+    - name: Validate base64 token
+      id: validate-token
+      run: |
+        # Access the output from previous step - GitHub will auto-mask this in logs
+        KITE_TOKEN="${{ steps.get-token.outputs.kite_token }}"
+        
+        # Check if token is empty
+        if [ -z "$KITE_TOKEN" ]; then
+          echo "❌ Token is empty"
+          echo "token_valid=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
+        # Basic base64 validation
+        if ! echo "$KITE_TOKEN" | grep -qE '^[A-Za-z0-9+/]*={0,2}$'; then
+          echo "❌ Token contains invalid characters for base64"
+          echo "token_valid=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
+        if [ ${#KITE_TOKEN} -lt 20 ]; then
+          echo "❌ Token is too short for base64 (length: ${#KITE_TOKEN})"
+          echo "token_valid=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
+        if echo "$KITE_TOKEN" | base64 -d > /dev/null 2>&1; then
+          echo "✅ Token is valid base64"
+          echo "token_valid=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Token failed base64 decoding validation"
+          echo "token_valid=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+  trigger-child-jobs:
+    needs: [holiday-check, get-kite-token]
+    if: (needs.holiday-check.outputs.is_holiday == 'false' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && needs.get-kite-token.outputs.token_valid == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    env:
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || 20 }}
     steps:
-    - name: Trigger other period children jobs using API
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Trigger child jobs with valid token
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        KITE_TOKEN: ${{ needs.get-kite-token.outputs.kite_token }}
       run: |
-        periods=${{ inputs.periods }}
+        # Use the periods input or default to all periods
+        if [ -n "${{ github.event.inputs.periods }}" ]; then
+          periods="${{ github.event.inputs.periods }}"
+        else
+          periods="day minute 5minute 10minute 15minute 30minute 60minute"
+        fi
         
-        for period in "${periods[@]}"; do
+        echo "Triggering child jobs for periods: $periods"
+        echo "Using Kite token: ${KITE_TOKEN:0:10}..."  # Show first 10 chars for security
+        
+        for period in $periods; do
           echo "Triggering workflow for period: $period"
           
-          # Convert logLevel to string and handle default value
           LOG_LEVEL="${{ github.event.inputs.logLevel || '20' }}"
           
+          # Trigger child workflow with token as input
           curl -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/actions/workflows/w1-workflow-history-data-child.yml/dispatches \
-            -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$period\",\"logLevel\":\"$LOG_LEVEL\"}}"
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/w1-workflow-history-data-child.yml/dispatches" \
+            -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$period\",\"logLevel\":\"$LOG_LEVEL\",\"kiteToken\":\"$KITE_TOKEN\"}}"
           
           sleep 2
         done
+
+    - name: Log success
+      run: |
+        echo "✅ Successfully triggered all child jobs with valid Kite token"
+
+  # Job that runs when token validation fails
+  token-validation-failed:
+    needs: [holiday-check, get-kite-token]
+    if: (needs.holiday-check.outputs.is_holiday == 'false' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && needs.get-kite-token.outputs.token_valid == 'false'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Token validation failed
+      run: |
+        echo "❌ Kite token validation failed. Stopping execution."
+        echo "The token obtained from 'pkkite --token' is not a valid base64 string."
+        echo "This could be due to authentication issues or Kite API problems."
+        exit 1

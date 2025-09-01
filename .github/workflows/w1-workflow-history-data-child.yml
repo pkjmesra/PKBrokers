@@ -12,6 +12,10 @@ on:
         required: false
         default: 'day'
         type: string
+      kiteToken:
+        description: 'Kite API token'
+        required: true
+        type: string
 
 jobs:
   historical-data:
@@ -50,7 +54,7 @@ jobs:
         MS: ${{ secrets.MS }}
         PKG: ${{ secrets.PKG }}
         REPO_URL: ${{ secrets.REPO_URL }}
-        KTOKEN: ${{ secrets.KTOKEN }}
+        KTOKEN: ${{ inputs.kiteToken }}
         KUSER: ${{ secrets.KUSER }}
         KPWD: ${{ secrets.KPWD }}
         KTOTP: ${{ secrets.KTOTP }}
