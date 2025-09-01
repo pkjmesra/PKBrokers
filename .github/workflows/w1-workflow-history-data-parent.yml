@@ -205,7 +205,7 @@ jobs:
         fi
         
         echo "Triggering child jobs for periods: $periods"
-        echo "Using Kite token: ${KITE_TOKEN:0:10}..."  # Show first 10 chars for security
+        echo "Using Kite token: ${${{ env.KITE_TOKEN }}:0:10}..."  # Show first 10 chars for security
         
         for period in $periods; do
           echo "Triggering workflow for period: $period"
@@ -217,7 +217,7 @@ jobs:
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/workflows/w1-workflow-history-data-child.yml/dispatches" \
-            -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$period\",\"logLevel\":\"$LOG_LEVEL\",\"kiteToken\":\"$KITE_TOKEN\"}}"
+            -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$period\",\"logLevel\":\"$LOG_LEVEL\",\"kiteToken\":\"${{ env.KITE_TOKEN }}\"}}"
           
           sleep 2
         done
