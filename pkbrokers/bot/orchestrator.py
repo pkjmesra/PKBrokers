@@ -45,7 +45,7 @@ if __name__ == "__main__":
 # Set spawn context globally
 multiprocessing.set_start_method("spawn", force=True)
 
-WAIT_TIME_SEC_CLOSING_ANOTHER_RUNNING_INSTANCE=30
+WAIT_TIME_SEC_CLOSING_ANOTHER_RUNNING_INSTANCE=10
 class PKTickOrchestrator:
     """Orchestrates PKTickBot and kite_ticks in separate processes"""
 
@@ -210,6 +210,14 @@ class PKTickOrchestrator:
         self.bot_process.daemon = False
         self.bot_process.start()
         logger.info("Telegram bot process started")
+        time.sleep(WAIT_TIME_SEC_CLOSING_ANOTHER_RUNNING_INSTANCE)
+        from pkbrokers.bot.tickbot import conflict_detected
+        while True:
+            if conflict_detected:
+                conflict_detected = False
+                time.sleep(WAIT_TIME_SEC_CLOSING_ANOTHER_RUNNING_INSTANCE)
+            else:
+                break
 
         # Start kite_ticks process only during market hours and non-holidays
         if self.should_run_kite_process():

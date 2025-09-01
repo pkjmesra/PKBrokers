@@ -84,7 +84,8 @@ class PKTickBot:
 
     def start(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
-            update.message.reply_text(APOLOGY_TEXT)
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
             return
         """Send welcome message"""
         update.message.reply_text(
@@ -98,7 +99,8 @@ class PKTickBot:
     def help_command(self, update: Update, context: CallbackContext) -> None:
         """Send help message"""
         if self._shouldAvoidResponse(update):
-            update.message.reply_text(APOLOGY_TEXT)
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
             return
         update.message.reply_text(
             "🤖 PKTickBot Commands:\n"
@@ -159,14 +161,16 @@ class PKTickBot:
 
     def send_token(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
-            update.message.reply_text(APOLOGY_TEXT)
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
             return
         """Send token"""
         update.message.reply_text(PKEnvironment().KTOKEN)
 
     def send_zipped_ticks(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
-            update.message.reply_text(APOLOGY_TEXT)
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
             return
         """Send zipped ticks.json file to user with size handling"""
         try:
@@ -263,7 +267,8 @@ class PKTickBot:
 
     def top_ticks(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
-            update.message.reply_text(APOLOGY_TEXT)
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
             return
         """Send top 20 instruments by tick count"""
         top_instruments = self.get_top_ticks_formatted(limit=20)
@@ -275,7 +280,8 @@ class PKTickBot:
 
     def status(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
-            update.message.reply_text(APOLOGY_TEXT)
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
             return
         """Check bot and data status"""
         try:
@@ -322,8 +328,9 @@ class PKTickBot:
             update.message.reply_text("❌ Error checking status")
 
     def error_handler(self, update: object, context: CallbackContext) -> None:
-        if self._shouldAvoidResponse(update):
-            update.message.reply_text(APOLOGY_TEXT)
+        if self._shouldAvoidResponse(update) and update is not None:
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
             return
         
         Channel_Id = PKEnvironment().CHAT_ID
@@ -342,8 +349,10 @@ class PKTickBot:
         
         # Check for conflict error
         if "telegram.error.Conflict" in tb_string or "409" in tb_string:
+            global conflict_detected
+            conflict_detected = True
             self.conflict_detected = True
-            logger.error("Conflict detected: Another instance is running. Shutting down gracefully.")
+            logger.error("Conflict detected: Another instance is running. Longer running instance should shut down gracefully.")
             
             if (
                 timeSinceStarted.total_seconds() >= MINUTES_2_IN_SECONDS
@@ -352,12 +361,17 @@ class PKTickBot:
                 try:
                     # Signal the main process to shutdown
                     os.kill(os.getpid(), signal.SIGINT)
+                    try:
+                        thread.interrupt_main() # causes ctrl + c
+                    except RuntimeError:
+                        pass
+                    except SystemExit:
+                        thread.interrupt_main()
                 except Exception as e:
                     logger.error(f"Error sending shutdown signal: {e}")
                     sys.exit(1)
             else:
-                logger.info("Other instance running! This instance will exit.")
-                sys.exit(0)
+                logger.info("Other instance running! This instance will continue.")
         
         # Build the message with some markup and additional information about what happened.
         update_str = update.to_dict() if isinstance(update, Update) else str(update)
