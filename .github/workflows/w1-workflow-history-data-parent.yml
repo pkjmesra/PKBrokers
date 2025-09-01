@@ -121,6 +121,11 @@ jobs:
         
         echo "Created .env.dev file with secrets"
 
+    - name: Create session file
+      run: |
+        echo $TEL_SESSION_DATA | base64 -d > user_session.session
+        chmod 600 user_session.session
+        
     - name: Run pkkite to get token
       id: get-token
       env:
