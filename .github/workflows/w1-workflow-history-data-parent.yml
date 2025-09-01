@@ -195,7 +195,6 @@ jobs:
     - name: Trigger child jobs with valid token
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        KITE_TOKEN: ${{ needs.get-kite-token.outputs.kite_token }}
       run: |
         # Use the periods input or default to all periods
         if [ -n "${{ github.event.inputs.periods }}" ]; then
@@ -203,9 +202,9 @@ jobs:
         else
           periods="day minute 5minute 10minute 15minute 30minute 60minute"
         fi
-        KITE_TOKEN="${{ env.KITE_TOKEN }}"
+        
         echo "Triggering child jobs for periods: $periods"
-        echo "Using Kite token: ${KITE_TOKEN:0:10}..."  # Show first 10 chars for security
+        echo "Using Kite token from previous job output"
         
         for period in $periods; do
           echo "Triggering workflow for period: $period"
@@ -217,7 +216,7 @@ jobs:
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/workflows/w1-workflow-history-data-child.yml/dispatches" \
-            -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$period\",\"logLevel\":\"$LOG_LEVEL\",\"kiteToken\":\"$KITE_TOKEN\"}}"
+            -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$period\",\"logLevel\":\"$LOG_LEVEL\",\"kiteToken\":\"${{ needs.get-kite-token.outputs.kite_token }}\"}}"
           
           sleep 2
         done
