@@ -46,6 +46,7 @@ jobs:
     timeout-minutes: 358
     env:
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
+      TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
     outputs:
       kite_token: ${{ steps.validate-token.outputs.kite_token }}
       token_valid: ${{ steps.validate-token.outputs.token_valid }}
@@ -123,9 +124,11 @@ jobs:
 
     - name: Create session file
       run: |
+        echo ${{ env.TEL_SESSION_DATA }} | base64 -d > user_session.session
+        chmod 600 user_session.session
         cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
-        echo $TEL_SESSION_DATA | base64 -d > user_session.session
+        echo ${{ env.TEL_SESSION_DATA }} | base64 -d > user_session.session
         chmod 600 user_session.session
         
     - name: Run pkkite to get token

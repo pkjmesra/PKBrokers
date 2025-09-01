@@ -24,6 +24,7 @@ jobs:
     timeout-minutes: 358
     env:
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || 20 }}
+      TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
     steps:
     - name: Checkout PKBrokers code
       uses: actions/checkout@v4
@@ -98,9 +99,11 @@ jobs:
 
     - name: Create session file
       run: |
+        echo ${{ env.TEL_SESSION_DATA }} | base64 -d > user_session.session
+        chmod 600 user_session.session
         cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
-        echo $TEL_SESSION_DATA | base64 -d > user_session.session
+        echo ${{ env.TEL_SESSION_DATA }} | base64 -d > user_session.session
         chmod 600 user_session.session
         
     - name: Run historical data for ${{ inputs.period }}
