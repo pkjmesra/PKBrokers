@@ -89,7 +89,7 @@ jobs:
         PERIOD=$PERIOD
         Tel_API_ID=$Tel_API_ID
         Tel_API_Hash=$Tel_API_Hash
-        Tel_Phone_Number:$Tel_Phone_Number
+        Tel_Phone_Number=$Tel_Phone_Number
         TEL_SESSION_DATA=$TEL_SESSION_DATA
         PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
         EOF
