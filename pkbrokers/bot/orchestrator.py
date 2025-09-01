@@ -283,6 +283,8 @@ class PKTickOrchestrator:
     def run(self):
         """Main run method with graceful shutdown handling"""
         try:
+            signal.signal(signal.SIGINT, self.signal_handler)
+            signal.signal(signal.SIGTERM, self.signal_handler)
             self.start()
 
             # Keep main process alive and monitor child processes
@@ -301,10 +303,10 @@ class PKTickOrchestrator:
                 if self.bot_process and not self.bot_process.is_alive():
                     # Check if bot died due to conflict
                     if self._check_bot_exit_status():
-                        logger.warning("Bot process died due to conflict. Shutting down orchestrator...")
+                        logger.warn("Bot process died due to conflict. Shutting down orchestrator...")
                         break
                     else:
-                        logger.warning("Bot process died, restarting...")
+                        logger.warn("Bot process died, restarting...")
                         self.bot_process = self.mp_context.Process(
                             target=self.run_telegram_bot, name="PKTickBotProcess"
                         )
@@ -328,6 +330,9 @@ class PKTickOrchestrator:
 
     def _check_bot_exit_status(self):
         """Check if bot process exited due to conflict"""
+        from pkbrokers.bot.tickbot import conflict_detected
+        if conflict_detected:
+            return True
         if self.bot_process and self.bot_process.exitcode is not None:
             # If bot exited with non-zero code, it might be due to conflict
             if self.bot_process.exitcode != 0:

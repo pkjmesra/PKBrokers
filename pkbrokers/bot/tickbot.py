@@ -440,6 +440,9 @@ class PKTickBot:
             if self.updater:
                 self.updater.stop()
                 self.logger.info("Bot stopped gracefully")
+            # If conflict was detected, stop the updater
+            if self.conflict_detected:
+                os._exit(1)  # Use os._exit to bypass finally blocks
 
     def _shouldAvoidResponse(self, update):
         Channel_Id = PKEnvironment().CHAT_ID
