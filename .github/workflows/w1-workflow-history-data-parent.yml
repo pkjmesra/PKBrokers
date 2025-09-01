@@ -133,6 +133,8 @@ jobs:
       env:
         PYTHONUNBUFFERED: 1
       run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
+        cd pkbrokers/kite/examples/
         echo "Running pkkite --token to get Kite token..."
         # The python script will automatically write to GITHUB_OUTPUT
         python pkkite.py --token --verbose

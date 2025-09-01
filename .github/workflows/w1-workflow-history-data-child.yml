@@ -105,4 +105,6 @@ jobs:
         
     - name: Run historical data for ${{ inputs.period }}
       run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
+        cd pkbrokers/kite/examples/
         python pkkite.py --history=${{ inputs.period }} --verbose
