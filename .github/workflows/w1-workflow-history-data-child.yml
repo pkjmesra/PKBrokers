@@ -98,11 +98,11 @@ jobs:
 
     - name: Create session file
       run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
+        cd pkbrokers/kite/examples/
         echo $TEL_SESSION_DATA | base64 -d > user_session.session
         chmod 600 user_session.session
         
     - name: Run historical data for ${{ inputs.period }}
       run: |
-        cp .env.dev pkbrokers/kite/examples/.env.dev
-        cd pkbrokers/kite/examples/
         python pkkite.py --history=${{ inputs.period }} --verbose

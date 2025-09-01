@@ -123,6 +123,8 @@ jobs:
 
     - name: Create session file
       run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
+        cd pkbrokers/kite/examples/
         echo $TEL_SESSION_DATA | base64 -d > user_session.session
         chmod 600 user_session.session
         
@@ -131,9 +133,6 @@ jobs:
       env:
         PYTHONUNBUFFERED: 1
       run: |
-        cp .env.dev pkbrokers/kite/examples/.env.dev
-        cd pkbrokers/kite/examples/
-        
         echo "Running pkkite --token to get Kite token..."
         # The python script will automatically write to GITHUB_OUTPUT
         python pkkite.py --token --verbose
