@@ -445,7 +445,6 @@ class PKTickBot:
                 os._exit(1)  # Use os._exit to bypass finally blocks
 
     def _shouldAvoidResponse(self, update):
-        Channel_Id = PKEnvironment().CHAT_ID
         chat_idADMIN = PKEnvironment().chat_idADMIN
         sentFrom = []
         if update is None:

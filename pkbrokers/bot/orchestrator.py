@@ -29,7 +29,6 @@ import sys
 import time
 import multiprocessing
 import requests
-import json
 import signal
 from datetime import datetime, time as dt_time
 from typing import Optional
@@ -169,7 +168,7 @@ class PKTickOrchestrator:
             self._initialize_environment()
             logger = self._get_logger()
             
-            from pkbrokers.kite.examples.pkkite import kite_auth, kite_ticks, setupLogger
+            from pkbrokers.kite.examples.pkkite import kite_auth, kite_ticks
             
             logger.info("Starting kite_ticks process...")
             kite_auth()
@@ -233,29 +232,60 @@ class PKTickOrchestrator:
             self.kite_process = None
 
     def stop(self):
-        """Stop both processes gracefully"""
+        """Stop both processes gracefully with proper resource cleanup"""
         logger = self._get_logger()
         logger.info("Stopping processes...")
 
-        if self.bot_process and self.bot_process.is_alive():
-            try:
-                self.bot_process.terminate()
-                self.bot_process.join(timeout=5)
-                if self.bot_process.is_alive():
-                    self.bot_process.kill()
-            except Exception as e:
-                logger.error(f"Error stopping bot process: {e}")
+        # Stop processes with proper cleanup
+        processes = [
+            (self.kite_process, "kite process"),
+            (self.bot_process, "bot process")
+        ]
+        
+        for process, name in processes:
+            if process and process.is_alive():
+                try:
+                    logger.info(f"Stopping {name}...")
+                    process.terminate()
+                    process.join(timeout=3)
+                    
+                    if process.is_alive():
+                        logger.warning(f"{name} did not terminate gracefully, forcing...")
+                        process.kill()
+                        process.join(timeout=2)
+                    
+                    # Close to release resources
+                    process.close()
+                    
+                except Exception as e:
+                    logger.error(f"Error stopping {name}: {e}")
+                finally:
+                    if name == "kite process":
+                        self.kite_process = None
+                    else:
+                        self.bot_process = None
 
-        if self.kite_process and self.kite_process.is_alive():
-            try:
-                self.kite_process.terminate()
-                self.kite_process.join(timeout=5)
-                if self.kite_process.is_alive():
-                    self.kite_process.kill()
-            except Exception as e:
-                logger.error(f"Error stopping kite process: {e}")
+        # Force resource cleanup
+        self._cleanup_multiprocessing_resources()
+        logger.info("All processes stopped and resources cleaned up")
 
-        logger.info("All processes stopped")
+    def _cleanup_multiprocessing_resources(self):
+        """Clean up multiprocessing resources"""
+        try:
+            import gc
+            gc.collect()
+            
+            # Clean up any remaining semaphores
+            import multiprocessing.synchronize
+            for obj in gc.get_objects():
+                if isinstance(obj, multiprocessing.synchronize.Semaphore):
+                    try:
+                        obj._semaphore.close()
+                    except BaseException:
+                        pass
+        except Exception as e:
+            self._get_logger().debug(f"Resource cleanup note: {e}")
+            
 
     def restart_kite_process_if_needed(self):
         """Restart kite process if market conditions change"""
