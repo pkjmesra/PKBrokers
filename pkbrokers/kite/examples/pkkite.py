@@ -68,6 +68,12 @@ argParser.add_argument(
     required=False,
 )
 argParser.add_argument(
+    "--refresh_token",
+    action="store_true",
+    help="Refresh kite token",
+    required=False,
+)
+argParser.add_argument(
     "--history",
     # action="store_true",
     help="Get history data for all NSE stocks.",
@@ -265,12 +271,19 @@ def pkkite():
 
     if args.orchestrate:
         from pkbrokers.bot.orchestrator import orchestrate
+        setupLogger()
+        kite_auth()
         orchestrate()
 
     if args.consumer:
         from pkbrokers.bot.orchestrator import orchestrate_consumer
         orchestrate_consumer(command="/ticks")
 
+    if args.refresh_token:
+        setupLogger()
+        kite_auth()
+        args.token = True
+        
     if args.token:
         from pkbrokers.bot.orchestrator import orchestrate_consumer
         import os

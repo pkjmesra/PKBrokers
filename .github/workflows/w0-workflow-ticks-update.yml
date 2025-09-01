@@ -1,8 +1,8 @@
 name: 0. Orchestrator 24x7 bot and PKBrokers Market Hours Ticks Runner
 on:
   schedule:
-    # Run 20 minutes before NSE market open (9:00 AM IST = 3:30 AM UTC)
-    - cron: '56 * * * *'  # Monday-Friday at 3:40 AM UTC (9:20 AM IST)
+    # Every 5 hours and 50 minutes
+    - cron: '50 */5 * * *'
   workflow_dispatch:  # Allow manual triggering
     inputs:
       logLevel:

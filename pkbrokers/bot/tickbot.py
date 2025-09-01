@@ -159,6 +159,25 @@ class PKTickBot:
                     os.unlink(part_path)
             raise
 
+    def send_refreshed_token(self, update: Update, context: CallbackContext) -> None:
+        if self._shouldAvoidResponse(update):
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
+            return
+        """Send refreshed token"""
+        from PKDevTools.classes.Environment import PKEnvironment
+        from pkbrokers.kite.authenticator import KiteAuthenticator
+
+        credentials = {
+            "api_key": "kitefront",
+            "username": PKEnvironment().KUSER,
+            "password": PKEnvironment().KPWD,
+            "totp": PKEnvironment().KTOTP,
+        }
+        authenticator = KiteAuthenticator(timeout=10)
+        authenticator.get_enctoken(**credentials)
+        update.message.reply_text(PKEnvironment().KTOKEN)
+
     def send_token(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
             if update is not None:
@@ -413,6 +432,7 @@ class PKTickBot:
             dispatcher.add_handler(CommandHandler("status", self.status))
             dispatcher.add_handler(CommandHandler("top", self.top_ticks))
             dispatcher.add_handler(CommandHandler("token", self.send_token))
+            dispatcher.add_handler(CommandHandler("refresh_token", self.send_refreshed_token))
             
             dispatcher.add_handler(CommandHandler("help", self.help_command))
             dispatcher.add_error_handler(self.error_handler)
