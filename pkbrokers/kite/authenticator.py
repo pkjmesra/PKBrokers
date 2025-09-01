@@ -189,7 +189,7 @@ class KiteAuthenticator:
             )
             os.environ["KTOKEN"] = access_token
 
-            with env_update_context(".env.dev") as updater:
+            with env_update_context(os.path.join(os.getcwd(),".env.dev")) as updater:
                 updater.update_values({"KTOKEN": access_token})
                 updater.reload_env()
             return access_token

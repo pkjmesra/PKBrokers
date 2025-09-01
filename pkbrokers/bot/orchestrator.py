@@ -417,7 +417,7 @@ def orchestrate_consumer(command:str="/ticks"):
             from pkbrokers.envupdater import env_update_context
             from PKDevTools.classes.Environment import PKEnvironment
             print(f"Previous token:{PKEnvironment().KTOKEN}")
-            with env_update_context(".env.dev") as updater:
+            with env_update_context(os.path.join(os.getcwd(),".env.dev")) as updater:
                 updater.update_values({"KTOKEN": response["content"]})
                 updater.reload_env()
             print(f"Updated token:{PKEnvironment().KTOKEN}")
