@@ -48,7 +48,7 @@ jobs:
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
       TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
     outputs:
-      kite_token: ${{ steps.validate-token.outputs.KITE_TOKEN }}
+      kite_token: ${{ steps.validate-token.outputs.kite_token }}
       token_valid: ${{ steps.validate-token.outputs.token_valid }}
     steps:
     - name: Checkout PKBrokers code
@@ -149,32 +149,37 @@ jobs:
     - name: Validate base64 token
       id: validate-token
       run: |
-        # Access the output from previous step - GitHub will auto-mask this in logs
+        # Access the output from get-token step
         KITE_TOKEN="${{ steps.get-token.outputs.kite_token }}"
         
+        echo "Validating token: ${KITE_TOKEN:0:10}..."  # Show first 10 chars
+        
         # Check if token is empty
-        if [ -z "$KITE_TOKEN" ]; then
-          echo "❌ Token is empty"
+        if [ -z "$KITE_TOKEN" ] || [ "$KITE_TOKEN" == "None" ] || [ "$KITE_TOKEN" == "null" ]; then
+          echo "❌ Token is empty or invalid"
           echo "token_valid=false" >> $GITHUB_OUTPUT
           exit 1
         fi
         
-        # Basic base64 validation
+        # Basic base64 validation - check characters
         if ! echo "$KITE_TOKEN" | grep -qE '^[A-Za-z0-9+/]*={0,2}$'; then
           echo "❌ Token contains invalid characters for base64"
           echo "token_valid=false" >> $GITHUB_OUTPUT
           exit 1
         fi
         
+        # Check length
         if [ ${#KITE_TOKEN} -lt 20 ]; then
           echo "❌ Token is too short for base64 (length: ${#KITE_TOKEN})"
           echo "token_valid=false" >> $GITHUB_OUTPUT
           exit 1
         fi
         
+        # Test if it can be decoded
         if echo "$KITE_TOKEN" | base64 -d > /dev/null 2>&1; then
           echo "✅ Token is valid base64"
           echo "token_valid=true" >> $GITHUB_OUTPUT
+          echo "kite_token=$KITE_TOKEN" >> $GITHUB_OUTPUT
         else
           echo "❌ Token failed base64 decoding validation"
           echo "token_valid=false" >> $GITHUB_OUTPUT
