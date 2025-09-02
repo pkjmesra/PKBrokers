@@ -296,8 +296,13 @@ def pkkite():
         kite_fetch_save_pickle()
 
     if args.orchestrate:
-        from pkbrokers.bot.orchestrator import orchestrate
+        from pkbrokers.bot.orchestrator import orchestrate, orchestrate_consumer
         setupLogger()
+        try:
+            # Let's try and get the latest ticks file from an existing running bot.
+            orchestrate_consumer(command="/ticks")
+        except BaseException:
+            pass
         kite_auth()
         orchestrate()
 

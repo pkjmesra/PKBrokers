@@ -196,7 +196,7 @@ class PKTickBotConsumer:
             if downloaded_files:
                 # Single zip file case
                 zip_path = downloaded_files[0]
-                extract_dir = os.path.join(output_dir, "extracted")
+                extract_dir = os.path.join(output_dir, "")
                 os.makedirs(extract_dir, exist_ok=True)
 
                 if self.extract_zip(zip_path, extract_dir):
@@ -210,7 +210,7 @@ class PKTickBotConsumer:
                 assembled_zip = os.path.join(output_dir, "market_ticks_assembled.zip")
 
                 if self.reassemble_parts(sorted_parts, assembled_zip):
-                    extract_dir = os.path.join(output_dir, "extracted")
+                    extract_dir = os.path.join(output_dir, "")
                     os.makedirs(extract_dir, exist_ok=True)
 
                     if self.extract_zip(assembled_zip, extract_dir):
@@ -297,7 +297,7 @@ async def get_pktickbot_response_command(command: str = "/ticks"):
                 
                 # Extract zip files
                 if response["type"] == "file" and file_path.endswith('.zip'):
-                    extract_dir = os.path.join(Archiver.get_user_data_dir(), "extracted")
+                    extract_dir = os.path.join(Archiver.get_user_data_dir(), "")
                     os.makedirs(extract_dir, exist_ok=True)
                     with zipfile.ZipFile(file_path, 'r') as zip_ref:
                         zip_ref.extractall(extract_dir)
