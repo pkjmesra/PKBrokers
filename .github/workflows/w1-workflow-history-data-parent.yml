@@ -196,7 +196,64 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
+    - name: Create .env.dev file with secrets
+      env:
+        CHAT_ID: ${{ secrets.CHAT_ID }}
+        TOKEN: ${{ secrets.TOKEN }}
+        chat_idADMIN: ${{ secrets.chat_idADMIN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
+        TDU: ${{ secrets.TDU }}
+        TAT: ${{ secrets.TAT }}
+        MCU: ${{ secrets.MCU }}
+        MCAP: ${{ secrets.MCAP }}
+        MCL: ${{ secrets.MCL }}
+        MS: ${{ secrets.MS }}
+        PKG: ${{ secrets.PKG }}
+        REPO_URL: ${{ secrets.REPO_URL }}
+        KUSER: ${{ secrets.KUSER }}
+        KPWD: ${{ secrets.KPWD }}
+        KTOTP: ${{ secrets.KTOTP }}
+        KTOKEN: ${{ secrets.KTOKEN }}
+        DB_TYPE: ${{ secrets.DB_TYPE }}
+        TBTOKEN: ${{ secrets.TBTOKEN }}
+        BBTOKEN: ${{ secrets.BBTOKEN }}
+        Tel_API_ID: ${{ secrets.Tel_API_ID }}
+        Tel_API_Hash: ${{ secrets.Tel_API_Hash }}
+        Tel_Phone_Number: ${{ secrets.Tel_Phone_Number }}
+        TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
+      run: |
+        cat > .env.dev << EOF
+        CHAT_ID=$CHAT_ID
+        TOKEN=$TOKEN
+        chat_idADMIN=$chat_idADMIN
+        GITHUB_TOKEN=$GITHUB_TOKEN
+        TURSO_TOKEN=$TURSO_TOKEN
+        TDU=$TDU
+        TAT=$TAT
+        MCU=$MCU
+        MCAP=$MCAP
+        MCL=$MCL
+        MS=$MS
+        PKG=$PKG
+        REPO_URL=$REPO_URL
+        KUSER=$KUSER
+        KPWD=$KPWD
+        KTOTP=$KTOTP
+        KTOKEN=$KTOKEN
+        DB_TYPE=$DB_TYPE
+        TBTOKEN=$TBTOKEN
+        BBTOKEN=$BBTOKEN
+        Tel_API_ID=$Tel_API_ID
+        Tel_API_Hash=$Tel_API_Hash
+        Tel_Phone_Number=$Tel_Phone_Number
+        TEL_SESSION_DATA=$TEL_SESSION_DATA
+        PKDevTools_Default_Log_Level=${{ env.PKDevTools_Default_Log_Level }}
+        EOF
+        
+        echo "Created .env.dev file with secrets"
+
     - name: Trigger child jobs with valid token
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -253,6 +310,62 @@ jobs:
         echo "The token obtained from 'pkkite --token' is not a valid base64 string."
         echo "This could be due to authentication issues or Kite API problems."
         exit 1
+
+    - name: Create .env.dev file with secrets
+      env:
+        CHAT_ID: ${{ secrets.CHAT_ID }}
+        TOKEN: ${{ secrets.TOKEN }}
+        chat_idADMIN: ${{ secrets.chat_idADMIN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
+        TDU: ${{ secrets.TDU }}
+        TAT: ${{ secrets.TAT }}
+        MCU: ${{ secrets.MCU }}
+        MCAP: ${{ secrets.MCAP }}
+        MCL: ${{ secrets.MCL }}
+        MS: ${{ secrets.MS }}
+        PKG: ${{ secrets.PKG }}
+        REPO_URL: ${{ secrets.REPO_URL }}
+        KUSER: ${{ secrets.KUSER }}
+        KPWD: ${{ secrets.KPWD }}
+        KTOTP: ${{ secrets.KTOTP }}
+        KTOKEN: ${{ secrets.KTOKEN }}
+        DB_TYPE: ${{ secrets.DB_TYPE }}
+        TBTOKEN: ${{ secrets.TBTOKEN }}
+        BBTOKEN: ${{ secrets.BBTOKEN }}
+        Tel_API_ID: ${{ secrets.Tel_API_ID }}
+        Tel_API_Hash: ${{ secrets.Tel_API_Hash }}
+        Tel_Phone_Number: ${{ secrets.Tel_Phone_Number }}
+        TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
+      run: |
+        cat > .env.dev << EOF
+        CHAT_ID=$CHAT_ID
+        TOKEN=$TOKEN
+        chat_idADMIN=$chat_idADMIN
+        GITHUB_TOKEN=$GITHUB_TOKEN
+        TURSO_TOKEN=$TURSO_TOKEN
+        TDU=$TDU
+        TAT=$TAT
+        MCU=$MCU
+        MCAP=$MCAP
+        MCL=$MCL
+        MS=$MS
+        PKG=$PKG
+        REPO_URL=$REPO_URL
+        KUSER=$KUSER
+        KPWD=$KPWD
+        KTOTP=$KTOTP
+        KTOKEN=$KTOKEN
+        DB_TYPE=$DB_TYPE
+        TBTOKEN=$TBTOKEN
+        BBTOKEN=$BBTOKEN
+        Tel_API_ID=$Tel_API_ID
+        Tel_API_Hash=$Tel_API_Hash
+        Tel_Phone_Number=$Tel_Phone_Number
+        TEL_SESSION_DATA=$TEL_SESSION_DATA
+        EOF
+        
+        echo "Created .env.dev file with secrets"
 
     - name: Send notification about the trigger failure
       shell: bash
