@@ -479,70 +479,85 @@ class ThreadSafeDatabase:
         if self.db_type == "turso":
             self._start_turso_writers()
 
+    def table_exists(self, cursor, table_name):
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name=?
+        """, (table_name,))
+        return cursor.fetchone() is not None
+
     def _initialize_db(self, force_drop: bool = False):
         """Initialize database schema - optimized for batch inserts"""
+        has_commit = False
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
             if force_drop and self.db_type == "local":
+                has_commit = True
                 cursor.execute("DROP TABLE IF EXISTS market_depth")
                 cursor.execute("DROP TABLE IF EXISTS ticks")
 
-            # Main ticks table - optimized structure
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS ticks (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    instrument_token INTEGER,
-                    timestamp INTEGER,
-                    last_price REAL,
-                    day_volume INTEGER,
-                    oi INTEGER,
-                    buy_quantity INTEGER,
-                    sell_quantity INTEGER,
-                    high_price REAL,
-                    low_price REAL,
-                    open_price REAL,
-                    prev_day_close REAL,
-                    created_at INTEGER DEFAULT (strftime('%s', 'now')),
-                    UNIQUE(instrument_token, timestamp)  -- Prevent duplicates
-                ) STRICT
-            """)
+            # Only create if it doesn't exist
+            if not self.table_exists(cursor, 'ticks'):
+                has_commit = True
+                # Main ticks table - optimized structure
+                cursor.execute("""
+                    CREATE TABLE ticks (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        instrument_token INTEGER,
+                        timestamp INTEGER,
+                        last_price REAL,
+                        day_volume INTEGER,
+                        oi INTEGER,
+                        buy_quantity INTEGER,
+                        sell_quantity INTEGER,
+                        high_price REAL,
+                        low_price REAL,
+                        open_price REAL,
+                        prev_day_close REAL,
+                        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                        UNIQUE(instrument_token, timestamp)  -- Prevent duplicates
+                    )
+                """)
+                # Optimized indexes for batch inserts
+                cursor.execute("""
+                    CREATE INDEX idx_ticks_main
+                    ON ticks(instrument_token, timestamp)
+                """)
 
-            # Market depth table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS market_depth (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    instrument_token INTEGER,
-                    timestamp INTEGER,
-                    depth_type TEXT CHECK(depth_type IN ('bid', 'ask')),
-                    position INTEGER CHECK(position BETWEEN 1 AND 5),
-                    price REAL,
-                    quantity INTEGER,
-                    orders INTEGER,
-                    created_at INTEGER DEFAULT (strftime('%s', 'now')),
-                    UNIQUE(instrument_token, timestamp, depth_type, position)
-                ) STRICT
-            """)
+            if not self.table_exists(cursor, 'market_depth'):
+                has_commit = True
+                # Market depth table
+                cursor.execute("""
+                    CREATE TABLE market_depth (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        instrument_token INTEGER,
+                        timestamp INTEGER,
+                        depth_type TEXT, -- CHECK(depth_type IN ('bid', 'ask')),
+                        position INTEGER, -- CHECK(position BETWEEN 1 AND 5),
+                        price REAL,
+                        quantity INTEGER,
+                        orders INTEGER,
+                        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                        UNIQUE(instrument_token, timestamp, depth_type, position)
+                    ) STRICT
+                """)
 
-            # Optimized indexes for batch inserts
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_ticks_main
-                ON ticks(instrument_token, timestamp)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_depth_main
-                ON market_depth(instrument_token, timestamp, depth_type)
-            """)
+                cursor.execute("""
+                    CREATE INDEX idx_depth_main
+                    ON market_depth(instrument_token, timestamp, depth_type)
+                """)
 
             # Local database optimizations
             if self.db_type == "local":
+                has_commit = True
                 cursor.execute("PRAGMA journal_mode=WAL")
                 cursor.execute("PRAGMA synchronous = NORMAL")
                 cursor.execute("PRAGMA cache_size = -100000")  # 100MB cache
                 cursor.execute("PRAGMA temp_store = MEMORY")
                 cursor.execute("PRAGMA mmap_size = 30000000000")  # 30GB mmap
-
-            conn.commit()
+            if has_commit:
+                conn.commit()
 
     def _get_local_connection(self):
         """Get optimized local SQLite connection"""

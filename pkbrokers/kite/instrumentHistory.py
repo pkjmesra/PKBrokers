@@ -218,9 +218,17 @@ class KiteTickerHistory:
             database=PKEnvironment().TDU, auth_token=PKEnvironment().TAT
         )
 
-        # Create table if not exists
-        self._initialize_database()
+        # Only create if it doesn't exist
+        if not self.table_exists(self.db_conn.cursor(), 'instrument_history'):
+            self._initialize_database()
 
+    def table_exists(self, cursor, table_name):
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name=?
+        """, (table_name,))
+        return cursor.fetchone() is not None
+    
     def _initialize_database(self):
         """
         Initialize the database schema for storing historical data.
@@ -243,27 +251,27 @@ class KiteTickerHistory:
         Indexes created for performance optimization on common query patterns.
         """
         create_table_query = """
-        CREATE TABLE IF NOT EXISTS instrument_history (
-            instrument_token INTEGER NOT NULL,
-            timestamp TEXT NOT NULL,
-            open REAL NOT NULL,
-            high REAL NOT NULL,
-            low REAL NOT NULL,
-            close REAL NOT NULL,
-            volume INTEGER NOT NULL,
+        CREATE TABLE instrument_history (
+            instrument_token INTEGER, -- NOT NULL,
+            timestamp TEXT, -- NOT NULL,
+            open REAL, -- NOT NULL,
+            high REAL, -- NOT NULL,
+            low REAL, -- NOT NULL,
+            close REAL, -- NOT NULL,
+            volume INTEGER, -- NOT NULL,
             oi INTEGER,
-            interval TEXT NOT NULL,
+            interval TEXT, -- NOT NULL,
             date TEXT GENERATED ALWAYS AS ((substr(timestamp, 1, 10))) STORED,
             PRIMARY KEY (instrument_token, timestamp, interval)
         );
         """
         self.db_conn.execute(create_table_query)
         indices = [
-            "CREATE INDEX IF NOT EXISTS idx_instrument_history_date ON instrument_history(date)",
-            "CREATE INDEX IF NOT EXISTS idx_instrument_history_token_timestamp_interval_date ON instrument_history (instrument_token, timestamp, interval, date)",
-            "CREATE INDEX IF NOT EXISTS idx_instrument_history_token ON instrument_history (instrument_token)",
-            "CREATE INDEX IF NOT EXISTS idx_instrument_history_timestamp ON instrument_history (timestamp)",
-            "CREATE INDEX IF NOT EXISTS idx_instrument_history_interval ON instrument_history (interval);",
+            "CREATE INDEX idx_instrument_history_date ON instrument_history(date)",
+            "CREATE INDEX idx_instrument_history_token_timestamp_interval_date ON instrument_history (instrument_token, timestamp, interval, date)",
+            "CREATE INDEX idx_instrument_history_token ON instrument_history (instrument_token)",
+            "CREATE INDEX idx_instrument_history_timestamp ON instrument_history (timestamp)",
+            "CREATE INDEX idx_instrument_history_interval ON instrument_history (interval);",
         ]
         for index in indices:
             self.db_conn.execute(index)
@@ -717,7 +725,9 @@ class KiteTickerHistory:
         need_fresh_data = (
             formatted_to_date >= current_date and is_market_open
         ) or forceFetch
-
+        
+        self.logger.debug(f"Fresh data needed:{need_fresh_data}. Fetching instrument history with batch_size:{batch_size} at: {begin_time} from: {formatted_from_date} to:{formatted_to_date}. Market open:{is_market_open}")
+        
         if not need_fresh_data and not insertOnly:
             # Try to get all possible data from database first
             placeholders = ",".join(["?"] * len(instruments))

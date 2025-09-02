@@ -37,7 +37,7 @@ import pyotp
 import requests
 from kiteconnect import KiteConnect
 from PKDevTools.classes.log import default_logger
-
+from PKDevTools.classes.Environment import PKEnvironment
 from pkbrokers.envupdater import env_update_context
 
 
@@ -98,6 +98,7 @@ class KiteAuthenticator:
         missing = [key for key in required_keys if key not in credentials]
         if missing:
             raise ValueError(f"Missing required credentials: {missing}")
+        default_logger().debug("Credentials verified. All required credentials are available.")
 
     def get_enctoken(self, **credentials) -> str:
         """
@@ -121,7 +122,6 @@ class KiteAuthenticator:
                 default_logger().debug(
                     "Credentials not sent for authentication. Using the default credentials from environment."
                 )
-                from PKDevTools.classes.Environment import PKEnvironment
 
                 local_secrets = PKEnvironment().allSecrets
                 credentials = {
@@ -145,10 +145,11 @@ class KiteAuthenticator:
         try:
             # Initial request to establish session
             self.login_url = self._get_login_url(credentials["api_key"])
+            default_logger().debug(f"Login URL retrieved: {self.login_url}")
             self.request_session_id_response = self.session.get(
                 self.login_url, headers=self.DEFAULT_HEADERS, timeout=self.timeout
             )
-
+            default_logger().debug(f"Login response received: {self.request_session_id_response}")
             # User login
             self.request_token_response = self.session.post(
                 "https://kite.zerodha.com/api/login",
@@ -161,7 +162,7 @@ class KiteAuthenticator:
                 timeout=self.timeout,
             )
             login_data = self.request_token_response.json()
-
+            default_logger().debug(f"Going for OTP. Login Done: {login_data}")
             # TOTP verification
             totp_headers = {
                 **self.DEFAULT_HEADERS,
@@ -183,22 +184,23 @@ class KiteAuthenticator:
                 headers=totp_headers,
                 timeout=self.timeout,
             )
-
+            default_logger().debug(f"OTP verification finished: {self.access_token_response}")
             access_token = self._extract_enctoken(
                 self.access_token_response.headers.get("Set-Cookie")
             )
             os.environ["KTOKEN"] = access_token
-
+            default_logger().debug(f"Token extracted: {access_token}")
             with env_update_context(os.path.join(os.getcwd(),".env.dev")) as updater:
                 updater.update_values({"KTOKEN": access_token})
                 updater.reload_env()
+                default_logger().debug(f"Token updated in os.environment: {PKEnvironment().KTOKEN}")
             return access_token
 
         except requests.exceptions.RequestException as e:
-            default_logger().error(e)
+            default_logger().error(f"RequestException:Authentication failed:{e}")
             raise requests.exceptions.RequestException(
                 f"Authentication failed: {str(e)}"
             ) from e
         except Exception as e:
-            default_logger().error(e)
+            default_logger().error(f"Authentication failed because of error:{e}")
             raise ValueError(f"Authentication error: {str(e)}") from e

@@ -273,6 +273,13 @@ class KiteInstruments:
         except BaseException:
             return False
 
+    def table_exists(self, cursor, table_name):
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name=?
+        """, (table_name,))
+        return cursor.fetchone() is not None
+
     def _init_db(self, drop_table: bool = False) -> None:
         """
         Initialize the database schema with proper tables and indexes.
@@ -289,9 +296,11 @@ class KiteInstruments:
 
             Also enables WAL mode for local SQLite databases for better concurrency.
         """
+        self.logger.debug("Database initialisation in progress...")
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
 
         with self._get_connection() as conn:
+            self.logger.debug("Database connected.")
             cursor = conn.cursor()
             if (
                 drop_table
@@ -307,43 +316,45 @@ class KiteInstruments:
                 cursor.execute("PRAGMA journal_mode=WAL")
                 cursor.execute("PRAGMA synchronous=NORMAL")
 
-            # Create instruments table with constraints and new nse_stock column
-            # Use INTEGER instead of BOOLEAN for Turso compatibility
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS instruments (
-                    instrument_token INTEGER,
-                    exchange_token TEXT,
-                    tradingsymbol TEXT NOT NULL,
-                    name TEXT,
-                    last_price REAL,
-                    expiry TEXT,
-                    strike REAL,
-                    tick_size REAL NOT NULL CHECK(tick_size >= 0),
-                    lot_size INTEGER NOT NULL CHECK(lot_size >= 0),
-                    instrument_type TEXT NOT NULL,
-                    segment TEXT NOT NULL,
-                    exchange TEXT NOT NULL,
-                    last_updated TEXT DEFAULT (datetime('now')),
-                    nse_stock INTEGER DEFAULT 0 CHECK (nse_stock IN (0, 1)),
-                    PRIMARY KEY (exchange, tradingsymbol, instrument_type)
-                ) STRICT
-            """)
+            # Only create if it doesn't exist
+            if not self.table_exists(cursor, 'instruments'):
+                # Create instruments table with constraints and new nse_stock column
+                # Use INTEGER instead of BOOLEAN for Turso compatibility
+                cursor.execute("""
+                    CREATE TABLE instruments (
+                        instrument_token INTEGER,
+                        exchange_token TEXT,
+                        tradingsymbol TEXT, -- NOT NULL,
+                        name TEXT,
+                        last_price REAL,
+                        expiry TEXT,
+                        strike REAL,
+                        tick_size REAL, -- NOT NULL CHECK(tick_size >= 0),
+                        lot_size INTEGER, -- NOT NULL CHECK(lot_size >= 0),
+                        instrument_type TEXT, -- NOT NULL,
+                        segment TEXT, -- NOT NULL,
+                        exchange TEXT, -- NOT NULL,
+                        last_updated TEXT DEFAULT (datetime('now')),
+                        nse_stock INTEGER DEFAULT 0, -- CHECK (nse_stock IN (0, 1)),
+                        PRIMARY KEY (exchange, tradingsymbol, instrument_type)
+                    ) -- STRICT
+                """)
 
-            # Create optimized indexes including nse_stock
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_instrument_token
-                ON instruments(instrument_token)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_tradingsymbol_segment
-                ON instruments(tradingsymbol, segment)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_nse_stock
-                ON instruments(nse_stock)
-            """)
+                # Create optimized indexes including nse_stock
+                cursor.execute("""
+                    CREATE INDEX idx_instrument_token
+                    ON instruments(instrument_token)
+                """)
+                cursor.execute("""
+                    CREATE INDEX idx_tradingsymbol_segment
+                    ON instruments(tradingsymbol, segment)
+                """)
+                cursor.execute("""
+                    CREATE INDEX idx_nse_stock
+                    ON instruments(nse_stock)
+                """)
 
-            conn.commit()
+                conn.commit()
             self.logger.debug("Database initialised for table instruments.")
 
     def _get_connection(self, local: bool = False) -> sqlite3.Connection:
@@ -819,6 +830,7 @@ class KiteInstruments:
             Automatically triggers sync if no instruments are found in database.
         """
         equities_count = self.get_instrument_count()
+        self.logger.debug(f"Total instrument token count received:{equities_count}")
         if equities_count == 0:
             self.sync_instruments(force_fetch=True)
         equities = self.get_equities(
@@ -828,6 +840,7 @@ class KiteInstruments:
             only_nse_stocks=only_nse_stocks,
         )
         tokens = self.get_instrument_tokens(equities=equities)
+        self.logger.debug(f"All tokens received:{tokens}")
         return tokens
 
     def get_instrument_tokens(self, equities: List[Dict]) -> List[int]:

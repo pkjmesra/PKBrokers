@@ -244,7 +244,7 @@ def pkkite():
     if args.history:
         from pkbrokers.kite.instrumentHistory import Historical_Interval
         import os
-        
+
         supported_intervals = [member.value for member in Historical_Interval]
         if args.history not in supported_intervals:
             intervals = ', '.join(map(lambda x: x.value, Historical_Interval))
