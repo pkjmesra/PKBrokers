@@ -124,13 +124,15 @@ def validate_credentials():
     return True
 
 
-def kite_ticks():
+def kite_ticks(parent_owner=None):
     from pkbrokers.kite.kiteTokenWatcher import KiteTokenWatcher
 
     watcher = KiteTokenWatcher()
     print("We're now ready to begin listening to ticks from Zerodha's Kite...")
     # Start watching for ticks
     try:
+        if parent_owner is not None:
+            parent_owner.child_process = watcher
         watcher.watch()
     except KeyboardInterrupt:
         watcher.stop()

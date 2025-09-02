@@ -61,6 +61,7 @@ class PKTickOrchestrator:
         self.kite_process = None
         self.mp_context = multiprocessing.get_context("spawn")
         self.shutdown_requested = False
+        self.child_process = None
         
         # Don't initialize logger or other complex objects here
         # They will be initialized in each process separately
@@ -172,7 +173,7 @@ class PKTickOrchestrator:
             
             logger.info("Starting kite_ticks process...")
             kite_auth()
-            kite_ticks()
+            kite_ticks(parent_owner=self)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")
         except Exception as e:
@@ -265,6 +266,10 @@ class PKTickOrchestrator:
                     else:
                         self.bot_process = None
 
+        # Check to see if we launched any child processes
+        if self.child_process is not None:
+            if hasattr(self.child_process, "stop"):
+                self.child_process.stop()
         # Force resource cleanup
         self._cleanup_multiprocessing_resources()
         logger.info("All processes stopped and resources cleaned up")
