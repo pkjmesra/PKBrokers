@@ -376,7 +376,9 @@ class PKTickBot:
             if (
                 timeSinceStarted.total_seconds() >= MINUTES_2_IN_SECONDS
             ):  # shutdown only if we have been running for over 2 minutes.
-                logger.info(f"Stopping due to conflict after running for {timeSinceStarted.total_seconds()/60} minutes.")
+                warn_msg = f"❌ This instance is stopping due to conflict after running for {timeSinceStarted.total_seconds()/60} minutes."
+                logger.warn(warn_msg)
+                context.bot.send_message(chat_id=int(f"-{Channel_Id}"), text=warn_msg, parse_mode="HTML")
                 try:
                     # Signal the main process to shutdown
                     os.kill(os.getpid(), signal.SIGINT)
@@ -390,7 +392,9 @@ class PKTickBot:
                     logger.error(f"Error sending shutdown signal: {e}")
                     sys.exit(1)
             else:
-                logger.info("Other instance running! This instance will continue.")
+                info_msg = "✅ Other instance is likely running! This instance will continue."
+                logger.warn(info_msg)
+                context.bot.send_message(chat_id=int(f"-{Channel_Id}"), text=info_msg, parse_mode="HTML")
         
         # Build the message with some markup and additional information about what happened.
         update_str = update.to_dict() if isinstance(update, Update) else str(update)
@@ -404,19 +408,19 @@ class PKTickBot:
         )
 
         try:
-            # Finally, send the message only if it's a conflict error
-            # if "telegram.error.Conflict" in tb_string and "409" in tb_string and Channel_Id is not None and len(str(Channel_Id)) > 0:
-            context.bot.send_message(
-                chat_id=int(f"-{Channel_Id}"), text=message, parse_mode="HTML"
-            )
+            # Finally, send the message only if it's not a conflict error
+            if "telegram.error.Conflict" not in tb_string and "409" not in tb_string and Channel_Id is not None and len(str(Channel_Id)) > 0:
+                context.bot.send_message(
+                    chat_id=int(f"-{Channel_Id}"), text=message, parse_mode="HTML"
+                )
         except Exception:
             try:
-                # if "telegram.error.Conflict" in tb_string and "409" in tb_string and Channel_Id is not None and len(str(Channel_Id)) > 0:
-                context.bot.send_message(
-                    chat_id=int(f"-{Channel_Id}"),
-                    text=tb_string,
-                    parse_mode="HTML",
-                )
+                if "telegram.error.Conflict" not in tb_string and "409" not in tb_string and Channel_Id is not None and len(str(Channel_Id)) > 0:
+                    context.bot.send_message(
+                        chat_id=int(f"-{Channel_Id}"),
+                        text=tb_string,
+                        parse_mode="HTML",
+                    )
             except Exception:
                 logger.error(tb_string)
 
