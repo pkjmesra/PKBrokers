@@ -233,6 +233,7 @@ jobs:
         echo "✅ All periods have been processed. Workflow completed."
         cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
+        pip install pkdevtools
         python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('✅ All periods for historical data jobs have been processed. Workflow completed.');"
         exit 0
 
@@ -262,6 +263,7 @@ jobs:
           THIS_KITE_PERIOD : ${{ steps.next-period.outputs.next_period }}
           THIS_KITE_TOKEN: ${{ github.event.inputs.kiteToken }}
       run: |
+        pip install pkdevtools
         cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
         python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('✅ Successfully triggered child job with valid Kite token:(' + os.environ['THIS_KITE_TOKEN'] + ') for period: '+os.environ['THIS_KITE_PERIOD']+'\n');"

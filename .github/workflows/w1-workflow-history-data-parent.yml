@@ -289,6 +289,7 @@ jobs:
           THIS_KITE_PERIOD : ${{ github.event.inputs.periods }}
           THIS_KITE_TOKEN: ${{ needs.get-kite-token.outputs.kite_token }}
       run: |
+        pip install pkdevtools
         cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
         python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('✅ Successfully triggered all child jobs with valid Kite token:(' + os.environ['THIS_KITE_TOKEN'] + ') for period: '+os.environ['THIS_KITE_PERIOD']+'\n');"
@@ -373,6 +374,7 @@ jobs:
           THIS_KITE_PERIOD : ${{ github.event.inputs.periods }}
           THIS_KITE_TOKEN: ${{ needs.get-kite-token.outputs.kite_token }}
       run: |
+        pip install pkdevtools
         cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
         python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('❌ Kite token validation failed. Stopping execution. Kite token:(' + os.environ['THIS_KITE_TOKEN'] + ') for period: '+os.environ['THIS_KITE_PERIOD']+'\n');"
