@@ -12,7 +12,7 @@ on:
       periods:
         description: 'space-separated periods to run (default: all)'
         required: false
-        default: 'day minute 5minute 10minute 15minute 30minute 60minute'
+        default: 'day'
         type: string
 
 jobs:
@@ -226,9 +226,20 @@ jobs:
           sleep 2
         done
 
+    - name: Send notification about the trigger
+      shell: bash
+      env:
+          THIS_KITE_PERIOD : ${{ github.event.inputs.periods }}
+          THIS_KITE_TOKEN: ${{ needs.get-kite-token.outputs.kite_token }}
+      run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
+        cd pkbrokers/kite/examples/
+        python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('✅ Successfully triggered all child jobs with valid Kite token:(' + os.environ['THIS_KITE_TOKEN'] + ') for period: '+os.environ['THIS_KITE_PERIOD']+'\n');"
+
     - name: Log success
       run: |
         echo "✅ Successfully triggered all child jobs with valid Kite token"
+        
 
   # Job that runs when token validation fails
   token-validation-failed:
@@ -242,3 +253,14 @@ jobs:
         echo "The token obtained from 'pkkite --token' is not a valid base64 string."
         echo "This could be due to authentication issues or Kite API problems."
         exit 1
+
+    - name: Send notification about the trigger failure
+      shell: bash
+      env:
+          THIS_KITE_PERIOD : ${{ github.event.inputs.periods }}
+          THIS_KITE_TOKEN: ${{ needs.get-kite-token.outputs.kite_token }}
+      run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
+        cd pkbrokers/kite/examples/
+        python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('❌ Kite token validation failed. Stopping execution. Kite token:(' + os.environ['THIS_KITE_TOKEN'] + ') for period: '+os.environ['THIS_KITE_PERIOD']+'\n');"
+

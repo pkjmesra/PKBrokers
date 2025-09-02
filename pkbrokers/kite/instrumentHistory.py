@@ -37,6 +37,7 @@ from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
 from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
+MAX_CANDLES_COUNT=365
 
 class Historical_Interval(Enum):
     """
@@ -85,7 +86,7 @@ class KiteTickerHistory:
     The class handles both API data fetching and local database storage, providing
     efficient data retrieval while respecting API rate limits.
 
-    Attributes:
+    # Attributes:
         BASE_URL (str): Kite Connect API base URL for historical data
         RATE_LIMIT (int): Maximum requests per second (3 as per Kite API limits)
         RATE_LIMIT_WINDOW (float): Rate limiting window in seconds
@@ -97,7 +98,23 @@ class KiteTickerHistory:
         failed_tokens (List[int]): List of instrument tokens that failed to fetch
         db_conn: Database connection for data caching
 
-    Example:
+    # Limits
+        The Zerodha Kite Connect Historical Data API has specific limitations on 
+        the maximum number of days of historical data that can be fetched in a 
+        single request, depending on the chosen interval. These limits are:
+
+        Minute intervals (1, 2-minute): 60 days
+        Minute intervals (3, 4, 5, 10-minute): 100 days
+        Minute intervals (15, 30-minute): 200 days
+        Hourly intervals (60-minute, hour, 2, 3, 4-hour): 400 days
+        Daily and Weekly intervals: 2000 days
+
+        While there are limits per request, it is possible to retrieve historical 
+        data beyond these limits by making multiple requests and stitching the data 
+        together. For example, to get 1-minute data for a year, one would need to 
+        make multiple requests, each fetching a maximum of 60 days of data.
+
+    # Example:
         >>> from pkbrokers.kite.instrumentHistory import KiteTickerHistory, Historical_Interval
         >>> from pkbrokers.kite.authenticator import KiteAuthenticator
         >>>
@@ -413,6 +430,17 @@ class KiteTickerHistory:
                 return self._execute_safe(query=query, params=params, retrial=True)
         return cursor
 
+    def timedelta_for_interval(self, interval: str = "day"):
+        intervals_dict = {
+            "day": timedelta(days=MAX_CANDLES_COUNT),
+            "minute": timedelta(minutes=MAX_CANDLES_COUNT),
+            "5minute": timedelta(minutes=5*MAX_CANDLES_COUNT),
+            "10minute": timedelta(minutes=10*MAX_CANDLES_COUNT),
+            "30minute": timedelta(minutes=30*MAX_CANDLES_COUNT),
+            "60minute": timedelta(minutes=60*MAX_CANDLES_COUNT),
+        }
+        return intervals_dict.get(interval,timedelta(days=MAX_CANDLES_COUNT))
+
     def get_historical_data(
         self,
         instrument_token: int,
@@ -479,7 +507,7 @@ class KiteTickerHistory:
             raise ValueError("instrument_token is required")
         if from_date is None or len(from_date) == 0:
             from_date = PKDateUtilities.YmdStringFromDate(
-                PKDateUtilities.currentDateTime() - timedelta(days=365)
+                PKDateUtilities.currentDateTime() - self.timedelta_for_interval(interval=interval.lower())
             )
         if to_date is None or len(to_date) == 0:
             to_date = PKDateUtilities.YmdStringFromDate(
@@ -669,7 +697,7 @@ class KiteTickerHistory:
             raise ValueError("list of instruments is required")
         if from_date is None or len(from_date) == 0:
             from_date = PKDateUtilities.YmdStringFromDate(
-                PKDateUtilities.currentDateTime() - timedelta(days=365)
+                PKDateUtilities.currentDateTime() - self.timedelta_for_interval(interval=interval.lower())
             )
         if to_date is None or len(to_date) == 0:
             to_date = PKDateUtilities.YmdStringFromDate(

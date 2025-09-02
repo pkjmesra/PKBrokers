@@ -105,9 +105,110 @@ jobs:
         cd pkbrokers/kite/examples/
         echo ${{ env.TEL_SESSION_DATA }} | base64 -d > user_session.session
         chmod 600 user_session.session
-        
+
     - name: Run historical data for ${{ inputs.period }}
       run: |
         cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
         python pkkite.py --history=${{ inputs.period }} --verbose
+
+    - name: Send notification about the completion
+      shell: bash
+      env:
+          THIS_KITE_PERIOD : ${{ inputs.period }}
+          THIS_KITE_TOKEN: ${{ github.event.inputs.kiteToken }}
+      run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
+        cd pkbrokers/kite/examples/
+        python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('✅ Successfully finished child job with valid Kite token:(' + os.environ['THIS_KITE_TOKEN'] + ') for period: '+os.environ['THIS_KITE_PERIOD']+'\n');"
+
+  trigger-next-child-job:
+    needs: [historical-data]
+    if: (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    env:
+      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || 20 }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Determine next period
+      id: next-period
+      run: |
+        CURRENT_PERIOD="${{ github.event.inputs.period }}"
+        echo "Current period: $CURRENT_PERIOD"
+        
+        case "$CURRENT_PERIOD" in
+            "day")
+                NEXT_PERIOD="minute"
+                ;;
+            "minute")
+                NEXT_PERIOD="5minute"
+                ;;
+            "5minute")
+                NEXT_PERIOD="10minute"
+                ;;
+            "10minute")
+                NEXT_PERIOD="30minute"
+                ;;
+            "30minute")
+                NEXT_PERIOD="60minute"
+                ;;
+            "60minute")
+                echo "✅ All periods completed. Exiting."
+                echo "should_exit=true" >> $GITHUB_OUTPUT
+                exit 0
+                ;;
+            *)
+                # Default to starting from day if no period specified
+                NEXT_PERIOD="day"
+                ;;
+        esac
+        
+        echo "Next period: $NEXT_PERIOD"
+        echo "next_period=$NEXT_PERIOD" >> $GITHUB_OUTPUT
+        echo "should_exit=false" >> $GITHUB_OUTPUT
+
+    - name: Exit if all periods completed
+      if: steps.next-period.outputs.should_exit == 'true'
+      run: |
+        echo "✅ All periods have been processed. Workflow completed."
+        cp .env.dev pkbrokers/kite/examples/.env.dev
+        cd pkbrokers/kite/examples/
+        python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('✅ All periods for historical data jobs have been processed. Workflow completed.');"
+        exit 0
+
+    - name: Trigger next child job
+      if: steps.next-period.outputs.should_exit == 'false'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        NEXT_PERIOD="${{ steps.next-period.outputs.next_period }}"
+        echo "Triggering next child job for period: $NEXT_PERIOD"
+        
+        LOG_LEVEL="${{ github.event.inputs.logLevel || '20' }}"
+        KITE_TOKEN="${{ github.event.inputs.kiteToken }}"
+        
+        # Trigger child workflow for the next period only
+        curl -X POST \
+          -H "Authorization: token $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/${{ github.repository }}/actions/workflows/w1-workflow-history-data-child.yml/dispatches" \
+          -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$NEXT_PERIOD\",\"logLevel\":\"$LOG_LEVEL\",\"kiteToken\":\"$KITE_TOKEN\"}}"
+        
+        echo "✅ Successfully triggered next child job for period: $NEXT_PERIOD"
+
+    - name: Send notification about the trigger
+      shell: bash
+      env:
+          THIS_KITE_PERIOD : ${{ steps.next-period.outputs.next_period }}
+          THIS_KITE_TOKEN: ${{ github.event.inputs.kiteToken }}
+      run: |
+        cp .env.dev pkbrokers/kite/examples/.env.dev
+        cd pkbrokers/kite/examples/
+        python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('✅ Successfully triggered child job with valid Kite token:(' + os.environ['THIS_KITE_TOKEN'] + ') for period: '+os.environ['THIS_KITE_PERIOD']+'\n');"
+
+    - name: Log completion
+      run: |
+        echo "Next period job triggered successfully. Workflow will continue with the next period in the chain."
