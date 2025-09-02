@@ -268,8 +268,14 @@ class PKTickOrchestrator:
 
         # Check to see if we launched any child processes
         if self.child_process is not None:
+            logger.info("Child processes is being requested to be stopped")
             if hasattr(self.child_process, "stop"):
                 self.child_process.stop()
+                logger.warn("Child processes was sent a request to stop!")
+            else:
+                logger.warn("Child processes does not have stop attribute!")
+        else:
+            logger.warn("No child processes was found!")
         # Force resource cleanup
         self._cleanup_multiprocessing_resources()
         logger.info("All processes stopped and resources cleaned up")

@@ -773,7 +773,7 @@ class KiteTokenWatcher:
         - Timeout-based thread termination
         - Resource cleanup
         """
-        self.logger.debug("Initiating graceful shutdown...")
+        self.logger.info("Initiating graceful shutdown...")
 
         # Signal shutdown to all components
         self._shutdown_event.set()
@@ -808,7 +808,7 @@ class KiteTokenWatcher:
             if self._db_thread.is_alive():
                 self.logger.warn("Database thread did not terminate gracefully")
 
-        self.logger.debug("Shutdown complete")
+        self.logger.info("Shutdown complete")
 
     def __del__(self):
         """
