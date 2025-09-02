@@ -253,6 +253,7 @@ class WebSocketProcess:
 
                     # Main message loop
                     last_heartbeat = time.time()
+                    last_tick_log = time.time()
                     total_ticks_received = 0
                     tick_batch = 0
                     while not self.stop_event.is_set():
@@ -271,11 +272,13 @@ class WebSocketProcess:
                                 )
                                 total_ticks_received += len(ticks)
                                 tick_batch += len(ticks)
-                                if tick_batch > 0 and tick_batch % 200 >= 0:
+                                # if tick_batch > 0 and tick_batch % 200 >= 0:
+                                if time.time() - last_tick_log > 4*PING_INTERVAL:
                                     self.logger.info(
                                         f"Websocket_index:{self.websocket_index}: Total Running Count of Ticks:{total_ticks_received}"
                                     )
                                     tick_batch = 0
+                                    last_tick_log = time.time()
 
                                 for tick in ticks:
                                     # Put tick data as a dictionary to avoid pickling issues
