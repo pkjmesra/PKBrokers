@@ -98,6 +98,12 @@ argParser.add_argument(
     help="Get instrument data from remote database and save into pickle for all NSE stocks.",
     required=False,
 )
+argParser.add_argument(
+    "--test",
+    action="store_true",
+    help="Test various workflows in realtime.",
+    required=False,
+)
 try:
     argsv = argParser.parse_known_args()
 except BaseException as e:
@@ -113,15 +119,7 @@ except BaseException as e:
 
 args = argsv[0]
 
-class WatcherProxy:
-    """Proxy object that can be pickled and used to control the watcher"""
-    def __init__(self, watcher):
-        self.watcher = watcher
-        
-    def stop(self):
-        """Stop the watcher"""
-        if hasattr(self.watcher, 'stop'):
-            self.watcher.stop()
+TEST_WAIT_TIME_SEC = 180
 
 def validate_credentials():
     if not os.path.exists(".env.dev"):
@@ -133,7 +131,7 @@ def validate_credentials():
     return True
 
 
-def kite_ticks(stop_queue=None, parent=None):
+def kite_ticks(stop_queue=None, parent=None, test_mode=False):
     from pkbrokers.kite.kiteTokenWatcher import KiteTokenWatcher
     import signal
     watcher = KiteTokenWatcher()
@@ -154,6 +152,14 @@ def kite_ticks(stop_queue=None, parent=None):
         sys.exit(0)
     
     signal.signal(signal.SIGTERM, signal_handler)
+    if test_mode:
+        import threading
+        def kill_watcher():
+            import time
+            time.sleep(TEST_WAIT_TIME_SEC)
+            watcher.stop()
+        kill_thread = threading.Thread(target=kill_watcher, daemon=True, name="kill_watcher")
+        kill_thread.start()
 
     try:
         watcher.watch()
@@ -264,7 +270,7 @@ def pkkite():
     if args.ticks:
         setupLogger()
         kite_auth()
-        kite_ticks()
+        kite_ticks(test_mode=True if args.test else False)
 
     if args.history:
         from pkbrokers.kite.instrumentHistory import Historical_Interval

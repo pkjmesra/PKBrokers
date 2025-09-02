@@ -186,6 +186,12 @@ class PKTickBot:
         """Send token"""
         update.message.reply_text(PKEnvironment().KTOKEN)
 
+    def test_ticks(self, update: Update, context: CallbackContext) -> None:
+        from pkbrokers.kite.examples.pkkite import kite_ticks
+        kite_ticks(test_mode=True)
+        if update is not None:
+            update.message.reply_text("Kite Tick testing kicked off! Try sending /ticks in sometime.")
+
     def send_zipped_ticks(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
             if update is not None:
@@ -265,8 +271,11 @@ class PKTickBot:
         return glob.glob(f"{base_path}.part*")
 
     def get_top_ticks_formatted(self, limit=20):
-        with open(self.ticks_file_path, 'r') as f:
-            data = json.load(f)
+        try:
+            with open(self.ticks_file_path, 'r') as f:
+                data = json.load(f)
+        except BaseException:
+            return None
         
         instruments = list(data.values())
         top_limit = sorted(instruments, key=lambda x: x.get('tick_count', 0), reverse=True)[:limit+2]
@@ -437,6 +446,7 @@ class PKTickBot:
             # Add handlers
             dispatcher.add_handler(CommandHandler("start", self.start))
             dispatcher.add_handler(CommandHandler("ticks", self.send_zipped_ticks))
+            dispatcher.add_handler(CommandHandler("test_ticks", self.test_ticks))
             dispatcher.add_handler(CommandHandler("status", self.status))
             dispatcher.add_handler(CommandHandler("top", self.top_ticks))
             dispatcher.add_handler(CommandHandler("token", self.send_token))
