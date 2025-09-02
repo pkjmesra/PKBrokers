@@ -177,7 +177,7 @@ class PKTickOrchestrator:
             self.manager = multiprocessing.Manager()
             self.child_process_ref = self.manager.dict()
             kite_auth()
-            kite_ticks( stop_queue=self.stop_queue,
+            kite_ticks(stop_queue=self.stop_queue,
                       child_process_ref=self.child_process_ref)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")
@@ -235,9 +235,13 @@ class PKTickOrchestrator:
             logger.info("Kite ticks process started (market hours)")
         else:
             logger.info("Kite ticks process not started (outside market hours or holiday)")
+            kite_running = self.kite_process and self.kite_process.is_alive()
+            if kite_running:
+                processes = [(self.kite_process, "kite process")]
+                self.stop(processes=processes)
             self.kite_process = None
 
-    def stop(self):
+    def stop(self, processes=[]):
         """Stop both processes gracefully with proper resource cleanup"""
         logger = self._get_logger()
         logger.info("Stopping processes...")
@@ -271,7 +275,7 @@ class PKTickOrchestrator:
         processes = [
             (self.kite_process, "kite process"),
             (self.bot_process, "bot process")
-        ]
+        ] if len(processes) ==0 else processes
         
         for process, name in processes:
             if process and process.is_alive():
