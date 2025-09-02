@@ -80,7 +80,7 @@ jobs:
         KUSER: ${{ secrets.KUSER }}
         KPWD: ${{ secrets.KPWD }}
         KTOTP: ${{ secrets.KTOTP }}
-        DB_TYPE: ${{ secrets.DB_TYPE }}
+        DB_TYPE: "local"
         TBTOKEN: ${{ secrets.TBTOKEN }}
         BBTOKEN: ${{ secrets.BBTOKEN }}
         Tel_API_ID: ${{ secrets.Tel_API_ID }}
