@@ -345,6 +345,7 @@ class PKTickOrchestrator:
     def run(self):
         """Main run method with graceful shutdown handling"""
         try:
+            logger = self._get_logger()
             signal.signal(signal.SIGINT, self.signal_handler)
             signal.signal(signal.SIGTERM, self.signal_handler)
             self.start()
@@ -384,7 +385,6 @@ class PKTickOrchestrator:
             self.stop()
 
         except KeyboardInterrupt:
-            logger = self._get_logger()
             logger.info("Keyboard interrupt received")
         except Exception as e:
             logger.error(f"Unexpected error in orchestrator: {e}")
