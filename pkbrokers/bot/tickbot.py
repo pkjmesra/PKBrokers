@@ -404,19 +404,19 @@ class PKTickBot:
         )
 
         try:
-            # Finally, send the message only if it's not a conflict error
-            if "telegram.error.Conflict" not in tb_string and "409" not in tb_string and Channel_Id is not None and len(str(Channel_Id)) > 0:
-                context.bot.send_message(
-                    chat_id=int(f"-{Channel_Id}"), text=message, parse_mode="HTML"
-                )
+            # Finally, send the message only if it's a conflict error
+            # if "telegram.error.Conflict" in tb_string and "409" in tb_string and Channel_Id is not None and len(str(Channel_Id)) > 0:
+            context.bot.send_message(
+                chat_id=int(f"-{Channel_Id}"), text=message, parse_mode="HTML"
+            )
         except Exception:
             try:
-                if "telegram.error.Conflict" not in tb_string and "409" not in tb_string and Channel_Id is not None and len(str(Channel_Id)) > 0:
-                    context.bot.send_message(
-                        chat_id=int(f"-{Channel_Id}"),
-                        text=tb_string,
-                        parse_mode="HTML",
-                    )
+                # if "telegram.error.Conflict" in tb_string and "409" in tb_string and Channel_Id is not None and len(str(Channel_Id)) > 0:
+                context.bot.send_message(
+                    chat_id=int(f"-{Channel_Id}"),
+                    text=tb_string,
+                    parse_mode="HTML",
+                )
             except Exception:
                 logger.error(tb_string)
 
