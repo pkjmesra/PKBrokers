@@ -175,10 +175,9 @@ class PKTickOrchestrator:
             
             logger.info("Starting kite_ticks process...")
             self.manager = multiprocessing.Manager()
-            self.child_process_ref = self.manager.dict()
             kite_auth()
             kite_ticks(stop_queue=self.stop_queue,
-                      child_process_ref=self.child_process_ref)
+                      parent=self)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")
         except Exception as e:
@@ -254,9 +253,9 @@ class PKTickOrchestrator:
             logger.error(f"Error sending stop signal to KiteTokenWatcher: {e}")
 
         # Force stop if still running
-        if 'watcher_pid' in self.child_process_ref:
+        if self.child_process_ref is not None:
             logger.info("Child processes is being requested to be stopped")
-            watcher_pid = self.child_process_ref['watcher_pid']
+            watcher_pid = self.child_process_ref
             if watcher_pid:
                 try:
                     os.kill(watcher_pid, signal.SIGTERM)

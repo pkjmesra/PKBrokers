@@ -133,14 +133,14 @@ def validate_credentials():
     return True
 
 
-def kite_ticks(stop_queue=None, child_process_ref=None):
+def kite_ticks(stop_queue=None, parent=None):
     from pkbrokers.kite.kiteTokenWatcher import KiteTokenWatcher
     import signal
     watcher = KiteTokenWatcher()
     print("We're now ready to begin listening to ticks from Zerodha's Kite...")
     # Store reference
-    if child_process_ref is not None:
-        child_process_ref['watcher_pid'] = os.getpid()
+    if parent is not None and hasattr(parent,"child_process_ref"):
+        parent.child_process_ref = os.getpid()
     
     # Start stop listener
     if stop_queue is not None:
