@@ -146,6 +146,11 @@ jobs:
         
         # No need to manually capture output - it's already in the outputs
 
+    - name: Mask sensitive outputs
+      run: |
+        # Mask the token output from previous steps
+        echo "::add-mask::${{ steps.get-token.outputs.kite_token }}"
+
     - name: Validate base64 token
       id: validate-token
       run: |
