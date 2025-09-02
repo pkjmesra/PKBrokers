@@ -332,6 +332,8 @@ class KiteTokenWatcher:
         self._processing_thread = None
         self._db_thread = None
         self._shutdown_event = threading.Event()
+        self._stop_queue = None
+        self._stop_listener_thread = None
         self.log_level = (
             0
             if "PKDevTools_Default_Log_Level" not in os.environ.keys()
@@ -363,6 +365,46 @@ class KiteTokenWatcher:
         self._tick_batch = {}
 
         self._next_process_time = None
+
+    def set_stop_queue(self, stop_queue):
+        """
+        Set a queue to listen for stop signals from parent process
+        
+        Args:
+            stop_queue: multiprocessing.Queue instance to listen for stop signals
+        """
+        self._stop_queue = stop_queue
+        self._start_stop_listener()
+    
+    def _start_stop_listener(self):
+        """Start a thread to listen for stop signals from the queue"""
+        if self._stop_queue is None:
+            return
+            
+        def listen_for_stop():
+            while not self._shutdown_event.is_set():
+                try:
+                    # Check for stop signal with timeout to avoid blocking indefinitely
+                    if self._stop_queue and not self._stop_queue.empty():
+                        signal = self._stop_queue.get(timeout=0.1)
+                        if signal == "STOP":
+                            self.logger.info("Received stop signal from launcher/orchestrator")
+                            self.stop()
+                            break
+                    time.sleep(0.1)
+                except Empty:
+                    continue
+                except Exception as e:
+                    self.logger.error(f"Error in stop listener: {e}")
+                    break
+        
+        self._stop_listener_thread = threading.Thread(
+            target=listen_for_stop, 
+            daemon=True, 
+            name="StopListener"
+        )
+        self._stop_listener_thread.start()
+        self.logger.debug("Started stop signal listener thread")
 
     def watch(self):
         """

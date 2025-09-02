@@ -60,6 +60,9 @@ class PKTickOrchestrator:
         self.bot_process = None
         self.kite_process = None
         self.mp_context = multiprocessing.get_context("spawn")
+        self.manager = multiprocessing.Manager()
+        self.child_process_ref = self.manager.dict()
+        self.stop_queue = self.mp_context.Queue()
         self.shutdown_requested = False
         self.child_process = None
         
@@ -173,7 +176,9 @@ class PKTickOrchestrator:
             
             logger.info("Starting kite_ticks process...")
             kite_auth()
-            kite_ticks(parent_owner=self)
+            kite_ticks(parent_owner=self, 
+                      stop_queue=self.stop_queue,
+                      child_process_ref=self.child_process_ref)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")
         except Exception as e:
@@ -236,6 +241,22 @@ class PKTickOrchestrator:
         """Stop both processes gracefully with proper resource cleanup"""
         logger = self._get_logger()
         logger.info("Stopping processes...")
+
+        # Try to stop watcher through queue
+        try:
+            self.stop_queue.put("STOP")
+            time.sleep(2)  # Give time to process
+        except Exception as e:
+            logger.error(f"Error sending stop signal to KiteTokenWatcher: {e}")
+
+        # Force stop if still running
+        if 'watcher' in self.child_process_ref:
+            try:
+                watcher = self.child_process_ref['watcher']
+                if hasattr(watcher, "stop"):
+                    watcher.stop()
+            except Exception as e:
+                logger.error(f"Error force stopping watcher: {e}")
 
         # Stop processes with proper cleanup
         processes = [
