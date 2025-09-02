@@ -345,9 +345,11 @@ class PKTickOrchestrator:
                 
                 # Check market conditions every 30 seconds for kite process
                 current_time = time.time()
-                if current_time - last_market_check > 30:
+                if current_time - last_market_check > 30 and not self.shutdown_requested:
                     self.restart_kite_process_if_needed()
                     last_market_check = current_time
+            
+            self.stop()
 
         except KeyboardInterrupt:
             logger = self._get_logger()
@@ -362,10 +364,12 @@ class PKTickOrchestrator:
         """Check if bot process exited due to conflict"""
         from pkbrokers.bot.tickbot import conflict_detected
         if conflict_detected:
+            self.shutdown_requested = True
             return True
         if self.bot_process and self.bot_process.exitcode is not None:
             # If bot exited with non-zero code, it might be due to conflict
             if self.bot_process.exitcode != 0:
+                self.shutdown_requested = True
                 return True
         return False
 
