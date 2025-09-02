@@ -44,10 +44,10 @@ class DatabaseWriterProcess:
         if self.log_level is not None:
             os.environ["PKDevTools_Default_Log_Level"] = str(self.log_level)
         log.setup_custom_logger(
-            "pkbrokers_db",
+            "pkbrokersDB",
             self.log_level,
             trace=False,
-            log_file_path="PKBrokers-db-log.txt",
+            log_file_path="PKBrokers-DBlog.txt",
             filter=None,
         )
         self.logger = default_logger()
