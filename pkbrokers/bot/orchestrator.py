@@ -60,11 +60,10 @@ class PKTickOrchestrator:
         self.bot_process = None
         self.kite_process = None
         self.mp_context = multiprocessing.get_context("spawn")
-        self.manager = multiprocessing.Manager()
-        self.child_process_ref = self.manager.dict()
+        self.manager = None
+        self.child_process_ref = None
         self.stop_queue = self.mp_context.Queue()
         self.shutdown_requested = False
-        self.child_process = None
         
         # Don't initialize logger or other complex objects here
         # They will be initialized in each process separately
@@ -175,9 +174,10 @@ class PKTickOrchestrator:
             from pkbrokers.kite.examples.pkkite import kite_auth, kite_ticks
             
             logger.info("Starting kite_ticks process...")
+            self.manager = multiprocessing.Manager()
+            self.child_process_ref = self.manager.dict()
             kite_auth()
-            kite_ticks(parent_owner=self, 
-                      stop_queue=self.stop_queue,
+            kite_ticks( stop_queue=self.stop_queue,
                       child_process_ref=self.child_process_ref)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")
@@ -250,13 +250,22 @@ class PKTickOrchestrator:
             logger.error(f"Error sending stop signal to KiteTokenWatcher: {e}")
 
         # Force stop if still running
-        if 'watcher' in self.child_process_ref:
-            try:
-                watcher = self.child_process_ref['watcher']
-                if hasattr(watcher, "stop"):
-                    watcher.stop()
-            except Exception as e:
-                logger.error(f"Error force stopping watcher: {e}")
+        if 'watcher_pid' in self.child_process_ref:
+            logger.info("Child processes is being requested to be stopped")
+            watcher_pid = self.child_process_ref['watcher_pid']
+            if watcher_pid:
+                try:
+                    os.kill(watcher_pid, signal.SIGTERM)
+                    time.sleep(2)
+                    logger.info("Sent stop signal to watcher process")
+                except ProcessLookupError:
+                    logger.info("Watcher process already terminated")
+                except Exception as e:
+                    logger.error(f"Error signaling watcher: {e}")
+            else:
+                logger.warn("No child processes exists in the dict!")
+        else:
+            logger.warn("No child processes was found!")
 
         # Stop processes with proper cleanup
         processes = [
@@ -287,16 +296,6 @@ class PKTickOrchestrator:
                     else:
                         self.bot_process = None
 
-        # Check to see if we launched any child processes
-        if self.child_process is not None:
-            logger.info("Child processes is being requested to be stopped")
-            if hasattr(self.child_process, "stop"):
-                self.child_process.stop()
-                logger.warn("Child processes was sent a request to stop!")
-            else:
-                logger.warn("Child processes does not have stop attribute!")
-        else:
-            logger.warn("No child processes was found!")
         # Force resource cleanup
         self._cleanup_multiprocessing_resources()
         logger.info("All processes stopped and resources cleaned up")

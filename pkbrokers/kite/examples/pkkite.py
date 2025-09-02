@@ -113,6 +113,15 @@ except BaseException as e:
 
 args = argsv[0]
 
+class WatcherProxy:
+    """Proxy object that can be pickled and used to control the watcher"""
+    def __init__(self, watcher):
+        self.watcher = watcher
+        
+    def stop(self):
+        """Stop the watcher"""
+        if hasattr(self.watcher, 'stop'):
+            self.watcher.stop()
 
 def validate_credentials():
     if not os.path.exists(".env.dev"):
@@ -126,17 +135,26 @@ def validate_credentials():
 
 def kite_ticks(stop_queue=None, child_process_ref=None):
     from pkbrokers.kite.kiteTokenWatcher import KiteTokenWatcher
-
+    import signal
     watcher = KiteTokenWatcher()
     print("We're now ready to begin listening to ticks from Zerodha's Kite...")
     # Store reference
     if child_process_ref is not None:
-        child_process_ref['watcher'] = watcher
+        child_process_ref['watcher_pid'] = os.getpid()
     
     # Start stop listener
     if stop_queue is not None:
         watcher.set_stop_queue(stop_queue)
     
+    # Set up signal handler
+    def signal_handler(signum, frame):
+        print(f"Received signal {signum}, stopping watcher...")
+        if watcher:
+            watcher.stop()
+        sys.exit(0)
+    
+    signal.signal(signal.SIGTERM, signal_handler)
+
     try:
         watcher.watch()
     except KeyboardInterrupt:

@@ -202,6 +202,11 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
     - name: Create .env.dev file with secrets
       env:
         CHAT_ID: ${{ secrets.CHAT_ID }}
@@ -316,6 +321,11 @@ jobs:
         echo "The token obtained from 'pkkite --token' is not a valid base64 string."
         echo "This could be due to authentication issues or Kite API problems."
         exit 1
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
 
     - name: Create .env.dev file with secrets
       env:
