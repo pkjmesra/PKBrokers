@@ -269,20 +269,24 @@ class PKTickBot:
             data = json.load(f)
         
         instruments = list(data.values())
-        top_limit = sorted(instruments, key=lambda x: x.get('tick_count', 0), reverse=True)[:limit]
+        top_limit = sorted(instruments, key=lambda x: x.get('tick_count', 0), reverse=True)[:limit+2]
         output = None
         if len(top_limit) > 0:
-            output = "Symbol         |Tick|Price\n"
-            output += "---------------|----|-------\n"
-            
+            output = "Symbol         |Tick |Price\n"
+            output += "---------------|-----|-------\n"
+            NIFTY_50 = 256265
+            BSE_SENSEX = 265
             for i, instrument in enumerate(top_limit, 1):
+                instrument_token = instrument.get('instrument_token', 0)
+                if instrument_token in [NIFTY_50,BSE_SENSEX]:
+                    continue
                 symbol = instrument.get('trading_symbol', 'N/A')
                 tick_count = instrument.get('tick_count', 0)
                 price = instrument.get('ohlcv', {}).get('close', 0)
                 
                 output += f"{symbol:15}|{tick_count:4} | {price:6.1f}\n"
         
-        return output
+        return f"<pre>{html.escape(output)}</pre>"
 
     def top_ticks(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
@@ -295,7 +299,7 @@ class PKTickBot:
             update.message.reply_text("No data available or error reading ticks file.")
             return
         message = f"📊 Top 20 Instruments by Tick Count:\n\n{top_instruments}"
-        update.message.reply_text(message)
+        update.message.reply_text(message, parse_mode="HTML")
 
     def status(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
