@@ -85,7 +85,7 @@ jobs:
         run: test -z $(git rev-list  --after="7 days"  ${{ github.sha }} --max-count=1) && echo "::set-output name=should_run::false"
 
   Test-Source:
-    uses: pkjmesra/PKBrokers/.github/workflows/w11-workflow-test-coverage.yml@main
+    uses: pkjmesra/pkbrokers/.github/workflows/w11-workflow-test-coverage.yml@main
     with:
       branch-name: main
     secrets: inherit
@@ -131,8 +131,8 @@ jobs:
             TARGET: Linux
             CMD_BUILD: |
               pyinstaller --onefile --add-data="README.md:." --add-data="LICENSE:." --add-data="docs\LICENSE-Others:." --add-data="Disclaimer.txt:." --icon=screenshots\icon.ico pkbrokers\kite\examples\pkkite.py  --hidden-import PKDevTools
-              mv /home/runner/work/PKBrokers/PKBrokers/dist/pkkite /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_x64.bin
-              chmod +x /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_x64.bin
+              mv /home/runner/work/pkbrokers/pkbrokers/dist/pkkite /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.bin
+              chmod +x /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.bin
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
               pip3 uninstall -y PKDevTools
@@ -140,9 +140,9 @@ jobs:
               pip3 install -r requirements-dev.txt
               pip3 install .
             TEST_BUILD: |
-              /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_x64.bin
+              /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.bin
               exit $?
-            OUT_PATH: /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_x64.bin
+            OUT_PATH: /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.bin
             FILE_NAME: pkkite_x64.bin
 
           - os: ubuntu-24.04-arm
@@ -150,8 +150,8 @@ jobs:
             TARGET: Linux
             CMD_BUILD: |
               pyinstaller --onefile --add-data="README.md:." --add-data="LICENSE:." --add-data="docs\LICENSE-Others:." --add-data="Disclaimer.txt:." --icon=screenshots\icon.ico pkbrokers\kite\examples\pkkite.py  --hidden-import PKDevTools
-              mv /home/runner/work/PKBrokers/PKBrokers/dist/pkkite /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.bin
-              chmod +x /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.bin
+              mv /home/runner/work/pkbrokers/pkbrokers/dist/pkkite /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.bin
+              chmod +x /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.bin
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
               pip3 uninstall -y PKDevTools
@@ -159,17 +159,17 @@ jobs:
               pip3 install -r requirements-dev.txt
               pip3 install .
             TEST_BUILD: |
-              /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.bin
+              /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.bin
               exit $?
-            OUT_PATH: /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.bin
+            OUT_PATH: /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.bin
             FILE_NAME: pkkite_arm64.bin
 
           - os: macos-latest
             platform_id: macosx_arm64
             TARGET: MacOS
             CMD_BUILD: |
-              pyinstaller --onefile --windowed --add-data="README.md:." --add-data="LICENSE:." --add-data="docs/LICENSE-Others:." --add-data="Disclaimer.txt:." --icon=screenshots/icon.ico PKBrokers/pkkite.py  --hidden-import cmath --hidden-import talib.stream --hidden-import numpy --hidden-import pandas --hidden-import alive_progress --hidden-import scipy.special._cdflib
-              mv /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.run
+              pyinstaller --onefile --windowed --add-data="README.md:." --add-data="LICENSE:." --add-data="docs/LICENSE-Others:." --add-data="Disclaimer.txt:." --icon=screenshots/icon.ico pkbrokers/pkkite.py  --hidden-import cmath --hidden-import talib.stream --hidden-import numpy --hidden-import pandas --hidden-import alive_progress --hidden-import scipy.special._cdflib
+              mv /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.run
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
               pip3 uninstall -y PKDevTools
@@ -177,17 +177,17 @@ jobs:
               pip3 install -r requirements-dev.txt
               pip3 install .
             TEST_BUILD: |
-              /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.run -e -a Y -o H
+              /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.run -e -a Y -o H
               exit $?
-            OUT_PATH: /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.run
+            OUT_PATH: /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.run
             FILE_NAME: pkkite_arm64.run
           
           - os: macos-13
             platform_id: macosx_x86_64
             TARGET: MacOS
             CMD_BUILD: |
-              pyinstaller --onefile --windowed --add-data="README.md:." --add-data="LICENSE:." --add-data="docs/LICENSE-Others:." --add-data="Disclaimer.txt:." --icon=screenshots/icon.ico PKBrokers/pkkite.py  --hidden-import cmath --hidden-import talib.stream --hidden-import numpy --hidden-import pandas --hidden-import alive_progress --hidden-import scipy.special._cdflib
-              mv /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite_x64.run
+              pyinstaller --onefile --windowed --add-data="README.md:." --add-data="LICENSE:." --add-data="docs/LICENSE-Others:." --add-data="Disclaimer.txt:." --icon=screenshots/icon.ico pkbrokers/pkkite.py  --hidden-import cmath --hidden-import talib.stream --hidden-import numpy --hidden-import pandas --hidden-import alive_progress --hidden-import scipy.special._cdflib
+              mv /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.run
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
               pip3 uninstall -y PKDevTools
@@ -195,9 +195,9 @@ jobs:
               pip3 install -r requirements-dev.txt
               pip3 install .
             TEST_BUILD: |
-              /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite_x64.run
+              /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.run
               exit $?
-            OUT_PATH: /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite_x64.run
+            OUT_PATH: /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.run
             FILE_NAME: pkkite_x64.run
     steps:
       - uses: actions/checkout@v4
@@ -226,13 +226,13 @@ jobs:
           GITHUB_REF=${GITHUB_REF#refs/tags/}
           echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
           echo "::set-output name=sha_short::$(git rev-parse --short HEAD)"
-          DEV_VERSION=`grep -o "'.*'" PKBrokers/kite/__init__.py | sed "s/'//g"`
+          DEV_VERSION=`grep -o "'.*'" pkbrokers/kite/__init__.py | sed "s/'//g"`
           VERSION_ARR=(${DEV_VERSION//./ })
           MAJOR_MINOR=${VERSION_ARR[0]}.${VERSION_ARR[1]}
           TODAY=`date +%Y%m%d`
           THIS_VERSION=${MAJOR_MINOR}.${TODAY}.${{github.run_number}}
-          rm -rf PKBrokers/kite/__init__.py
-          echo VERSION=\'`echo ${THIS_VERSION}`\' >> PKBrokers/kite/__init__.py
+          rm -rf pkbrokers/kite/__init__.py
+          echo VERSION=\'`echo ${THIS_VERSION}`\' >> pkbrokers/kite/__init__.py
           echo "##[set-output name=THIS_VERSION;]$(echo ${THIS_VERSION})"
           echo "##[set-output name=CURRENT_VERSION;]$(echo ${CURRENT_VERSION})"
           echo "##[set-output name=DEV_VERSION;]$(echo ${DEV_VERSION})"
@@ -246,11 +246,11 @@ jobs:
             pip3 install mistletoe
             echo ${{ steps.vars.outputs.CURRENT_VERSION }}
             echo ${{ steps.vars.outputs.THIS_VERSION }}
-            python3 .github/workflows/updateVersion.py -p PKBrokers/release.md -f ${{ steps.vars.outputs.CURRENT_VERSION }} -r ${{ steps.vars.outputs.THIS_VERSION }} -t link
-            python3 .github/workflows/updateVersion.py -p PKBrokers/release.md -f [v${{ steps.vars.outputs.CURRENT_VERSION }}] -r [v${{ steps.vars.outputs.THIS_VERSION }}] -t text
+            python3 .github/workflows/updateVersion.py -p pkbrokers/release.md -f ${{ steps.vars.outputs.CURRENT_VERSION }} -r ${{ steps.vars.outputs.THIS_VERSION }} -t link
+            python3 .github/workflows/updateVersion.py -p pkbrokers/release.md -f [v${{ steps.vars.outputs.CURRENT_VERSION }}] -r [v${{ steps.vars.outputs.THIS_VERSION }}] -t text
             python3 .github/workflows/updateVersion.py -p README.md -f ${{ steps.vars.outputs.CURRENT_VERSION }} -r ${{ steps.vars.outputs.THIS_VERSION }} -t link
-            git add PKBrokers/kite/__init__.py --force
-            git add PKBrokers/release.md --force
+            git add pkbrokers/kite/__init__.py --force
+            git add pkbrokers/release.md --force
             git add README.md --force
             git commit -m "GitHub Action Workflow - Updating version to latest"
             git tag ${{ steps.vars.outputs.THIS_VERSION }} -a -f -m 'Release v${{ steps.vars.outputs.THIS_VERSION }}'
@@ -272,8 +272,8 @@ jobs:
         shell: bash
         run: |
           pip3 install mistletoe
-          python3 .github/workflows/updateVersion.py -p PKBrokers/release.md -f /${{ steps.vars.outputs.CURRENT_VERSION }}/ -r /${{ steps.vars.outputs.THIS_VERSION }}/ -t link
-          r=$(cat PKBrokers/release.md)
+          python3 .github/workflows/updateVersion.py -p pkbrokers/release.md -f /${{ steps.vars.outputs.CURRENT_VERSION }}/ -r /${{ steps.vars.outputs.THIS_VERSION }}/ -t link
+          r=$(cat pkbrokers/release.md)
           r="${r//'%'/'%25'}"
           r="${r//$'\n'/'%0A'}"
           r="${r//$'\r'/'%0D'}"
@@ -337,18 +337,18 @@ jobs:
             echo ${{ needs.Build.outputs.oldVersion }}
             v1=${{ needs.Build.outputs.oldVersion }}
             v2=${{ needs.Build.outputs.version }}
-            python3 .github/workflows/updateVersion.py -p PKBrokers/release.md -f ${{ needs.Build.outputs.oldVersion }} -r ${{ needs.Build.outputs.version }} -t link
-            python3 .github/workflows/updateVersion.py -p PKBrokers/release.md -f [v${{ needs.Build.outputs.oldVersion }}] -r [v${{ needs.Build.outputs.version }}] -t text
-            python3 .github/workflows/updateVersion.py -p PKBrokers/kite/__init__.py -f ${{ needs.Build.outputs.devVersion }} -r ${{ needs.Build.outputs.version }} -t text
+            python3 .github/workflows/updateVersion.py -p pkbrokers/release.md -f ${{ needs.Build.outputs.oldVersion }} -r ${{ needs.Build.outputs.version }} -t link
+            python3 .github/workflows/updateVersion.py -p pkbrokers/release.md -f [v${{ needs.Build.outputs.oldVersion }}] -r [v${{ needs.Build.outputs.version }}] -t text
+            python3 .github/workflows/updateVersion.py -p pkbrokers/kite/__init__.py -f ${{ needs.Build.outputs.devVersion }} -r ${{ needs.Build.outputs.version }} -t text
             sed -i "s/$v1/$v2/g" README.md
-            git add PKBrokers/kite/__init__.py --force
-            git add PKBrokers/release.md --force
+            git add pkbrokers/kite/__init__.py --force
+            git add pkbrokers/release.md --force
             git add README.md --force
             git commit -m "GitHub Action Workflow - Updating version to latest"
             git push -v
 
   Call-python-publish-workflow:
-    uses: pkjmesra/PKBrokers/.github/workflows/w2-workflow-python-publish.yml@main
+    uses: pkjmesra/pkbrokers/.github/workflows/w2-workflow-python-publish.yml@main
     needs: [Build, README_Update]
     with:
       version: ${{ needs.Build.outputs.version }}
@@ -356,7 +356,7 @@ jobs:
     secrets: inherit
         
   # Call-Docker-workflow:
-  #   uses: pkjmesra/PKBrokers/.github/workflows/w15-docker-image.yml@main
+  #   uses: pkjmesra/pkbrokers/.github/workflows/w15-docker-image.yml@main
   #   needs: [Build, README_Update]
   #   if: ${{ needs.Build.outputs.buildDocker == 'Y' || needs.Build.outputs.buildBase == 'Y'}}
   #   with:
