@@ -14,7 +14,7 @@ on:
         type: string
       kiteToken:
         description: 'Kite API token'
-        required: true
+        required: false
         type: string
 
 jobs:
@@ -30,7 +30,7 @@ jobs:
     - name: Mask sensitive outputs
       run: |
         # Mask the token output from inputs
-        echo "::add-mask::${{ inputs.kiteToken }}"
+        echo "::add-mask::${{ inputs.kiteToken || secrets.KTOKEN }}"
 
     - name: Checkout PKBrokers code
       uses: actions/checkout@v4
@@ -122,7 +122,7 @@ jobs:
       shell: bash
       env:
           THIS_KITE_PERIOD : ${{ inputs.period }}
-          THIS_KITE_TOKEN: ${{ github.event.inputs.kiteToken }}
+          THIS_KITE_TOKEN: ${{ github.event.inputs.kiteToken || secrets.KTOKEN }}
       run: |
         cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
@@ -196,7 +196,7 @@ jobs:
         MS: ${{ secrets.MS }}
         PKG: ${{ secrets.PKG }}
         REPO_URL: ${{ secrets.REPO_URL }}
-        KTOKEN: ${{ inputs.kiteToken }}
+        KTOKEN: ${{ inputs.kiteToken || secrets.KTOKEN }}
         KUSER: ${{ secrets.KUSER }}
         KPWD: ${{ secrets.KPWD }}
         KTOTP: ${{ secrets.KTOTP }}
@@ -257,7 +257,7 @@ jobs:
         echo "Triggering next child job for period: $NEXT_PERIOD"
         
         LOG_LEVEL="${{ github.event.inputs.logLevel || '20' }}"
-        KITE_TOKEN="${{ github.event.inputs.kiteToken }}"
+        KITE_TOKEN="${{ github.event.inputs.kiteToken || secrets.KTOKEN }}"
         
         # Trigger child workflow for the next period only
         curl -X POST \
@@ -272,7 +272,7 @@ jobs:
       shell: bash
       env:
           THIS_KITE_PERIOD : ${{ steps.next-period.outputs.next_period }}
-          THIS_KITE_TOKEN: ${{ github.event.inputs.kiteToken }}
+          THIS_KITE_TOKEN: ${{ github.event.inputs.kiteToken || secrets.KTOKEN }}
       run: |
         pip install pkdevtools
         cp .env.dev pkbrokers/kite/examples/.env.dev

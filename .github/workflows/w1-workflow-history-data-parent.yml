@@ -310,7 +310,7 @@ jobs:
       shell: bash
       env:
           THIS_KITE_PERIOD : ${{ github.event.inputs.periods }}
-          THIS_KITE_TOKEN: ${{ needs.get-kite-token.outputs.kite_token }}
+          THIS_KITE_TOKEN: ${{ needs.get-kite-token.outputs.kite_token || secrets.KTOKEN }}
       run: |
         pip install pkdevtools
         cp .env.dev pkbrokers/kite/examples/.env.dev
@@ -358,7 +358,7 @@ jobs:
         KUSER: ${{ secrets.KUSER }}
         KPWD: ${{ secrets.KPWD }}
         KTOTP: ${{ secrets.KTOTP }}
-        KTOKEN: ${{ needs.get-kite-token.outputs.kite_token }}
+        KTOKEN: ${{ needs.get-kite-token.outputs.kite_token || secrets.KTOKEN }}
         DB_TYPE: ${{ secrets.DB_TYPE }}
         TBTOKEN: ${{ secrets.TBTOKEN }}
         BBTOKEN: ${{ secrets.BBTOKEN }}
@@ -400,7 +400,7 @@ jobs:
       shell: bash
       env:
           THIS_KITE_PERIOD : ${{ github.event.inputs.periods }}
-          THIS_KITE_TOKEN: ${{ needs.get-kite-token.outputs.kite_token }}
+          THIS_KITE_TOKEN: ${{ needs.get-kite-token.outputs.kite_token || secrets.KTOKEN }}
       run: |
         pip install pkdevtools
         cp .env.dev pkbrokers/kite/examples/.env.dev
