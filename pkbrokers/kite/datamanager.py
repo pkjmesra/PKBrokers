@@ -23,7 +23,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 """
-
+import os
 import pickle
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Union
@@ -33,7 +33,7 @@ import pandas as pd
 import requests
 from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
-
+from PKDevTools.classes import Archiver
 
 class InstrumentDataManager:
     """
@@ -66,8 +66,10 @@ class InstrumentDataManager:
         The manager is configured to work with PKScreener's GitHub repository structure
         and requires proper environment variables for database connections.
         """
-        from PKDevTools.classes import Archiver
         exists, path = Archiver.afterMarketStockDataExists()
+        self.pickle_file_name = path
+        self.pickle_exists = exists
+        self.local_pickle_path = os.path.join(Archiver.get_user_data_dir(), self.pickle_file_name)
         self.pickle_url = f"https://github.com/pkjmesra/PKScreener/tree/actions-data-download/results/Data/{path}"
         self.raw_pickle_url = f"https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/{path}"
         self.db_conn = None
@@ -98,7 +100,7 @@ class InstrumentDataManager:
             )
             return True
         except Exception as e:
-            self.logger.debug(f"Database connection failed: {e}")
+            self.logger.error(f"Database connection failed: {e}")
             return False
 
     def _check_pickle_exists(self) -> bool:
@@ -143,7 +145,7 @@ class InstrumentDataManager:
             self.pickle_data = pickle.loads(response.content)
             return self.pickle_data
         except Exception as e:
-            self.logger.debug(f"Failed to load pickle from GitHub: {e}")
+            self.logger.error(f"Failed to load pickle from GitHub: {e}")
             return None
 
     def _get_recent_data_from_kite(self) -> Optional[Dict]:
@@ -371,7 +373,7 @@ class InstrumentDataManager:
             self.pickle_data = new_data
 
         # Save to local pickle file
-        with open("pkscreener.pkl", "wb") as f:
+        with open(self.local_pickle_path, "wb") as f:
             pickle.dump(self.pickle_data, f)
 
         self.logger.debug("Pickle file updated successfully")
@@ -433,7 +435,7 @@ class InstrumentDataManager:
             if historical_data:
                 self.pickle_data = historical_data
                 # Save to local pickle file
-                with open("pkscreener.pkl", "wb") as f:
+                with open(self.local_pickle_path, "wb") as f:
                     pickle.dump(self.pickle_data, f)
                 self.logger.debug("Pickle file created from database data")
             else:
