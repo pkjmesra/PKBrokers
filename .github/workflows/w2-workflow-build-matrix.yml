@@ -168,7 +168,7 @@ jobs:
             platform_id: macosx_arm64
             TARGET: MacOS
             CMD_BUILD: |
-              pyinstaller --onefile --windowed --add-data="README.md:." --add-data="LICENSE:." --add-data="docs/LICENSE-Others:." --add-data="Disclaimer.txt:." --icon=screenshots/icon.ico pkbrokers/pkkite.py  --hidden-import cmath --hidden-import talib.stream --hidden-import numpy --hidden-import pandas --hidden-import alive_progress --hidden-import scipy.special._cdflib
+              pyinstaller --onefile --windowed --add-data="README.md:." --add-data="LICENSE:." --add-data="docs/LICENSE-Others:." --add-data="Disclaimer.txt:." --icon=screenshots/icon.ico pkbrokers/kite/examples/pkkite.py  --hidden-import cmath --hidden-import talib.stream --hidden-import numpy --hidden-import pandas --hidden-import alive_progress --hidden-import scipy.special._cdflib
               mv /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.run
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
@@ -186,7 +186,7 @@ jobs:
             platform_id: macosx_x86_64
             TARGET: MacOS
             CMD_BUILD: |
-              pyinstaller --onefile --windowed --add-data="README.md:." --add-data="LICENSE:." --add-data="docs/LICENSE-Others:." --add-data="Disclaimer.txt:." --icon=screenshots/icon.ico pkbrokers/pkkite.py  --hidden-import cmath --hidden-import talib.stream --hidden-import numpy --hidden-import pandas --hidden-import alive_progress --hidden-import scipy.special._cdflib
+              pyinstaller --onefile --windowed --add-data="README.md:." --add-data="LICENSE:." --add-data="docs/LICENSE-Others:." --add-data="Disclaimer.txt:." --icon=screenshots/icon.ico pkbrokers/kite/examples/pkkite.py  --hidden-import cmath --hidden-import talib.stream --hidden-import numpy --hidden-import pandas --hidden-import alive_progress --hidden-import scipy.special._cdflib
               mv /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.run
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
