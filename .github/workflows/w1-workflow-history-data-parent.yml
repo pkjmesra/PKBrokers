@@ -197,12 +197,12 @@ jobs:
     #     # variable: true # To update github repository variable
     #     # variable_name: 'VARIABLE_NAME' # Github Repository variable key name for update
     #     # variable_value: 'variable value' # Github Repository variable value to update
-    - name: Update secret with GitHub CLI
-      run: |
-        gh secret set KTOKEN --body "$SECRET_VALUE"
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        SECRET_VALUE: ${{ steps.get-token.outputs.kite_token }}
+    # - name: Update secret with GitHub CLI
+    #   run: |
+    #     gh secret set KTOKEN --body "$SECRET_VALUE"
+    #   env:
+    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    #     SECRET_VALUE: ${{ steps.get-token.outputs.kite_token }}
 
   trigger-child-jobs:
     needs: [holiday-check, get-kite-token]
