@@ -385,10 +385,10 @@ class PKTickOrchestrator:
                     last_market_check = current_time
                     # If it's around 7:30AM IST, let's re-generate the kite token once a day each morning
                     # https://kite.trade/forum/discussion/7759/access-token-validity
+                    from PKDevTools.classes.PKDateUtilities import PKDateUtilities
                     cur_ist = PKDateUtilities.currentDateTime()
                     is_token_generation_hour = (cur_ist.hour >= 7 and cur_ist.minute >= 30) and (cur_ist.hour <= 8 and cur_ist.minute <= 30)
                     if not self.token_generated_at_least_once and is_token_generation_hour:
-                        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
                         from PKDevTools.classes.GitHubSecrets import PKGitHubSecretsManager
                         secrets_manager = PKGitHubSecretsManager(repo="pkbrokers")
                         try:
