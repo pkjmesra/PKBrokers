@@ -186,18 +186,23 @@ jobs:
           exit 1
         fi
 
-    - name: Update Github Secret
-      uses: NikhilVashistha/update-github-action-secret@master
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        repo_name: PKBrokers
-        repo_owner_name: pkjmesra
-        secret_name: 'KTOKEN'
-        secret_value: ${{ steps.get-token.outputs.kite_token }}
-        # variable: true # To update github repository variable
-        # variable_name: 'VARIABLE_NAME' # Github Repository variable key name for update
-        # variable_value: 'variable value' # Github Repository variable value to update
-
+    # - name: Update Github Secret
+    #   uses: NikhilVashistha/update-github-action-secret@master
+    #   with:
+    #     github_token: ${{ secrets.GITHUB_TOKEN }}
+    #     repo_name: PKBrokers
+    #     repo_owner_name: pkjmesra
+    #     secret_name: 'KTOKEN'
+    #     secret_value: ${{ steps.get-token.outputs.kite_token }}
+    #     # variable: true # To update github repository variable
+    #     # variable_name: 'VARIABLE_NAME' # Github Repository variable key name for update
+    #     # variable_value: 'variable value' # Github Repository variable value to update
+    - name: Update secret with GitHub CLI
+      run: |
+        gh secret set KTOKEN --body "$SECRET_VALUE"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SECRET_VALUE: ${{ steps.get-token.outputs.kite_token }}
 
   trigger-child-jobs:
     needs: [holiday-check, get-kite-token]
