@@ -64,6 +64,7 @@ class PKTickOrchestrator:
         self.child_process_ref = None
         self.stop_queue = self.mp_context.Queue()
         self.shutdown_requested = False
+        self.token_generated_at_least_once = False
         
         # Don't initialize logger or other complex objects here
         # They will be initialized in each process separately
@@ -171,11 +172,10 @@ class PKTickOrchestrator:
             self._initialize_environment()
             logger = self._get_logger()
             
-            from pkbrokers.kite.examples.pkkite import kite_auth, kite_ticks
+            from pkbrokers.kite.examples.pkkite import kite_ticks
             
             logger.info("Starting kite_ticks process...")
             self.manager = multiprocessing.Manager()
-            kite_auth()
             kite_ticks(stop_queue=self.stop_queue,
                       parent=self)
         except KeyboardInterrupt:
@@ -383,6 +383,25 @@ class PKTickOrchestrator:
                 if current_time - last_market_check > 30 and not self.shutdown_requested:
                     self.restart_kite_process_if_needed()
                     last_market_check = current_time
+                    # If it's around 7:30AM IST, let's re-generate the kite token once a day each morning
+                    # https://kite.trade/forum/discussion/7759/access-token-validity
+                    cur_ist = PKDateUtilities.currentDateTime()
+                    is_token_generation_hour = (cur_ist.hour >= 7 and cur_ist.minute >= 30) and (cur_ist.hour <= 8 and cur_ist.minute <= 30)
+                    if not self.token_generated_at_least_once and is_token_generation_hour:
+                        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+                        from PKDevTools.classes.GitHubSecrets import PKGitHubSecretsManager
+                        secrets_manager = PKGitHubSecretsManager(repo="pkbrokers")
+                        try:
+                            secret_info = secrets_manager.get_secret("KTOKEN")
+                            if secret_info:
+                                last_updated_utc = secret_info['updated_at']
+                                last_updated_ist = PKDateUtilities.utc_str_to_ist(last_updated_utc)
+                                if last_updated_ist.date() != cur_ist.date():
+                                    from pkbrokers.kite.examples.pkkite import kite_auth
+                                    kite_auth()
+                                    self.token_generated_at_least_once = True
+                        except Exception as e:
+                            logger.error(f"Error while updating token: {e}")
             
             self.stop()
 

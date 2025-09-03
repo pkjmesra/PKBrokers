@@ -201,17 +201,10 @@ class KiteTickerHistory:
         self.lock = Lock()  # For thread-safe rate limiting
         self.failed_tokens = []
 
-        # Set all required headers and cookies
-        self.session.headers.update(
-            {
-                "Authorization": f"enctoken {self.enctoken}",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "X-Kite-Version": "3.0.0",
-            }
-        )
+        self.update_session_headers()
 
         # Copy all cookies from the auth response
-        self.session.cookies.update(access_token_response.cookies)
+        # self.session.cookies.update(access_token_response.cookies)
 
         # Initialize database connection
         self.db_conn = libsql.connect(
@@ -221,6 +214,16 @@ class KiteTickerHistory:
         # Only create if it doesn't exist
         if not self.table_exists(self.db_conn.cursor(), 'instrument_history'):
             self._initialize_database()
+
+    def update_session_headers(self):
+        # Set all required headers and cookies
+        self.session.headers.update(
+            {
+                "Authorization": f"enctoken {PKEnvironment().KTOKEN}",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "X-Kite-Version": "3.0.0",
+            }
+        )
 
     def table_exists(self, cursor, table_name):
         cursor.execute("""
@@ -607,7 +610,7 @@ class KiteTickerHistory:
         # if rows_count >= 249 and formatted_to_date != current_date:
         url = f"{self.BASE_URL}/{instrument_token}/{interval}"
         last_error = None
-
+        response = None
         for attempt in range(max_retries):
             try:
                 self._rate_limit()
@@ -630,7 +633,14 @@ class KiteTickerHistory:
                 self.logger.error(e)
                 last_error = e
                 if attempt < max_retries - 1:
+                    if response.status_code in [401, 403]:
+                        from pkbrokers.kite.examples.pkkite import remote_bot_auth_token
+                        remote_bot_auth_token()
+                        self.update_session_headers()
                     time.sleep(2**attempt)
+                else:
+                    if response.status_code in [401, 403]:
+                        self.logger.error("❌❌❌ There may be a need for refreshing the token! ❌❌❌")
                 continue
 
         self.logger.error(

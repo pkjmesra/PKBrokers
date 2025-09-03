@@ -285,7 +285,7 @@ jobs:
         if [ -n "${{ github.event.inputs.periods }}" ]; then
           periods="${{ github.event.inputs.periods }}"
         else
-          periods="day minute 5minute 10minute 15minute 30minute 60minute"
+          periods="day"
         fi
         
         echo "Triggering child jobs for periods: $periods"

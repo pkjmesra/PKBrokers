@@ -166,17 +166,12 @@ class PKTickBot:
             return
         """Send refreshed token"""
         from PKDevTools.classes.Environment import PKEnvironment
-        from pkbrokers.kite.authenticator import KiteAuthenticator
-
-        credentials = {
-            "api_key": "kitefront",
-            "username": PKEnvironment().KUSER,
-            "password": PKEnvironment().KPWD,
-            "totp": PKEnvironment().KTOTP,
-        }
-        authenticator = KiteAuthenticator(timeout=10)
-        authenticator.get_enctoken(**credentials)
-        update.message.reply_text(PKEnvironment().KTOKEN)
+        from pkbrokers.kite.examples.pkkite import kite_auth
+        try:
+            kite_auth()
+            update.message.reply_text(PKEnvironment().KTOKEN)
+        except Exception as e:
+            update.message.reply_text(f"Could not generate/refresh token:{e}")
 
     def send_token(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):

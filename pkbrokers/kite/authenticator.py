@@ -188,12 +188,21 @@ class KiteAuthenticator:
             access_token = self._extract_enctoken(
                 self.access_token_response.headers.get("Set-Cookie")
             )
+            prev_token = PKEnvironment().KTOKEN
             os.environ["KTOKEN"] = access_token
             default_logger().debug(f"Token extracted: {access_token}")
             with env_update_context(os.path.join(os.getcwd(),".env.dev")) as updater:
                 updater.update_values({"KTOKEN": access_token})
                 updater.reload_env()
                 default_logger().debug(f"Token updated in os.environment: {PKEnvironment().KTOKEN}")
+            try:
+                from PKDevTools.classes.GitHubSecrets import PKGitHubSecretsManager
+                gh_manager = PKGitHubSecretsManager(repo="pkbrokers")
+                gh_manager.create_or_update_secret("KTOKEN",PKEnvironment().KTOKEN)
+                default_logger().info(f"Token updated in GitHub secrets:{prev_token != PKEnvironment().KTOKEN}")
+            except Exception as e:
+                default_logger().error(f"Error while updating GitHub secret:{e}")
+                pass
             return access_token
 
         except requests.exceptions.RequestException as e:

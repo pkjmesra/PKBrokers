@@ -198,15 +198,12 @@ def kite_history():
     from pkbrokers.kite.authenticator import KiteAuthenticator
     from pkbrokers.kite.instrumentHistory import KiteTickerHistory
     from pkbrokers.kite.instruments import KiteInstruments
+    from PKDevTools.classes.Environment import PKEnvironment
 
-    authenticator = KiteAuthenticator()
-    enctoken = authenticator.get_enctoken()
-    instruments = KiteInstruments(api_key="kitefront", access_token=enctoken)
+    instruments = KiteInstruments(api_key="kitefront", access_token=PKEnvironment().KTOKEN)
     tokens = instruments.get_or_fetch_instrument_tokens(all_columns=True)
     # Create history client with the full response object
-    history = KiteTickerHistory(
-        enctoken=enctoken, access_token_response=authenticator.access_token_response
-    )
+    history = KiteTickerHistory(enctoken=PKEnvironment().KTOKEN)
 
     history.get_multiple_instruments_history(
         instruments=tokens, interval=args.history, forceFetch=True, insertOnly=True
@@ -221,12 +218,10 @@ def kite_history():
 
 
 def kite_instruments():
-    from pkbrokers.kite.authenticator import KiteAuthenticator
+    from PKDevTools.classes.Environment import PKEnvironment
     from pkbrokers.kite.instruments import KiteInstruments
 
-    authenticator = KiteAuthenticator()
-    enctoken = authenticator.get_enctoken()
-    instruments = KiteInstruments(api_key="kitefront", access_token=enctoken, recreate_schema=False)
+    instruments = KiteInstruments(api_key="kitefront", access_token=PKEnvironment().KTOKEN, recreate_schema=False)
     instruments.get_or_fetch_instrument_tokens(all_columns=True)
 
 
@@ -252,6 +247,22 @@ def setupLogger(logLevel=LOG_LEVEL):
         filter=None,
     )
 
+def remote_bot_auth_token():
+    from pkbrokers.bot.orchestrator import orchestrate_consumer
+    from PKDevTools.classes.log import default_logger
+    from pkbrokers.envupdater import env_update_context
+    from PKDevTools.classes.Environment import PKEnvironment
+    import os
+    try:
+        access_token = orchestrate_consumer(command="/token")
+        os.environ["KTOKEN"] = access_token
+        default_logger().debug(f"Token received: {access_token}")
+        with env_update_context(os.path.join(os.getcwd(),".env.dev")) as updater:
+            updater.update_values({"KTOKEN": access_token})
+            updater.reload_env()
+            default_logger().debug(f"Token updated in os.environment: {PKEnvironment().KTOKEN}")
+    except Exception as e:
+        default_logger().error(f"Error while fetching remote auth token from bot: {e}")
 
 def pkkite():
     if sys.platform.startswith("darwin"):
@@ -269,7 +280,7 @@ def pkkite():
 
     if args.ticks:
         setupLogger()
-        kite_auth()
+        remote_bot_auth_token()
         kite_ticks(test_mode=True if args.test else False)
 
     if args.history:
@@ -288,17 +299,17 @@ def pkkite():
                 print("GITHUB_OUTPUT env variable FOUND! Will use the bot to get the token.")
             else:
                 print("Running locally? GITHUB_OUTPUT env variable NOT FOUND!")
-                kite_auth()
+                remote_bot_auth_token()
             kite_history()
 
     if args.instruments:
         setupLogger()
-        kite_auth()
+        remote_bot_auth_token()
         kite_instruments()
 
     if args.pickle:
         setupLogger()
-        kite_auth()
+        remote_bot_auth_token()
         kite_fetch_save_pickle()
 
     if args.orchestrate:
@@ -309,7 +320,7 @@ def pkkite():
             orchestrate_consumer(command="/ticks")
         except BaseException:
             pass
-        kite_auth()
+        remote_bot_auth_token()
         orchestrate()
 
     if args.consumer:
