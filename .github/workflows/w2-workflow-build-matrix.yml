@@ -132,8 +132,8 @@ jobs:
             CMD_BUILD: |
               pyinstaller --onefile pkbrokers/kite/examples/pkkite.py --hidden-import PKDevTools
               ls /home/runner/work/PKBrokers/PKBrokers/dist
-              mv /home/runner/work/pkbrokers/pkbrokers/dist/pkkite /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.bin
-              chmod +x /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.bin
+              mv /home/runner/work/PKBrokers/PKBrokers/dist/pkkite /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_x64.bin
+              chmod +x /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_x64.bin
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
               pip3 uninstall -y PKDevTools
@@ -141,9 +141,9 @@ jobs:
               pip3 install -r requirements-dev.txt
               pip3 install .
             TEST_BUILD: |
-              /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.bin
+              /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_x64.bin
               exit $?
-            OUT_PATH: /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.bin
+            OUT_PATH: /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_x64.bin
             FILE_NAME: pkkite_x64.bin
 
           - os: ubuntu-24.04-arm
@@ -152,8 +152,8 @@ jobs:
             CMD_BUILD: |
               pyinstaller --onefile pkbrokers/kite/examples/pkkite.py --hidden-import PKDevTools
               ls /home/runner/work/PKBrokers/PKBrokers/dist
-              mv /home/runner/work/pkbrokers/pkbrokers/dist/pkkite /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.bin
-              chmod +x /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.bin
+              mv /home/runner/work/PKBrokers/PKBrokers/dist/pkkite /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.bin
+              chmod +x /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.bin
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
               pip3 uninstall -y PKDevTools
@@ -161,9 +161,9 @@ jobs:
               pip3 install -r requirements-dev.txt
               pip3 install .
             TEST_BUILD: |
-              /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.bin
+              /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.bin
               exit $?
-            OUT_PATH: /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.bin
+            OUT_PATH: /home/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.bin
             FILE_NAME: pkkite_arm64.bin
 
           - os: macos-latest
@@ -172,7 +172,7 @@ jobs:
             CMD_BUILD: |
               pyinstaller --onefile --windowed pkbrokers/kite/examples/pkkite.py --hidden-import PKDevTools
               ls /Users/runner/work/PKBrokers/PKBrokers/dist
-              mv /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.run
+              mv /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.run
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
               pip3 uninstall -y PKDevTools
@@ -180,9 +180,9 @@ jobs:
               pip3 install -r requirements-dev.txt
               pip3 install .
             TEST_BUILD: |
-              /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.run -e -a Y -o H
+              /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.run -e -a Y -o H
               exit $?
-            OUT_PATH: /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.run
+            OUT_PATH: /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.run
             FILE_NAME: pkkite_arm64.run
           
           - os: macos-13
@@ -191,7 +191,7 @@ jobs:
             CMD_BUILD: |
               pyinstaller --onefile --windowed pkbrokers/kite/examples/pkkite.py --hidden-import PKDevTools
               ls /Users/runner/work/PKBrokers/PKBrokers/dist
-              mv /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.run
+              mv /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite_x64.run
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
               pip3 uninstall -y PKDevTools
@@ -199,9 +199,9 @@ jobs:
               pip3 install -r requirements-dev.txt
               pip3 install .
             TEST_BUILD: |
-              /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.run
+              /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite_x64.run
               exit $?
-            OUT_PATH: /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.run
+            OUT_PATH: /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite_x64.run
             FILE_NAME: pkkite_x64.run
     steps:
       - uses: actions/checkout@v4
