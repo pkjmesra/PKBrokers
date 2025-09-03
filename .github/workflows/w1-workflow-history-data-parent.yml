@@ -54,7 +54,7 @@ jobs:
     - name: Mask sensitive outputs
       run: |
         # Mask the token output from previous steps
-        echo "::add-mask::${{ steps.get-token.outputs.kite_token }}
+        echo "::add-mask::${{ steps.get-token.outputs.kite_token }}"
 
     - name: Checkout PKBrokers code
       uses: actions/checkout@v4
