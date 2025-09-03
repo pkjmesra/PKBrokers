@@ -294,7 +294,7 @@ jobs:
 
       - name: Test Built Binary for ${{ matrix.TARGET }}
         shell: bash
-        timeout-minutes: 5
+        timeout-minutes: 1
         continue-on-error: true
         run: ${{ matrix.TEST_BUILD }}
 

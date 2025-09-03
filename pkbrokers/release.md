@@ -41,12 +41,12 @@
 * MIT: https://github.com/pkjmesra/pkbrokers/blob/main/LICENSE
 
 [Windows-badge]: https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white
-[Windows]: https://github.com/pkjmesra/pkbrokers/releases/download/0.1/pkkite.exe
+[Windows]: https://github.com/pkjmesra/pkbrokers/releases/download/0.1.20250903.11/pkkite.exe
 [Linux-badge_x64]: https://img.shields.io/badge/Linux(x64)-FCC624?logo=linux&logoColor=black
-[Linux_x64]: https://github.com/pkjmesra/pkbrokers/releases/download/0.1/pkkite_x64.bin
+[Linux_x64]: https://github.com/pkjmesra/pkbrokers/releases/download/0.1.20250903.11/pkkite_x64.bin
 [Linux-badge_arm64]: https://img.shields.io/badge/Linux(arm64)-FCC624?logo=linux&logoColor=black
-[Linux_arm64]: https://github.com/pkjmesra/pkbrokers/releases/download/0.1/pkkite_arm64.bin
+[Linux_arm64]: https://github.com/pkjmesra/pkbrokers/releases/download/0.1.20250903.11/pkkite_arm64.bin
 [Mac OS-badge_x64]: https://img.shields.io/badge/mac%20os(x64)-D3D3D3?logo=apple&logoColor=000000
-[Mac OS_x64]: https://github.com/pkjmesra/pkbrokers/releases/download/0.1/pkkite_x64.run
+[Mac OS_x64]: https://github.com/pkjmesra/pkbrokers/releases/download/0.1.20250903.11/pkkite_x64.run
 [Mac OS-badge_arm64]: https://img.shields.io/badge/mac%20os(arm64)-D3D3D3?logo=apple&logoColor=000000
-[Mac OS_arm64]: https://github.com/pkjmesra/pkbrokers/releases/download/0.1/pkkite_arm64.run
+[Mac OS_arm64]: https://github.com/pkjmesra/pkbrokers/releases/download/0.1.20250903.11/pkkite_arm64.run
