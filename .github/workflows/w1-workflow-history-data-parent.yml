@@ -48,9 +48,14 @@ jobs:
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
       TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
     outputs:
-      kite_token: ${{ steps.validate-token.outputs.kite_token }}
+      kite_token: ${{ steps.get-token.outputs.kite_token }}
       token_valid: ${{ steps.validate-token.outputs.token_valid }}
     steps:
+    - name: Mask sensitive outputs
+      run: |
+        # Mask the token output from previous steps
+        echo "::add-mask::${{ steps.get-token.outputs.kite_token }}
+
     - name: Checkout PKBrokers code
       uses: actions/checkout@v4
       with:
@@ -146,11 +151,6 @@ jobs:
         
         # No need to manually capture output - it's already in the outputs
 
-    - name: Mask sensitive outputs
-      run: |
-        # Mask the token output from previous steps
-        echo "::add-mask::${{ steps.get-token.outputs.kite_token }}"
-
     - name: Validate base64 token
       id: validate-token
       run: |
@@ -225,7 +225,7 @@ jobs:
         KUSER: ${{ secrets.KUSER }}
         KPWD: ${{ secrets.KPWD }}
         KTOTP: ${{ secrets.KTOTP }}
-        KTOKEN: ${{ secrets.KTOKEN }}
+        KTOKEN: ${{ needs.get-kite-token.outputs.kite_token }}
         DB_TYPE: ${{ secrets.DB_TYPE }}
         TBTOKEN: ${{ secrets.TBTOKEN }}
         BBTOKEN: ${{ secrets.BBTOKEN }}
@@ -345,7 +345,7 @@ jobs:
         KUSER: ${{ secrets.KUSER }}
         KPWD: ${{ secrets.KPWD }}
         KTOTP: ${{ secrets.KTOTP }}
-        KTOKEN: ${{ secrets.KTOKEN }}
+        KTOKEN: ${{ needs.get-kite-token.outputs.kite_token }}
         DB_TYPE: ${{ secrets.DB_TYPE }}
         TBTOKEN: ${{ secrets.TBTOKEN }}
         BBTOKEN: ${{ secrets.BBTOKEN }}

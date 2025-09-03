@@ -66,8 +66,10 @@ class InstrumentDataManager:
         The manager is configured to work with PKScreener's GitHub repository structure
         and requires proper environment variables for database connections.
         """
-        self.pickle_url = "https://github.com/pkjmesra/PKScreener/tree/actions-data-download/results/Data/pkscreener.pkl"
-        self.raw_pickle_url = "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/pkscreener.pkl"
+        from PKDevTools.classes import Archiver
+        exists, path = Archiver.afterMarketStockDataExists()
+        self.pickle_url = f"https://github.com/pkjmesra/PKScreener/tree/actions-data-download/results/Data/{path}"
+        self.raw_pickle_url = f"https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/{path}"
         self.db_conn = None
         self.pickle_data = None
         self.logger = default_logger()
