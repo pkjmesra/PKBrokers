@@ -112,7 +112,7 @@ jobs:
           - os: windows-latest
             TARGET: Windows
             CMD_BUILD: |
-              pyinstaller --onefile --add-data="README.md:." --add-data="LICENSE:." --add-data="Disclaimer.txt:." pkbrokers\kite\examples\pkkite.py  --hidden-import PKDevTools
+              pyinstaller --onefile pkbrokers\kite\examples\pkkite.py --hidden-import PKDevTools
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
               pip3 uninstall -y PKDevTools
@@ -130,7 +130,7 @@ jobs:
             platform_id: manylinux_x86_64
             TARGET: Linux
             CMD_BUILD: |
-              pyinstaller --onefile --add-data="README.md:." --add-data="LICENSE:." --add-data="Disclaimer.txt:." pkbrokers/kite/examples/pkkite.py  --hidden-import PKDevTools
+              pyinstaller --onefile pkbrokers/kite/examples/pkkite.py --hidden-import PKDevTools
               mv /home/runner/work/pkbrokers/pkbrokers/dist/pkkite /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.bin
               chmod +x /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.bin
             DEP_BUILD: |
@@ -149,7 +149,7 @@ jobs:
             platform_id: manylinux_arm64
             TARGET: Linux
             CMD_BUILD: |
-              pyinstaller --onefile --add-data="README.md:." --add-data="LICENSE:." --add-data="Disclaimer.txt:." pkbrokers/kite/examples/pkkite.py  --hidden-import PKDevTools
+              pyinstaller --onefile pkbrokers/kite/examples/pkkite.py --hidden-import PKDevTools
               mv /home/runner/work/pkbrokers/pkbrokers/dist/pkkite /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.bin
               chmod +x /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.bin
             DEP_BUILD: |
@@ -168,7 +168,7 @@ jobs:
             platform_id: macosx_arm64
             TARGET: MacOS
             CMD_BUILD: |
-              pyinstaller --onefile --windowed --add-data="README.md:." --add-data="LICENSE:." --add-data="Disclaimer.txt:." pkbrokers/kite/examples/pkkite.py  --hidden-import PKDevTools
+              pyinstaller --onefile --windowed pkbrokers/kite/examples/pkkite.py --hidden-import PKDevTools
               mv /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.run
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
@@ -186,7 +186,7 @@ jobs:
             platform_id: macosx_x86_64
             TARGET: MacOS
             CMD_BUILD: |
-              pyinstaller --onefile --windowed --add-data="README.md:." --add-data="LICENSE:." --add-data="Disclaimer.txt:." pkbrokers/kite/examples/pkkite.py  --hidden-import PKDevTools
+              pyinstaller --onefile --windowed pkbrokers/kite/examples/pkkite.py --hidden-import PKDevTools
               mv /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.run
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
