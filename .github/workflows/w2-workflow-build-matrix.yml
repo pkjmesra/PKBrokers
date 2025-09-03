@@ -171,7 +171,7 @@ jobs:
             TARGET: MacOS
             CMD_BUILD: |
               pyinstaller --onefile --windowed pkbrokers/kite/examples/pkkite.py --hidden-import PKDevTools
-              ls /home/runner/work/PKBrokers/PKBrokers/dist
+              ls /Users/runner/work/PKBrokers/PKBrokers/dist
               mv /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.run
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
@@ -190,7 +190,7 @@ jobs:
             TARGET: MacOS
             CMD_BUILD: |
               pyinstaller --onefile --windowed pkbrokers/kite/examples/pkkite.py --hidden-import PKDevTools
-              ls /home/runner/work/PKBrokers/PKBrokers/dist
+              ls /Users/runner/work/PKBrokers/PKBrokers/dist
               mv /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite /Users/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.run
             DEP_BUILD: |
               python3 -m pip install --upgrade pip
