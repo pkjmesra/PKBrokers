@@ -351,7 +351,6 @@ jobs:
     uses: pkjmesra/PKBrokers/.github/workflows/w2-workflow-python-publish.yml@main
     needs: [Build, README_Update]
     with:
-      name: ${{ needs.Build.outputs.tag }}
       version: ${{ needs.Build.outputs.version }}
       targetPythonVersion: "3.12"
     secrets: inherit
