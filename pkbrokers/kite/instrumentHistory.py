@@ -787,6 +787,7 @@ class KiteTickerHistory:
         # Process instruments that need API fetch
         counter = 0
         batch_begin = time.time()
+        self.logger.info(f"Going to fetch historical data for interval:{interval} for dates from: {from_date} to:{to_date}")
         for i in range(0, len(instruments_to_fetch), batch_size):
             batch = instruments_to_fetch[i : i + batch_size]
             for instrument in batch:
