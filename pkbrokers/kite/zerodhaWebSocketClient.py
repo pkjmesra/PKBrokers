@@ -124,6 +124,7 @@ class WebSocketProcess:
         self.watcher_queue = watcher_queue
         self.log_level = log_level
         self.logger = None
+        self.websocket = None
         self.multiprocessingForWindows()
 
     def _build_websocket_url(self):
@@ -231,7 +232,7 @@ class WebSocketProcess:
                     self.logger.debug(
                         f"Websocket_index:{self.websocket_index}: Connected successfully"
                     )
-
+                    self.websocket = websocket
                     # Wait for initial messages
                     initial_messages = []
                     max_wait_counter = 2
@@ -322,11 +323,14 @@ class WebSocketProcess:
                         except asyncio.TimeoutError:
                             await websocket.ping()
                         except Exception as e:
-                            self.logger.error(
-                                f"Websocket_index:{self.websocket_index}: Message processing error: {str(e)}"
-                            )
+                            if not self.stop_event.is_set():
+                                self.logger.error(
+                                    f"Websocket_index:{self.websocket_index}: Message processing error: {str(e)}"
+                                )
                             break
-
+                await self._async_cleanup()
+            # except asyncio.CancelledError:
+            #     raise  # Propagate cancellation
             except websockets.exceptions.ConnectionClosedError as e:
                 if hasattr(e, "code"):
                     self.logger.error(
@@ -349,6 +353,18 @@ class WebSocketProcess:
             log_file_path="PKBrokers-log.txt",
             filter=None,
         )
+
+    def close(self):
+        """Synchronous cleanup method."""
+        asyncio.run(self._async_cleanup())
+
+    async def _async_cleanup(self):
+        """Async cleanup tasks."""
+        if hasattr(self, 'websocket') and self.websocket:
+            try:
+                await self.websocket.close()
+            except:
+                pass
 
     def run(self):
         """Main process entry point."""
@@ -410,7 +426,18 @@ def websocket_process_worker(args):
         stop_event=stop_event,
         log_level=log_level,
     )
-    process.run()
+    try:
+        process.run()
+    except Exception as e:
+        print(f"WebSocket process {websocket_index} error: {e}")
+    finally:
+        # Ensure clean shutdown
+        if hasattr(process, 'close'):
+            try:
+                process.close()
+            except BaseException:
+                pass
+        print(f"WebSocket process {websocket_index} stopped")
 
 
 class ZerodhaWebSocketClient:
@@ -695,8 +722,14 @@ class ZerodhaWebSocketClient:
         self.stop_event.set()
 
         # Terminate all processes
-        for p in self.ws_processes:
+        for i, p in enumerate(self.ws_processes):
             if p.is_alive():
+                # Wait for graceful shutdown
+                p.join(timeout=10)  # Increased timeout for graceful shutdown
+            
+            # Force terminate if still alive after graceful period
+            if p.is_alive():
+                self.logger.warn(f"Process {i} not responding, terminating...")
                 p.terminate()
                 p.join(timeout=5)
 
