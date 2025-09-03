@@ -61,7 +61,7 @@ jobs:
         MS: ${{ secrets.MS }}
         PKG: ${{ secrets.PKG }}
         REPO_URL: ${{ secrets.REPO_URL }}
-        KTOKEN: ${{ inputs.kiteToken }}
+        KTOKEN: ${{ inputs.kiteToken || secrets.KTOKEN }}
         KUSER: ${{ secrets.KUSER }}
         KPWD: ${{ secrets.KPWD }}
         KTOTP: ${{ secrets.KTOTP }}
