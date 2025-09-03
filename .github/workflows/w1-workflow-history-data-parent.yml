@@ -51,11 +51,6 @@ jobs:
       kite_token: ${{ steps.get-token.outputs.kite_token }}
       token_valid: ${{ steps.validate-token.outputs.token_valid }}
     steps:
-    - name: Mask sensitive outputs
-      run: |
-        # Mask the token output from previous steps
-        echo "::add-mask::${{ steps.get-token.outputs.kite_token }}"
-
     - name: Checkout PKBrokers code
       uses: actions/checkout@v4
       with:
@@ -190,6 +185,19 @@ jobs:
           echo "token_valid=false" >> $GITHUB_OUTPUT
           exit 1
         fi
+
+    - name: Update Github Secret
+      uses: NikhilVashistha/update-github-action-secret@v1.0.3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        repo_name: PKBrokers
+        repo_owner_name: pkjmesra
+        secret_name: 'KTOKEN'
+        secret_value: ${{ steps.get-token.outputs.kite_token }}
+        # variable: true # To update github repository variable
+        # variable_name: 'VARIABLE_NAME' # Github Repository variable key name for update
+        # variable_value: 'variable value' # Github Repository variable value to update
+
 
   trigger-child-jobs:
     needs: [holiday-check, get-kite-token]
