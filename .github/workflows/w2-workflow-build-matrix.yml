@@ -44,7 +44,7 @@ on:
         description: 'Build docker image?'
         required: false
         type: string
-        default: 'Y'
+        default: 'N'
       buildBase:
         description: 'Build Docker base image before building the main app image'
         required: false
@@ -130,7 +130,7 @@ jobs:
             platform_id: manylinux_x86_64
             TARGET: Linux
             CMD_BUILD: |
-              pyinstaller --onefile --add-data="README.md:." --add-data="LICENSE:." --add-data="docs\LICENSE-Others:." --add-data="Disclaimer.txt:." --icon=screenshots\icon.ico pkbrokers\kite\examples\pkkite.py  --hidden-import PKDevTools
+              pyinstaller --onefile --add-data="README.md:." --add-data="LICENSE:." --add-data="docs/LICENSE-Others:." --add-data="Disclaimer.txt:." --icon=screenshots/icon.ico pkbrokerspkbrokers/kite/examples/pkkite.py  --hidden-import PKDevTools
               mv /home/runner/work/pkbrokers/pkbrokers/dist/pkkite /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.bin
               chmod +x /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_x64.bin
             DEP_BUILD: |
@@ -149,7 +149,7 @@ jobs:
             platform_id: manylinux_arm64
             TARGET: Linux
             CMD_BUILD: |
-              pyinstaller --onefile --add-data="README.md:." --add-data="LICENSE:." --add-data="docs\LICENSE-Others:." --add-data="Disclaimer.txt:." --icon=screenshots\icon.ico pkbrokers\kite\examples\pkkite.py  --hidden-import PKDevTools
+              pyinstaller --onefile --add-data="README.md:." --add-data="LICENSE:." --add-data="docs\LICENSE-Others:." --add-data="Disclaimer.txt:." --icon=screenshots/icon.ico pkbrokerspkbrokers/kite/examples/pkkite.py  --hidden-import PKDevTools
               mv /home/runner/work/pkbrokers/pkbrokers/dist/pkkite /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.bin
               chmod +x /home/runner/work/pkbrokers/pkbrokers/dist/pkkite_arm64.bin
             DEP_BUILD: |
