@@ -255,7 +255,7 @@ def remote_bot_auth_token():
     import os
     try:
         access_token = orchestrate_consumer(command="/token")
-        os.environ["KTOKEN"] = access_token
+        os.environ["KTOKEN"] = access_token if access_token else PKEnvironment().KTOKEN
         default_logger().debug(f"Token received: {access_token}")
         with env_update_context(os.path.join(os.getcwd(),".env.dev")) as updater:
             updater.update_values({"KTOKEN": access_token})
