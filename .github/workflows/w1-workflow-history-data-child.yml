@@ -16,6 +16,11 @@ on:
         description: 'Kite API token'
         required: false
         type: string
+      pastoffset:
+        description: 'Past number of days for which data has to be fetched'
+        required: false
+        default: 0
+        type: number
 
 jobs:
   historical-data:
@@ -118,7 +123,7 @@ jobs:
       run: |
         cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
-        python pkkite.py --history=${{ inputs.period }} --verbose
+        python pkkite.py --history=${{ inputs.period }} --pastoffset=${{ inputs.period || 0}} --verbose
 
     - name: Send notification about the completion
       shell: bash
@@ -269,7 +274,7 @@ jobs:
           -H "Authorization: token $GITHUB_TOKEN" \
           -H "Accept: application/vnd.github.v3+json" \
           "https://api.github.com/repos/${{ github.repository }}/actions/workflows/w1-workflow-history-data-child.yml/dispatches" \
-          -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$NEXT_PERIOD\",\"logLevel\":\"$LOG_LEVEL\",\"kiteToken\":\"$KITE_TOKEN\"}}"
+          -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$NEXT_PERIOD\",\"logLevel\":\"$LOG_LEVEL\",\"kiteToken\":\"$KITE_TOKEN\",\"pastoffset\":\"${{ github.event.inputs.pastoffset || 0 }}\"}}"
         
         echo "✅ Successfully triggered next child job for period: $NEXT_PERIOD"
 

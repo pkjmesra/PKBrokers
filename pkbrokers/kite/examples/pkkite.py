@@ -80,6 +80,12 @@ argParser.add_argument(
     required=False,
 )
 argParser.add_argument(
+    "--pastoffset",
+    # action="store_true",
+    help="Number of days in past for fetching the data.",
+    required=False,
+)
+argParser.add_argument(
     "--instruments",
     action="store_true",
     help="Get instrument tokens for all NSE stocks.",
@@ -214,6 +220,7 @@ def kite_history():
             interval=args.history,
             forceFetch=True,
             insertOnly=True,
+            past_offset= args.pastoffset if args.pastoffset else 0
         )
 
 

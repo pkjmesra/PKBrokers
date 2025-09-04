@@ -378,10 +378,17 @@ class KiteTickerHistory:
 
         # Use batch insert with ON CONFLICT IGNORE to avoid duplicates
         insert_query = """
-        INSERT OR IGNORE INTO instrument_history (
-            instrument_token, timestamp, open, high, low, close, volume, oi,
-            interval
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+        INSERT INTO instrument_history (
+            instrument_token, timestamp, open, high, low, close, volume, oi,interval
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(instrument_token, timestamp, interval)
+        DO UPDATE SET
+            open = excluded.open,
+            high = excluded.high,
+            low = excluded.low,
+            close = excluded.close,
+            volume = excluded.volume,
+            oi = excluded.oi
         """
 
         try:
@@ -671,6 +678,7 @@ class KiteTickerHistory:
         delay: float = 1.0,
         forceFetch=False,
         insertOnly=False,
+        past_offset = 0
     ) -> Dict[int, Dict]:
         """
         Fetch historical data for multiple instruments with optimized batching.
@@ -692,6 +700,7 @@ class KiteTickerHistory:
             delay: Delay between batches in seconds (default: 1.0)
             forceFetch: Force API fetch bypassing cache (default: False)
             insertOnly: Only insert data without returning (default: False)
+            past_offset: The number of days in the past for which data needs to be fetched.
 
         Returns:
             Dict[int, Dict]: Dictionary mapping instrument tokens to their historical data
@@ -724,7 +733,7 @@ class KiteTickerHistory:
             raise ValueError("list of instruments is required")
         if from_date is None or len(from_date) == 0:
             from_date = PKDateUtilities.YmdStringFromDate(
-                PKDateUtilities.currentDateTime() - self.timedelta_for_interval(interval=interval.lower())
+                PKDateUtilities.currentDateTime() - self.timedelta_for_interval(interval=interval.lower()) - timedelta(days=past_offset)
             )
         if to_date is None or len(to_date) == 0:
             to_date = PKDateUtilities.YmdStringFromDate(
