@@ -240,7 +240,12 @@ class PKTickOrchestrator:
                 self.stop(processes=processes)
             self.kite_process = None
             from pkbrokers.kite.examples.pkkite import commit_ticks
-            commit_ticks()
+            commit_ticks(file_name="ticks.json")
+            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+            cur_ist = PKDateUtilities.currentDateTime()
+            is_non_market_hour = (cur_ist.hour >= 15 and cur_ist.minute >= 30) and (cur_ist.hour <= 9 and cur_ist.minute <= 15) or PKDateUtilities.isTodayHoliday()
+            if is_non_market_hour:
+                commit_ticks(file_name="ticks.db.zip")
 
     def stop(self, processes=[]):
         """Stop both processes gracefully with proper resource cleanup"""
@@ -463,14 +468,16 @@ def orchestrate_consumer(command:str="/ticks"):
     # success, json_path = consumer.get_ticks(output_dir=os.path.join(Archiver.get_user_data_dir()))
     response = try_get_command_response_from_bot(command=command)
     success = response["success"]
-    json_path = os.path.join(Archiver.get_user_data_dir(), "" ,"ticks.json")
     if response["type"] in ["file"]:
-        if success and os.path.exists(json_path):
-            print(f"✅ Downloaded and extracted ticks.json to: {json_path}")
-            # Now you can use the JSON file
-            with open(json_path, 'r') as f:
-                data = json.load(f)
-            print(f"Found {len(data)} instruments")
+        file_name = "ticks.json" if command == "/ticks" else "ticks.db"
+        file_path = os.path.join(Archiver.get_user_data_dir() ,file_name)
+        if success and os.path.exists(file_path):
+            print(f"✅ Downloaded and extracted {file_name} to: {file_path}")
+            if file_name.endswith(".json"):
+                # Now you can use the JSON file
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                print(f"Found {len(data)} instruments")
         else:
             print("❌ Failed to get ticks file")
     elif response["type"] in ["photo"]:

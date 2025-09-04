@@ -274,13 +274,13 @@ def _save_update_environment(access_token:str=None):
     except Exception as e:
         default_logger().error(f"Error while fetching remote auth token from bot: {e}")
 
-def commit_ticks():
+def commit_ticks(file_name="ticks.json"):
     from PKDevTools.classes.Committer import Committer
     from PKDevTools.classes import Archiver
     from PKDevTools.classes.PKDateUtilities import PKDateUtilities
     import os
     try:
-        tick_file = os.path.join(Archiver.get_user_data_dir(),"ticks.json")
+        tick_file = os.path.join(Archiver.get_user_data_dir(),file_name)
         if os.path.exists(tick_file):
             Committer.execOSCommand(f"git add {tick_file} -f >/dev/null 2>&1")
             commit_path = f"-A '{tick_file}'"
@@ -354,7 +354,13 @@ def pkkite():
         try:
             # Let's try and get the latest ticks file from an existing running bot.
             orchestrate_consumer(command="/ticks")
-            commit_ticks()
+            commit_ticks(file_name="ticks.json")
+            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+            cur_ist = PKDateUtilities.currentDateTime()
+            is_non_market_hour = (cur_ist.hour >= 15 and cur_ist.minute >= 30) and (cur_ist.hour <= 9 and cur_ist.minute <= 15) or PKDateUtilities.isTodayHoliday()
+            if is_non_market_hour:
+                orchestrate_consumer(command="/db")
+                commit_ticks(file_name="ticks.db.zip")
         except Exception as e:
             log.default_logger().error(e)
             pass
