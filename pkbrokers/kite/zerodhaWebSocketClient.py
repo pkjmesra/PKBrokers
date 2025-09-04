@@ -229,7 +229,7 @@ class WebSocketProcess:
                     compression="deflate",
                     max_size=2**17,
                 ) as websocket:
-                    self.logger.debug(
+                    self.logger.info(
                         f"Websocket_index:{self.websocket_index}: Connected successfully"
                     )
                     self.websocket = websocket
@@ -363,6 +363,7 @@ class WebSocketProcess:
         if hasattr(self, 'websocket') and self.websocket:
             try:
                 await self.websocket.close()
+                self.logger.warn(f"Websocket_index:{self.websocket_index} closed!")
             except:
                 pass
 

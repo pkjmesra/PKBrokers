@@ -1,5 +1,5 @@
 gitpython #>=3.1.43
-PKDevTools>=0.13.20250904.293
+PKDevTools>=0.13.20250904.296
 PKNSETools>=0.1.20250224.139
 pyotp
 python-telegram-bot[all]>=13.4,<20.0

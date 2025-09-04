@@ -27,9 +27,6 @@ import json
 import html
 import logging
 import os
-import tempfile
-import zipfile
-import pytz
 import signal
 import sys
 try:
@@ -39,7 +36,7 @@ except ImportError:
 
 import traceback
 
-from typing import Optional, Tuple
+from typing import Optional
 from datetime import datetime
 
 from telegram import Update
@@ -76,6 +73,7 @@ class PKTickBot:
     ):
         self.bot_token = bot_token
         self.ticks_file_path = ticks_file_path
+        self.ticks_db_path = ticks_file_path.replace(".json",".db")
         self.chat_id = chat_id or PKEnvironment().CHAT_ID
         self.chat_id = f"-{self.chat_id}" if not str(self.chat_id).startswith("-") else self.chat_id
         self.updater = None
@@ -93,7 +91,13 @@ class PKTickBot:
             "Use /ticks to get the latest market data JSON file (zipped)\n"
             "Use /status to check bot status\n"
             "Use /top to Get top 20 ticking symbols\n"
+            "Use /token to get the most recent token\n"
+            "Use /refresh_token to generate and receive a new token\n"
+            "Use /db to get the most recent db file\n"
+            "Use /test_ticks to get a test ticks.json file\n"
             "Use /help for more information"
+            "Use /start to start the bot\n"
+            
         )
 
     def help_command(self, update: Update, context: CallbackContext) -> None:
@@ -108,56 +112,14 @@ class PKTickBot:
             "/ticks - Get zipped market data file\n"
             "/status - Check bot and data status\n"
             "/top - Get top 20 ticking symbols\n"
+            "/token - Sends the most recent saved token from environment\n"
+            "/refresh_token - Generates, saves and sends the token\n"
+            "/db - Get the most recent local SQLite DB file\n"
+            "/test_ticks - Starts ticks for 3 minutes\n"
             "/help - Show this help message\n\n"
             "📦 Files are automatically compressed to reduce size. "
             "If the file is too large, it will be split into multiple parts."
         )
-
-    def create_zip_file(self, json_path: str) -> Tuple[str, int]:
-        """Create a zip file from JSON and return (zip_path, file_size)"""
-        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip:
-            zip_path = tmp_zip.name
-
-        try:
-            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-                zipf.write(json_path, os.path.basename(json_path))
-
-            file_size = os.path.getsize(zip_path)
-            return zip_path, file_size
-
-        except Exception as e:
-            self.logger.error(f"Error creating zip file: {e}")
-            # Clean up on error
-            if os.path.exists(zip_path):
-                os.unlink(zip_path)
-            raise
-
-    def split_large_file(self, file_path: str, max_size: int) -> list:
-        """Split large file into multiple parts and return list of part paths"""
-        part_paths = []
-        part_num = 1
-
-        try:
-            with open(file_path, "rb") as src_file:
-                while True:
-                    part_filename = f"{file_path}.part{part_num}"
-                    with open(part_filename, "wb") as part_file:
-                        data = src_file.read(max_size)
-                        if not data:
-                            break
-                        part_file.write(data)
-
-                    part_paths.append(part_filename)
-                    part_num += 1
-
-            return part_paths
-
-        except BaseException:
-            # Clean up any created parts on error
-            for part_path in part_paths:
-                if os.path.exists(part_path):
-                    os.unlink(part_path)
-            raise
 
     def send_refreshed_token(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
@@ -182,67 +144,67 @@ class PKTickBot:
         update.message.reply_text(PKEnvironment().KTOKEN)
 
     def test_ticks(self, update: Update, context: CallbackContext) -> None:
+        if self._shouldAvoidResponse(update):
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
+            return
         from pkbrokers.kite.examples.pkkite import kite_ticks
         kite_ticks(test_mode=True)
         if update is not None:
             update.message.reply_text("Kite Tick testing kicked off! Try sending /ticks in sometime.")
 
-    def send_zipped_ticks(self, update: Update, context: CallbackContext) -> None:
-        if self._shouldAvoidResponse(update):
-            if update is not None:
-                update.message.reply_text(APOLOGY_TEXT)
-            return
-        """Send zipped ticks.json file to user with size handling"""
+    def send_zipped(self, file_name, file_path, update):
         try:
-            if not os.path.exists(self.ticks_file_path):
+            if not os.path.exists(file_path):
                 update.message.reply_text(
-                    "❌ ticks.json file not found yet. Please wait for data to be collected."
+                    f"❌ {file_name} file not found yet. Please wait for data to be collected."
                 )
                 return
 
-            file_size = os.path.getsize(self.ticks_file_path)
+            file_size = os.path.getsize(file_path)
             if file_size == 0:
                 update.message.reply_text(
-                    "⏳ ticks.json file is empty. Data collection might be in progress."
+                    f"⏳ {file_name} file is empty. Data collection might be in progress."
                 )
                 return
 
             # Create zip file
-            zip_path, zip_size = self.create_zip_file(self.ticks_file_path)
+            from PKDevTools.classes import Fileinfo
+            zip_path, zip_size = Fileinfo.create_zip_file(file_path)
 
             try:
-                if zip_size <= self.MAX_FILE_SIZE:
+                if zip_size <= self.MAX_FILE_SIZE and zip_size > 0:
                     # Send single file
                     with open(zip_path, "rb") as f:
                         update.message.reply_document(
                             document=f,
-                            filename="market_ticks.zip",
+                            filename=f"{file_name}.zip",
                             caption=f"📈 Latest market data (compressed)\nOriginal: {file_size:,} bytes → Zipped: {zip_size:,} bytes",
                         )
-                    self.logger.info("Sent zipped ticks file to user")
+                    self.logger.info(f"Sent zipped {file_name} file to user")
 
-                else:
+                elif zip_size > 0:
                     # File too large, need to split
                     update.message.reply_text(
-                        f"📦 File is too large ({zip_size:,} bytes). Splitting into parts..."
+                        f"📦 File {file_name} is too large ({zip_size:,} bytes). Splitting into parts..."
                     )
 
-                    part_paths = self.split_large_file(zip_path, self.MAX_FILE_SIZE)
+                    part_paths = Fileinfo.split_large_file(zip_path, self.MAX_FILE_SIZE)
 
                     for i, part_path in enumerate(part_paths, 1):
                         with open(part_path, "rb") as f:
                             update.message.reply_document(
                                 document=f,
-                                filename=f"market_ticks.part{i}.zip",
-                                caption=f"Part {i} of {len(part_paths)}",
+                                filename=f"{file_name}.part{i}.zip",
+                                caption=f"For file {file_name}, Part {i} of {len(part_paths)}",
                             )
-                        self.logger.info(f"Sent part {i} of {len(part_paths)}")
+                        self.logger.info(f"For file {file_name}, Sent part {i} of {len(part_paths)}")
 
                     update.message.reply_text(
-                        "✅ All parts sent! To reconstruct:\n"
+                        f"✅ All parts of {file_name} sent! To reconstruct:\n"
                         + "1. Download all parts\n"
-                        + "2. Run: `cat market_ticks.part*.zip > market_ticks.zip`\n"
-                        + "3. Unzip: `unzip market_ticks.zip`"
+                        + f"2. Run: `cat {file_name}.part*.zip > {file_name}.zip`\n"
+                        + f"3. Unzip: `unzip {file_name}.zip`"
                     )
 
             finally:
@@ -255,10 +217,26 @@ class PKTickBot:
                         os.unlink(part_path)
 
         except Exception as e:
-            self.logger.error(f"Error sending zipped ticks file: {e}")
+            self.logger.error(f"Error sending zipped ticks file ({file_name}): {e}")
             update.message.reply_text(
-                "❌ Error preparing or sending file. Please try again later."
+                f"❌ Error preparing or sending file ({file_name}). Please try again later."
             )
+        
+    def send_zipped_ticks(self, update: Update, context: CallbackContext) -> None:
+        if self._shouldAvoidResponse(update):
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
+            return
+        """Send zipped ticks.json file to user with size handling"""
+        self.send_zipped("ticks.json",self.ticks_file_path,update)
+
+    def send_zipped_db(self, update: Update, context: CallbackContext) -> None:
+        if self._shouldAvoidResponse(update):
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
+            return
+        """Send zipped ticks.db file to user with size handling"""
+        self.send_zipped("ticks.db",self.ticks_db_path,update)
 
     def find_part_files(self, base_path: str) -> list:
         """Find any existing part files for a given base path"""
@@ -305,6 +283,53 @@ class PKTickBot:
         message = f"📊 Top 20 Instruments by Tick Count:\n\n{top_instruments}"
         update.message.reply_text(message, parse_mode="HTML")
 
+    def _update_stats(self, file_name:str=None, file_path:str=None, status_msg:str=None):
+        if os.path.exists(file_path):
+            from PKDevTools.classes import Fileinfo
+            f_info = Fileinfo.get_file_info(file_path)
+            file_size = f_info.bytes
+            status_msg += f"📁 {file_name}: {f_info.human_readable}\n"
+            status_msg += f"📁 Modified {f_info.seconds_ago} sec ago: {f_info.modified_ist}\n"
+
+            # Check zip size
+            try:
+                zip_path, zip_size = Fileinfo.create_zip_file(file_path)
+                if zip_size > 0:
+                    status_msg += f"📦 Compressed: {zip_size:,} bytes\n"
+                    os.unlink(zip_path)  # Clean up temp zip
+
+                    if zip_size > self.MAX_FILE_SIZE:
+                        parts_needed = (zip_size + self.MAX_FILE_SIZE - 1) // self.MAX_FILE_SIZE
+                        status_msg += f"⚠️  Will be split into {parts_needed} parts\n"
+                else:
+                    status_msg += f"📦 Compression Error\n"
+            except Exception as e:
+                status_msg += f"📦 Compression: Error ({e})\n"
+
+            if file_size > 0:
+                if file_name.endswith(".json"):
+                    try:
+                        with open(self.file_path, "r") as f:
+                            data = json.load(f)
+                        status_msg += f"📊 Instruments: {len(data):,}\n"
+                    except BaseException:
+                        status_msg += "📊 Instruments: File format error\n"
+                elif file_name.endswith(".db"):
+                    db_info = Fileinfo.get_sqlite_db_info(file_path)
+                    if db_info:
+                        status_msg += f"Database file size: {db_info.file_size_human}"
+                        status_msg += f"Number of tables: {len(db_info.tables)}"
+                        status_msg += f"Tables: {', '.join(db_info.tables)}"
+                        status_msg += f"Total rows: {db_info.total_rows}"
+                        
+                        for table, row_count in db_info.table_stats.items():
+                            status_msg += f"  - {table}: {row_count} rows"
+            else:
+                status_msg += f"📊 {file_name}: File empty\n"
+        else:
+            status_msg += f"❌ {file_name}: Not found\n"
+        return status_msg
+
     def status(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
             if update is not None:
@@ -313,41 +338,8 @@ class PKTickBot:
         """Check bot and data status"""
         try:
             status_msg = "✅ PKTickBot is online\n"
-
-            if os.path.exists(self.ticks_file_path):
-                file_size = os.path.getsize(self.ticks_file_path)
-                file_mtime = Archiver.get_last_modified_datetime(self.ticks_file_path)
-                file_mtime_str = file_mtime.strftime("%Y-%m-%d %H:%M:%S %Z")
-                curr = datetime.now(pytz.timezone("Asia/Kolkata"))
-                seconds_ago = (curr - file_mtime).seconds
-                status_msg += f"📁 ticks.json: {file_size:,} bytes\n"
-                status_msg += f"📁 Modified {seconds_ago} sec ago: {file_mtime_str}\n"
-
-                # Check zip size
-                try:
-                    zip_path, zip_size = self.create_zip_file(self.ticks_file_path)
-                    status_msg += f"📦 Compressed: {zip_size:,} bytes\n"
-                    os.unlink(zip_path)  # Clean up temp zip
-
-                    if zip_size > self.MAX_FILE_SIZE:
-                        parts_needed = (zip_size + self.MAX_FILE_SIZE - 1) // self.MAX_FILE_SIZE
-                        status_msg += f"⚠️  Will be split into {parts_needed} parts\n"
-
-                except Exception as e:
-                    status_msg += f"📦 Compression: Error ({e})\n"
-
-                if file_size > 0:
-                    try:
-                        with open(self.ticks_file_path, "r") as f:
-                            data = json.load(f)
-                        status_msg += f"📊 Instruments: {len(data):,}\n"
-                    except BaseException:
-                        status_msg += "📊 Instruments: File format error\n"
-                else:
-                    status_msg += "📊 Instruments: File empty\n"
-            else:
-                status_msg += "❌ ticks.json: Not found\n"
-
+            status_msg = self._update_stats("ticks.json",self.ticks_file_path,status_msg)
+            status_msg = self._update_stats("ticks.db",self.ticks_db_path,status_msg)
             update.message.reply_text(status_msg)
 
         except Exception as e:
@@ -441,6 +433,7 @@ class PKTickBot:
             # Add handlers
             dispatcher.add_handler(CommandHandler("start", self.start))
             dispatcher.add_handler(CommandHandler("ticks", self.send_zipped_ticks))
+            dispatcher.add_handler(CommandHandler("db", self.send_zipped_db))
             dispatcher.add_handler(CommandHandler("test_ticks", self.test_ticks))
             dispatcher.add_handler(CommandHandler("status", self.status))
             dispatcher.add_handler(CommandHandler("top", self.top_ticks))
