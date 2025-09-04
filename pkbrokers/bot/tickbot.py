@@ -309,7 +309,7 @@ class PKTickBot:
             if file_size > 0:
                 if file_name.endswith(".json"):
                     try:
-                        with open(self.file_path, "r") as f:
+                        with open(file_path, "r") as f:
                             data = json.load(f)
                         status_msg += f"📊 Instruments: {len(data):,}\n"
                     except BaseException:
@@ -317,13 +317,13 @@ class PKTickBot:
                 elif file_name.endswith(".db"):
                     db_info = Fileinfo.get_sqlite_db_info(file_path)
                     if db_info:
-                        status_msg += f"Database file size: {db_info.file_size_human}"
-                        status_msg += f"Number of tables: {len(db_info.tables)}"
-                        status_msg += f"Tables: {', '.join(db_info.tables)}"
-                        status_msg += f"Total rows: {db_info.total_rows}"
+                        status_msg += f"🛢️ Database file size: {db_info.file_size_human}\n"
+                        status_msg += f"🛢️ Number of tables: {len(db_info.tables)}\n"
+                        status_msg += f"🛢️ Tables: {', '.join(db_info.tables)}\n"
+                        status_msg += f"🛢️ Total rows: {db_info.total_rows}\n"
                         
                         for table, row_count in db_info.table_stats.items():
-                            status_msg += f"  - {table}: {row_count} rows"
+                            status_msg += f"🧱 {table}: {row_count} rows\n"
             else:
                 status_msg += f"📊 {file_name}: File empty\n"
         else:
