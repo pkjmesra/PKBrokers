@@ -237,7 +237,7 @@ async def get_pktickbot_response_command(command: str = "/ticks"):
     api_id = PKEnvironment().Tel_API_ID
     api_hash = PKEnvironment().Tel_API_Hash
     phone_number = PKEnvironment().Tel_Phone_Number
-    
+
     async with TelegramClient('user_session', api_id, api_hash) as client:
         await client.start(phone=phone_number)
         

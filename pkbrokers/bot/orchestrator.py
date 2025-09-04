@@ -474,7 +474,7 @@ def orchestrate_consumer(command:str="/ticks"):
     elif response["type"] in ["photo"]:
         print("We can also get photo")
     elif response["type"] in ["text"]:
-        if command == "/token":
+        if command in ["/token", "refresh_token"]:
             from pkbrokers.envupdater import env_update_context
             from PKDevTools.classes.Environment import PKEnvironment
             prev_token = PKEnvironment().KTOKEN

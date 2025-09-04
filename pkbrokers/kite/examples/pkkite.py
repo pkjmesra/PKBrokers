@@ -247,20 +247,32 @@ def setupLogger(logLevel=LOG_LEVEL):
         filter=None,
     )
 
-def remote_bot_auth_token():
+def try_refresh_token():
     from pkbrokers.bot.orchestrator import orchestrate_consumer
-    from PKDevTools.classes.log import default_logger
-    from pkbrokers.envupdater import env_update_context
-    from PKDevTools.classes.Environment import PKEnvironment
-    import os
+    access_token = orchestrate_consumer(command="/refresh_token")
+    _save_update_environment(access_token=access_token)
+
+def _save_update_environment(access_token:str=None):
     try:
-        access_token = orchestrate_consumer(command="/token")
+        from PKDevTools.classes.log import default_logger
+        from pkbrokers.envupdater import env_update_context
+        from PKDevTools.classes.Environment import PKEnvironment
+        import os
         os.environ["KTOKEN"] = access_token if access_token else PKEnvironment().KTOKEN
         default_logger().debug(f"Token received: {access_token}")
         with env_update_context(os.path.join(os.getcwd(),".env.dev")) as updater:
             updater.update_values({"KTOKEN": access_token})
             updater.reload_env()
             default_logger().debug(f"Token updated in os.environment: {PKEnvironment().KTOKEN}")
+    except Exception as e:
+        default_logger().error(f"Error while fetching remote auth token from bot: {e}")
+    
+def remote_bot_auth_token():
+    from pkbrokers.bot.orchestrator import orchestrate_consumer
+    from PKDevTools.classes.log import default_logger
+    try:
+        access_token = orchestrate_consumer(command="/token")
+        _save_update_environment(access_token=access_token)
     except Exception as e:
         default_logger().error(f"Error while fetching remote auth token from bot: {e}")
 
@@ -300,6 +312,8 @@ def pkkite():
             else:
                 print("Running locally? GITHUB_OUTPUT env variable NOT FOUND!")
                 remote_bot_auth_token()
+            from pkbrokers.bot.orchestrator import orchestrate_consumer
+            try_refresh_token()
             kite_history()
 
     if args.instruments:

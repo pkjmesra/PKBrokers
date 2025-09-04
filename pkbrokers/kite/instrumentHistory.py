@@ -634,8 +634,17 @@ class KiteTickerHistory:
                 last_error = e
                 if attempt < max_retries - 1:
                     if response.status_code in [401, 403]:
-                        from pkbrokers.kite.examples.pkkite import remote_bot_auth_token
-                        remote_bot_auth_token()
+                        if attempt<= max_retries - 2:
+                            # Still the first try. Let's just retry with a possible existing 
+                            # valid token that bot may already have
+                            from pkbrokers.kite.examples.pkkite import remote_bot_auth_token
+                            remote_bot_auth_token()
+                        elif attempt<= max_retries - 1:
+                            # We failed even with the most recent token that was provided by
+                            # the bot. So let's try and refresh the token instead and ask
+                            # the bot to refresh the token.
+                            from pkbrokers.kite.examples.pkkite import try_refresh_token
+                            try_refresh_token()
                         self.update_session_headers()
                     time.sleep(2**attempt)
                 else:
