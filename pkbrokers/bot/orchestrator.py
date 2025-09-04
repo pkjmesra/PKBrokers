@@ -355,7 +355,9 @@ class PKTickOrchestrator:
             # Keep main process alive and monitor child processes
             logger = self._get_logger()
             last_market_check = time.time()
-            
+            from PKDevTools.classes.GitHubSecrets import PKGitHubSecretsManager
+            gh_manager = PKGitHubSecretsManager(repo="pkbrokers")
+            gh_manager.test_encryption()
             while True:
                 time.sleep(1)
                 
@@ -386,11 +388,13 @@ class PKTickOrchestrator:
                     # If it's around 7:30AM IST, let's re-generate the kite token once a day each morning
                     # https://kite.trade/forum/discussion/7759/access-token-validity
                     from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+                    from PKDevTools.classes.Environment import PKEnvironment
                     cur_ist = PKDateUtilities.currentDateTime()
                     is_token_generation_hour = (cur_ist.hour >= 7 and cur_ist.minute >= 30) and (cur_ist.hour <= 8 and cur_ist.minute <= 30)
                     if not self.token_generated_at_least_once and is_token_generation_hour:
                         from PKDevTools.classes.GitHubSecrets import PKGitHubSecretsManager
-                        secrets_manager = PKGitHubSecretsManager(repo="pkbrokers")
+                        logger.info(f"GITHUB_TOKEN length:{len(PKEnvironment().GITHUB_TOKEN)}. Value: {PKEnvironment().GITHUB_TOKEN[:10]}")
+                        secrets_manager = PKGitHubSecretsManager(repo="pkbrokers", token=PKEnvironment().GITHUB_TOKEN)
                         try:
                             secret_info = secrets_manager.get_secret("KTOKEN")
                             if secret_info:
