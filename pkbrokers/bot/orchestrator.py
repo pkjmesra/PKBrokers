@@ -239,6 +239,8 @@ class PKTickOrchestrator:
                 processes = [(self.kite_process, "kite process")]
                 self.stop(processes=processes)
             self.kite_process = None
+            from pkbrokers.kite.examples.pkkite import commit_ticks
+            commit_ticks()
 
     def stop(self, processes=[]):
         """Stop both processes gracefully with proper resource cleanup"""

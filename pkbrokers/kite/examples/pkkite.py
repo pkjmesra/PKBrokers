@@ -266,7 +266,22 @@ def _save_update_environment(access_token:str=None):
             default_logger().debug(f"Token updated in os.environment: {PKEnvironment().KTOKEN}")
     except Exception as e:
         default_logger().error(f"Error while fetching remote auth token from bot: {e}")
-    
+
+def commit_ticks():
+    from PKDevTools.classes.Committer import Committer
+    from PKDevTools.classes import Archiver
+    from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+    import os
+    try:
+        tick_file = os.path.join(Archiver.get_user_data_dir(),"ticks.json")
+        if os.path.exists(tick_file):
+            Committer.execOSCommand(f"git add {tick_file} -f >/dev/null 2>&1")
+            commit_path = f"-A '{tick_file}'"
+            Committer.commitTempOutcomes(addPath=commit_path,commitMessage=f"[Temp-Commit-{PKDateUtilities.currentDateTime()}]",branchName="main", showStatus=True)
+            Committer.commitTempOutcomes()
+    except Exception as e:
+        log.default_logger().error(e)
+ 
 def remote_bot_auth_token():
     from pkbrokers.bot.orchestrator import orchestrate_consumer
     from PKDevTools.classes.log import default_logger
@@ -332,7 +347,9 @@ def pkkite():
         try:
             # Let's try and get the latest ticks file from an existing running bot.
             orchestrate_consumer(command="/ticks")
-        except BaseException:
+            commit_ticks()
+        except Exception as e:
+            log.default_logger().error(e)
             pass
         remote_bot_auth_token()
         orchestrate()
