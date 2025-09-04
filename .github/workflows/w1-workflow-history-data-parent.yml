@@ -73,6 +73,7 @@ jobs:
         TOKEN: ${{ secrets.TOKEN }}
         chat_idADMIN: ${{ secrets.chat_idADMIN }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CI_PAT: ${{ secrets.CI_PAT }}
         TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
         TDU: ${{ secrets.TDU }}
         TAT: ${{ secrets.TAT }}
@@ -99,6 +100,7 @@ jobs:
         TOKEN=$TOKEN
         chat_idADMIN=$chat_idADMIN
         GITHUB_TOKEN=$GITHUB_TOKEN
+        CI_PAT=$CI_PAT
         TURSO_TOKEN=$TURSO_TOKEN
         TDU=$TDU
         TAT=$TAT
@@ -226,6 +228,7 @@ jobs:
         TOKEN: ${{ secrets.TOKEN }}
         chat_idADMIN: ${{ secrets.chat_idADMIN }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CI_PAT: ${{ secrets.CI_PAT }}
         TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
         TDU: ${{ secrets.TDU }}
         TAT: ${{ secrets.TAT }}
@@ -252,6 +255,7 @@ jobs:
         TOKEN=$TOKEN
         chat_idADMIN=$chat_idADMIN
         GITHUB_TOKEN=$GITHUB_TOKEN
+        CI_PAT=$CI_PAT
         TURSO_TOKEN=$TURSO_TOKEN
         TDU=$TDU
         TAT=$TAT
@@ -280,6 +284,7 @@ jobs:
     - name: Trigger child jobs with valid token
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CI_PAT: ${{ secrets.CI_PAT }}
       run: |
         # Use the periods input or default to all periods
         if [ -n "${{ github.event.inputs.periods }}" ]; then
@@ -346,6 +351,7 @@ jobs:
         TOKEN: ${{ secrets.TOKEN }}
         chat_idADMIN: ${{ secrets.chat_idADMIN }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CI_PAT: ${{ secrets.CI_PAT }}
         TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
         TDU: ${{ secrets.TDU }}
         TAT: ${{ secrets.TAT }}
@@ -372,6 +378,7 @@ jobs:
         TOKEN=$TOKEN
         chat_idADMIN=$chat_idADMIN
         GITHUB_TOKEN=$GITHUB_TOKEN
+        CI_PAT=$CI_PAT
         TURSO_TOKEN=$TURSO_TOKEN
         TDU=$TDU
         TAT=$TAT

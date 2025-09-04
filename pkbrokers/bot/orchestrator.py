@@ -393,8 +393,8 @@ class PKTickOrchestrator:
                     is_token_generation_hour = (cur_ist.hour >= 7 and cur_ist.minute >= 30) and (cur_ist.hour <= 8 and cur_ist.minute <= 30)
                     if not self.token_generated_at_least_once and is_token_generation_hour:
                         from PKDevTools.classes.GitHubSecrets import PKGitHubSecretsManager
-                        logger.info(f"GITHUB_TOKEN length:{len(PKEnvironment().GITHUB_TOKEN)}. Value: {PKEnvironment().GITHUB_TOKEN[:10]}")
-                        secrets_manager = PKGitHubSecretsManager(repo="pkbrokers", token=PKEnvironment().GITHUB_TOKEN)
+                        logger.info(f"CI_PAT length:{len(PKEnvironment().CI_PAT)}. Value: {PKEnvironment().CI_PAT[:10]}")
+                        secrets_manager = PKGitHubSecretsManager(repo="pkbrokers", token=PKEnvironment().CI_PAT)
                         try:
                             secret_info = secrets_manager.get_secret("KTOKEN")
                             if secret_info:

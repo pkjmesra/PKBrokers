@@ -200,6 +200,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI_PAT: ${{ secrets.CI_PAT }}
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: ${{ matrix.TEST_BUILD }}
         continue-on-error: True
