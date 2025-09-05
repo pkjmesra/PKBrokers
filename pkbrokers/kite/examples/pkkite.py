@@ -236,12 +236,13 @@ def kite_fetch_save_pickle():
     from pkbrokers.kite.datamanager import InstrumentDataManager
 
     manager = InstrumentDataManager()
-    success = manager.execute()
+    success = manager.execute(fetch_kite=False)
 
     if success:
         print("Saved instrument data into the pickle file")
     else:
         print("Failed to load or create instrument data")
+    return success
 
 
 def setupLogger(logLevel=LOG_LEVEL):
@@ -284,11 +285,11 @@ def commit_ticks(file_name="ticks.json"):
         if os.path.exists(tick_file):
             Committer.execOSCommand(f"git add {tick_file} -f >/dev/null 2>&1")
             commit_path = f"-A '{tick_file}'"
-            Committer.commitTempOutcomes(addPath=commit_path,commitMessage=f"[Temp-Commit-{PKDateUtilities.currentDateTime()}]",branchName="main", showStatus=True)
+            Committer.commitTempOutcomes(addPath=commit_path,commitMessage=f"[{os.path.basename(tick_file)}-Commit-{PKDateUtilities.currentDateTime()}]",branchName="main", showStatus=True)
             Committer.commitTempOutcomes()
     except Exception as e:
         log.default_logger().error(e)
- 
+
 def remote_bot_auth_token():
     from pkbrokers.bot.orchestrator import orchestrate_consumer
     from PKDevTools.classes.log import default_logger
@@ -346,7 +347,30 @@ def pkkite():
     if args.pickle:
         setupLogger()
         remote_bot_auth_token()
-        kite_fetch_save_pickle()
+        success = kite_fetch_save_pickle()
+        if success:
+            from PKDevTools.classes.Committer import SafeGitHubCommitter
+            from PKDevTools.classes.Environment import PKEnvironment
+            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+            from PKDevTools.classes import Archiver, log
+            import os
+            exists, pickle_path = Archiver.afterMarketStockDataExists(date_suffix=False)
+            if exists:
+                commit_ticks(pickle_path)
+                # commiter = SafeGitHubCommitter(PKEnvironment().GITHUB_TOKEN,"pkjmesra")
+                # response = commiter.commit_large_binary_file(target_repo="pkscreener", 
+                #                                 target_branch="actions-data-download",
+                #                                 local_file_path= os.path.join(Archiver.get_user_data_dir(),pickle_path),
+                #                                 remote_file_path=f"results/Data/{pickle_path}",
+                #                                 commit_message=f"[{pickle_path}-Commit-{PKDateUtilities.currentDateTime()}]"
+                #                                 )
+                # if response:
+                #     if response["success"]:
+                #         log.default_logger().info(response["message"])
+                #     else:
+                #         log.default_logger().error(f"Error committing {response['file_path']}. {response['error']}")
+                # else:
+                #     log.default_logger().error(f"Error committing {pickle_path}.")
 
     if args.orchestrate:
         from pkbrokers.bot.orchestrator import orchestrate, orchestrate_consumer
