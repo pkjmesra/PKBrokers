@@ -607,7 +607,7 @@ class InstrumentDataManager:
                     "close": row.get("close"),
                     "volume": row.get("volume"),
                     # "instrument_token": row.get("instrument_token"),
-                    "timestamp": PKDateUtilities.utc_str_to_ist(row.get("timestamp"))
+                    "timestamp": PKDateUtilities.utc_str_to_ist(row.get("timestamp")).strftime('%Y-%m-%d %H:%M:%S')
                 }
 
             master_data[tradingsymbol] = symbol_data
