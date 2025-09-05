@@ -33,6 +33,7 @@ from pathlib import Path
 import libsql
 import pandas as pd
 import requests
+import pytz
 from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
 from PKDevTools.classes import Archiver
@@ -472,10 +473,10 @@ class InstrumentDataManager:
                 try:
                     # Convert timestamp to date
                     if isinstance(timestamp, str):
-                        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00')).astimezone(tz=pytz.timezone("Asia/Kolkata"))
                     else:
-                        dt = datetime.fromtimestamp(timestamp)
-                    
+                        dt = datetime.fromtimestamp(timestamp).astimezone(tz=pytz.timezone("Asia/Kolkata"))
+
                     date_key = dt.date()
                     
                     # Create or update symbol data
@@ -488,8 +489,9 @@ class InstrumentDataManager:
                         'low': instrument_data.get('ohlcv').get('low'),
                         'close': instrument_data.get('ohlcv').get('close'),
                         'volume': instrument_data.get('ohlcv').get('volume'),
-                        'oi': instrument_data.get('oi', 0),
-                        'instrument_token': instrument_data.get('instrument_token'),
+                        # 'oi': instrument_data.get('oi', 0),
+                        # 'instrument_token': instrument_data.get('instrument_token'),
+                        'timestamp': str(dt),
                         'source': 'ticks.json'  # Mark source for debugging
                     }
                     
@@ -604,8 +606,8 @@ class InstrumentDataManager:
                     "low": row.get("low"),
                     "close": row.get("close"),
                     "volume": row.get("volume"),
-                    "oi": row.get("oi"),
-                    "instrument_token": row.get("instrument_token"),
+                    # "instrument_token": row.get("instrument_token"),
+                    "timestamp": PKDateUtilities.utc_str_to_ist(row.get("timestamp"))
                 }
 
             master_data[tradingsymbol] = symbol_data

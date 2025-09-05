@@ -356,10 +356,10 @@ def pkkite():
         remote_bot_auth_token()
         success = kite_fetch_save_pickle()
         if success:
-            from PKDevTools.classes.Committer import SafeGitHubCommitter
-            from PKDevTools.classes.Environment import PKEnvironment
+            # from PKDevTools.classes.Committer import SafeGitHubCommitter
+            # from PKDevTools.classes.Environment import PKEnvironment
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
-            from PKDevTools.classes import Archiver, log
+            from PKDevTools.classes import Archiver
             import os
             exists, pickle_path = Archiver.afterMarketStockDataExists(date_suffix=False)
             if exists:
