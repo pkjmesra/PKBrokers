@@ -390,7 +390,7 @@ def pkkite():
             commit_ticks(file_name="ticks.json")
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
             cur_ist = PKDateUtilities.currentDateTime()
-            is_non_market_hour = (cur_ist.hour >= 15 and cur_ist.minute >= 30) and (cur_ist.hour <= 9 and cur_ist.minute <= 15) or PKDateUtilities.isTodayHoliday()
+            is_non_market_hour = (cur_ist.hour >= 15 and cur_ist.minute >= 30) or (cur_ist.hour <= 9 and cur_ist.minute <= 15) or PKDateUtilities.isTodayHoliday()
             if is_non_market_hour:
                 orchestrate_consumer(command="/db")
                 commit_ticks(file_name="ticks.db.zip")
