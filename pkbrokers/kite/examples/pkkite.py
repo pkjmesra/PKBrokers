@@ -31,6 +31,7 @@ import os
 import sys
 
 from PKDevTools.classes import log
+from PKDevTools.classes.log import default_logger
 
 LOG_LEVEL = (
     logging.INFO
@@ -288,7 +289,7 @@ def commit_ticks(file_name="ticks.json"):
             Committer.commitTempOutcomes(addPath=commit_path,commitMessage=f"[{os.path.basename(tick_file)}-Commit-{PKDateUtilities.currentDateTime()}]",branchName="main", showStatus=True)
             Committer.commitTempOutcomes()
     except Exception as e:
-        log.default_logger().error(e)
+        default_logger().error(e)
 
 def remote_bot_auth_token():
     from pkbrokers.bot.orchestrator import orchestrate_consumer
@@ -386,7 +387,7 @@ def pkkite():
                 orchestrate_consumer(command="/db")
                 commit_ticks(file_name="ticks.db.zip")
         except Exception as e:
-            log.default_logger().error(e)
+            default_logger().error(e)
             pass
         remote_bot_auth_token()
         orchestrate()
