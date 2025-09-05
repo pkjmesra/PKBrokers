@@ -385,6 +385,7 @@ class InstrumentDataManager:
                 FROM instrument_history ih
                 JOIN instruments i ON ih.instrument_token = i.instrument_token
                 WHERE ih.timestamp >= ? AND ih.timestamp <= ?
+                AND ih.interval = 'day'
             """
             cursor.execute(query, (start_date_str, end_date_str))
             results = cursor.fetchall()
