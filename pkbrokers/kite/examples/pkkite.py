@@ -291,7 +291,8 @@ def commit_ticks(file_name="ticks.json", branch_name="main"):
             Committer.commitTempOutcomes(addPath=commit_path,
                                          commitMessage=f"[{os.path.basename(tick_file)}-Commit-{PKDateUtilities.currentDateTime()}]",
                                          branchName=branch_name,
-                                         showStatus=True)
+                                         showStatus=True,
+                                         timeout = 900)
             default_logger().info(f"File committed:{tick_file}")
     except Exception as e:
         default_logger().error(f"Error commiting {tick_file} to {branch_name}: {e}")
