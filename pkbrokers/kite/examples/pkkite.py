@@ -276,20 +276,25 @@ def _save_update_environment(access_token:str=None):
     except Exception as e:
         default_logger().error(f"Error while fetching remote auth token from bot: {e}")
 
-def commit_ticks(file_name="ticks.json"):
+def commit_ticks(file_name="ticks.json", branch_name="main"):
     from PKDevTools.classes.Committer import Committer
     from PKDevTools.classes import Archiver
     from PKDevTools.classes.PKDateUtilities import PKDateUtilities
     import os
     try:
         tick_file = os.path.join(Archiver.get_user_data_dir(),file_name)
+        default_logger().info(f"File being committed:{tick_file}")
         if os.path.exists(tick_file):
             Committer.execOSCommand(f"git add {tick_file} -f >/dev/null 2>&1")
             commit_path = f"-A '{tick_file}'"
-            Committer.commitTempOutcomes(addPath=commit_path,commitMessage=f"[{os.path.basename(tick_file)}-Commit-{PKDateUtilities.currentDateTime()}]",branchName="main", showStatus=True)
-            Committer.commitTempOutcomes()
+            default_logger().info(f"File being committed:{os.path.basename(tick_file)} in branch:{branch_name}")
+            Committer.commitTempOutcomes(addPath=commit_path,
+                                         commitMessage=f"[{os.path.basename(tick_file)}-Commit-{PKDateUtilities.currentDateTime()}]",
+                                         branchName=branch_name,
+                                         showStatus=True)
+            default_logger().info(f"File committed:{tick_file}")
     except Exception as e:
-        default_logger().error(e)
+        default_logger().error(f"Error commiting {tick_file} to {branch_name}: {e}")
 
 def remote_bot_auth_token():
     from pkbrokers.bot.orchestrator import orchestrate_consumer
@@ -357,7 +362,7 @@ def pkkite():
             import os
             exists, pickle_path = Archiver.afterMarketStockDataExists(date_suffix=False)
             if exists:
-                commit_ticks(pickle_path)
+                commit_ticks(pickle_path, branch_name="actions-data-download")
                 # commiter = SafeGitHubCommitter(PKEnvironment().GITHUB_TOKEN,"pkjmesra")
                 # response = commiter.commit_large_binary_file(target_repo="pkscreener", 
                 #                                 target_branch="actions-data-download",
@@ -372,6 +377,8 @@ def pkkite():
                 #         log.default_logger().error(f"Error committing {response['file_path']}. {response['error']}")
                 # else:
                 #     log.default_logger().error(f"Error committing {pickle_path}.")
+            else:
+                default_logger().error(f"Error pickling. File does not exist: {pickle_path}.")
 
     if args.orchestrate:
         from pkbrokers.bot.orchestrator import orchestrate, orchestrate_consumer
