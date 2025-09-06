@@ -27,7 +27,7 @@ SOFTWARE.
 import json
 import pickle
 import sqlite3
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -162,18 +162,20 @@ class InstrumentDataManager:
             >>> print(normalized)  # datetime.date(2023, 12, 25)
         """
         if isinstance(date_obj, date):
-            return date_obj
+            date_time = datetime.combine(date_obj, time(0, 0, 0)).astimezone(tz=pytz.timezone("Asia/Kolkata")).strftime('%Y-%m-%d %H:%M:%S')
+            date_time = f'{date_time.split(" ")[0]}T00:00:00+5:30'
+            return date_time
         elif isinstance(date_obj, datetime):
-            return date_obj.date()
+            return date_obj #.date()
         elif isinstance(date_obj, str):
             try:
-                # Try parsing various date string formats
-                if "T" in date_obj:
-                    return datetime.fromisoformat(
-                        date_obj.replace("Z", "+00:00")
-                    ).date()
-                else:
-                    return datetime.strptime(date_obj.split(" ")[0], "%Y-%m-%d").date()
+                return date_obj
+            #     # Try parsing various date string formats
+            #     if "T" in date_obj:
+            #         return PKDateUtilities.datetimeFromYmdString(
+            #             date_obj.replace("Z", "+00:00").replace("T"," ").split("+")[0]) # datetime.fromisoformat(date_obj.replace("Z", "+00:00"))
+            #     else:
+            #         return datetime.strptime(date_obj.split(" ")[0], "%Y-%m-%d").date()
             except (ValueError, TypeError):
                 self.logger.error(f"Could not parse date string: {date_obj}")
                 return None
