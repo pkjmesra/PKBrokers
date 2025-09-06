@@ -23,19 +23,19 @@ SOFTWARE.
 
 """
 
+import asyncio
 import logging
 import os
 import re
 import time
-import asyncio
-from telethon import TelegramClient, events
 import zipfile
-
 from typing import List, Optional, Tuple
 
 import requests
-from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes import Archiver
+from PKDevTools.classes.Environment import PKEnvironment
+from telethon import TelegramClient, events
+
 
 class PKTickBotConsumer:
     """Programmatic client to interact with PKTickBot with zip handling"""
@@ -70,7 +70,7 @@ class PKTickBotConsumer:
             url = f"{self.bridge_base_url}/sendMessage"
             payload = {
                 "chat_id": 8423093422,  # The main bot's username
-                "text": command
+                "text": command,
             }
 
             response = requests.post(url, json=payload, timeout=30)
@@ -95,9 +95,7 @@ class PKTickBotConsumer:
             file_path_info = response.json()["result"]["file_path"]
 
             # Download file
-            download_url = (
-                f"https://api.telegram.org/file/bot{self.bridge_bot_token}/{file_path_info}"
-            )
+            download_url = f"https://api.telegram.org/file/bot{self.bridge_bot_token}/{file_path_info}"
             response = requests.get(download_url, stream=True, timeout=60)
             response.raise_for_status()
 
@@ -232,88 +230,92 @@ class PKTickBotConsumer:
         """Request bot status"""
         return self.send_command("/status")
 
+
 async def get_pktickbot_response_command(command: str = "/ticks"):
     """Enhanced version with better error handling and response parsing"""
     api_id = PKEnvironment().Tel_API_ID
     api_hash = PKEnvironment().Tel_API_Hash
     phone_number = PKEnvironment().Tel_Phone_Number
 
-    async with TelegramClient('user_session', api_id, api_hash) as client:
+    async with TelegramClient("user_session", api_id, api_hash) as client:
         await client.start(phone=phone_number)
-        
+
         response_queue = asyncio.Queue()
         response_received = asyncio.Event()
-        
+
         # Send command to the bot
-        bot_username = '@pktickbot'
+        bot_username = "@pktickbot"
         await client.send_message(bot_username, command)
         print(f"Command '{command}' sent to bot")
-        
+
         # Handler for bot responses
         @client.on(events.NewMessage(from_users=bot_username))
         async def handler(event):
             try:
                 response = {"type": None, "content": None, "raw_message": event.message}
-                
+
                 if event.message.document:
                     response["type"] = "file"
-                    response["file_name"] = event.message.document.attributes[0].file_name if event.message.document.attributes else "unknown"
+                    response["file_name"] = (
+                        event.message.document.attributes[0].file_name
+                        if event.message.document.attributes
+                        else "unknown"
+                    )
                     response["file_size"] = event.message.document.size
-                    
+
                 elif event.message.text:
                     response["type"] = "text"
                     response["content"] = event.message.text
-                    
+
                 elif event.message.photo:
                     response["type"] = "photo"
-                    
+
                 # Put response in queue and signal receipt
                 await response_queue.put(response)
                 response_received.set()
-                
+
             except Exception as e:
-                error_response = {
-                    "type": "error", 
-                    "content": str(e),
-                    "success": False
-                }
+                error_response = {"type": "error", "content": str(e), "success": False}
                 await response_queue.put(error_response)
                 response_received.set()
             finally:
                 client.remove_event_handler(handler)
-        
+
         # Wait for response with timeout
         try:
             # Wait for the response received signal
             await asyncio.wait_for(response_received.wait(), timeout=60)
-            
+
             # Get the response from queue
             response = await response_queue.get()
-            
+
             # Process file downloads if needed
             if response["type"] in ["file", "photo"] and not response.get("content"):
-                file_path = await response["raw_message"].download_media(file=Archiver.get_user_data_dir())
+                file_path = await response["raw_message"].download_media(
+                    file=Archiver.get_user_data_dir()
+                )
                 response["content"] = file_path
-                
+
                 # Extract zip files
-                if response["type"] == "file" and file_path.endswith('.zip'):
+                if response["type"] == "file" and file_path.endswith(".zip"):
                     extract_dir = os.path.join(Archiver.get_user_data_dir(), "")
                     os.makedirs(extract_dir, exist_ok=True)
-                    with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                    with zipfile.ZipFile(file_path, "r") as zip_ref:
                         zip_ref.extractall(extract_dir)
                     response["extracted_path"] = extract_dir
-            
+
             response["success"] = True
             return response
-            
+
         except asyncio.TimeoutError:
             return {
                 "type": "timeout",
                 "content": "No response from bot within 60 seconds",
-                "success": False
+                "success": False,
             }
 
-def try_get_command_response_from_bot(command:str="/ticks"):
+
+def try_get_command_response_from_bot(command: str = "/ticks"):
     # Run it
     return asyncio.run(get_pktickbot_response_command(command=command))
 

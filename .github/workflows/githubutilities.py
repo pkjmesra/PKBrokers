@@ -25,10 +25,11 @@
 
 import argparse
 import os
+import platform
 import sys
 import sysconfig
-import platform
 import uuid
+
 import requests
 
 argParser = argparse.ArgumentParser()
@@ -70,6 +71,7 @@ args = argsv[0]
 
 args.getreleaseurl = True
 
+
 def aset_output(name, value):
     if "GITHUB_OUTPUT" in os.environ.keys():
         with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
@@ -93,6 +95,7 @@ def cfetchURL(key, url):
     resp = requests.get(url, timeout=2)
     bset_multiline_output(key, resp.json())
     return resp
+
 
 def get_platform():
     """Return a string with current platform (system and machine architecture).
@@ -119,7 +122,7 @@ def get_platform():
     useableArch = machineArch
     is_64bit = sys.maxsize > 2 ** 32
 
-    if system == "darwin": # get machine architecture of multiarch binaries
+    if system == "darwin":  # get machine architecture of multiarch binaries
         if any([x in machineArch for x in ("fat", "intel", "universal")]):
             machineArch = platform.machine().lower()
 
@@ -127,9 +130,9 @@ def get_platform():
         if not is_64bit and machineArch == "x86_64":
             machineArch = "i686"
         elif not is_64bit and machineArch == "aarch64":
-                machineArch = "armv7l"
+            machineArch = "armv7l"
 
-    elif system == "windows": # return more precise machine architecture names
+    elif system == "windows":  # return more precise machine architecture names
         if machineArch == "amd64":
             machineArch = "x64"
         elif machineArch == "win32":
@@ -148,10 +151,11 @@ def get_platform():
     sysVersion = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     sysVersion = sysVersion if not inContainer else f"{sysVersion} (Docker)"
     useableArch = "arm64" if any([x in machineArch for x in ("aarch64", "arm64", "arm")]) else "x64"
-    return f"Python {sysVersion}, {system}_{machineArch}: {machine}",machine, system, machineArch, useableArch
+    return f"Python {sysVersion}, {system}_{machineArch}: {machine}", machine, system, machineArch, useableArch
+
 
 def dget_latest_release_url():
-    _,_,_,_,machineArch = get_platform()
+    _, _, _, _, machineArch = get_platform()
     exe_name = f"pkkite_{machineArch}.bin"
     try:
         resp = cfetchURL(
@@ -159,7 +163,7 @@ def dget_latest_release_url():
             "https://api.github.com/repos/pkjmesra/pkbrokers/releases/latest",
         )
         url = ""
-        
+
         if "Windows" in platform.system():
             exe_name = "pkkite.exe"
         elif "Darwin" in platform.system():
@@ -176,7 +180,7 @@ def dget_latest_release_url():
         if not FoundMatch:
             print(f"Did not find any match for {machineArch}")
         rel_version = url.split("/")[-2]
-    except:
+    except BaseException:
         if args.lastReleasedVersion is not None:
             rel_version = args.lastReleasedVersion
             url = f"https://github.com/pkjmesra/pkbrokers/releases/download/{rel_version}/{exe_name}"
@@ -185,21 +189,24 @@ def dget_latest_release_url():
     aset_output("DOWNLOAD_URL", url)
     return url
 
+
 def whatsNew():
     url = "https://raw.githubusercontent.com/pkjmesra/pkbrokers/main/pkbrokers/release.md"
-    md = requests.get(url,timeout=2)
+    md = requests.get(url, timeout=2)
     txt = md.text
     txt = txt.split("New?")[1]
     txt = txt.split("## Older Releases")[0]
     txt = txt.replace("* ", "- ").replace("`", "").strip()
     txt = txt + "\n"
-    bset_multiline_output("WHATS_NEW_IN_THIS_RELEASE",txt)
+    bset_multiline_output("WHATS_NEW_IN_THIS_RELEASE", txt)
     return txt
 
+
 def lastReleasedVersionFromWhatsNew():
-      wNew = whatsNew()
-      releaseVersion = wNew.split("[")[1].split("]")[0]
-      return releaseVersion.replace("v","")
+    wNew = whatsNew()
+    releaseVersion = wNew.split("[")[1].split("]")[0]
+    return releaseVersion.replace("v", "")
+
 
 if args.getreleaseurl:
     if args.lastReleasedVersion is None or args.lastReleasedVersion == '':

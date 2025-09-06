@@ -36,8 +36,9 @@ from typing import Dict, Optional
 import pyotp
 import requests
 from kiteconnect import KiteConnect
-from PKDevTools.classes.log import default_logger
 from PKDevTools.classes.Environment import PKEnvironment
+from PKDevTools.classes.log import default_logger
+
 from pkbrokers.envupdater import env_update_context
 
 
@@ -98,7 +99,9 @@ class KiteAuthenticator:
         missing = [key for key in required_keys if key not in credentials]
         if missing:
             raise ValueError(f"Missing required credentials: {missing}")
-        default_logger().debug("Credentials verified. All required credentials are available.")
+        default_logger().debug(
+            "Credentials verified. All required credentials are available."
+        )
 
     def get_enctoken(self, **credentials) -> str:
         """
@@ -149,7 +152,9 @@ class KiteAuthenticator:
             self.request_session_id_response = self.session.get(
                 self.login_url, headers=self.DEFAULT_HEADERS, timeout=self.timeout
             )
-            default_logger().debug(f"Login response received: {self.request_session_id_response}")
+            default_logger().debug(
+                f"Login response received: {self.request_session_id_response}"
+            )
             # User login
             self.request_token_response = self.session.post(
                 "https://kite.zerodha.com/api/login",
@@ -184,23 +189,34 @@ class KiteAuthenticator:
                 headers=totp_headers,
                 timeout=self.timeout,
             )
-            default_logger().debug(f"OTP verification finished: {self.access_token_response}")
+            default_logger().debug(
+                f"OTP verification finished: {self.access_token_response}"
+            )
             access_token = self._extract_enctoken(
                 self.access_token_response.headers.get("Set-Cookie")
             )
             prev_token = PKEnvironment().KTOKEN
             os.environ["KTOKEN"] = access_token
             default_logger().debug(f"Token extracted: {access_token}")
-            with env_update_context(os.path.join(os.getcwd(),".env.dev")) as updater:
+            with env_update_context(os.path.join(os.getcwd(), ".env.dev")) as updater:
                 updater.update_values({"KTOKEN": access_token})
                 updater.reload_env()
-                default_logger().debug(f"Token updated in os.environment: {PKEnvironment().KTOKEN}")
+                default_logger().debug(
+                    f"Token updated in os.environment: {PKEnvironment().KTOKEN}"
+                )
             try:
                 from PKDevTools.classes.GitHubSecrets import PKGitHubSecretsManager
-                default_logger().info(f"CI_PAT length:{len(PKEnvironment().CI_PAT)}. Value: {PKEnvironment().CI_PAT[:10]}")
-                gh_manager = PKGitHubSecretsManager(repo="pkbrokers", token=PKEnvironment().CI_PAT)
-                gh_manager.create_or_update_secret("KTOKEN",PKEnvironment().KTOKEN)
-                default_logger().info(f"Token updated in GitHub secrets:{prev_token != PKEnvironment().KTOKEN}")
+
+                default_logger().info(
+                    f"CI_PAT length:{len(PKEnvironment().CI_PAT)}. Value: {PKEnvironment().CI_PAT[:10]}"
+                )
+                gh_manager = PKGitHubSecretsManager(
+                    repo="pkbrokers", token=PKEnvironment().CI_PAT
+                )
+                gh_manager.create_or_update_secret("KTOKEN", PKEnvironment().KTOKEN)
+                default_logger().info(
+                    f"Token updated in GitHub secrets:{prev_token != PKEnvironment().KTOKEN}"
+                )
             except Exception as e:
                 default_logger().error(f"Error while updating GitHub secret:{e}")
                 pass

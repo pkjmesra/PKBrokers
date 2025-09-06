@@ -23,26 +23,25 @@ SOFTWARE.
 
 """
 
-import json
 import html
+import json
 import logging
 import os
 import signal
 import sys
+
 try:
     import thread
 except ImportError:
     import _thread as thread
 
 import traceback
-
-from typing import Optional
 from datetime import datetime
+from typing import Optional
 
-from telegram import Update
-from telegram.ext import CommandHandler, CallbackContext, Updater, CallbackContext
-from PKDevTools.classes import Archiver
 from PKDevTools.classes.Environment import PKEnvironment
+from telegram import Update
+from telegram.ext import CallbackContext, CommandHandler, Updater
 
 MINUTES_2_IN_SECONDS = 120
 OWNER_USER = "Itsonlypk"
@@ -62,6 +61,7 @@ logger = logging.getLogger(__name__)
 # Global variable to track conflict state
 conflict_detected = False
 
+
 class PKTickBot:
     """Telegram bot that sends zipped ticks.json file on command"""
 
@@ -73,9 +73,13 @@ class PKTickBot:
     ):
         self.bot_token = bot_token
         self.ticks_file_path = ticks_file_path
-        self.ticks_db_path = ticks_file_path.replace(".json",".db")
+        self.ticks_db_path = ticks_file_path.replace(".json", ".db")
         self.chat_id = chat_id or PKEnvironment().CHAT_ID
-        self.chat_id = f"-{self.chat_id}" if not str(self.chat_id).startswith("-") else self.chat_id
+        self.chat_id = (
+            f"-{self.chat_id}"
+            if not str(self.chat_id).startswith("-")
+            else self.chat_id
+        )
         self.updater = None
         self.logger = logging.getLogger(__name__)
         self.conflict_detected = False
@@ -97,7 +101,6 @@ class PKTickBot:
             "Use /test_ticks to get a test ticks.json file\n"
             "Use /help for more information"
             "Use /start to start the bot\n"
-            
         )
 
     def help_command(self, update: Update, context: CallbackContext) -> None:
@@ -128,7 +131,9 @@ class PKTickBot:
             return
         """Send refreshed token"""
         from PKDevTools.classes.Environment import PKEnvironment
+
         from pkbrokers.kite.examples.pkkite import kite_auth
+
         try:
             kite_auth()
             update.message.reply_text(PKEnvironment().KTOKEN)
@@ -149,9 +154,12 @@ class PKTickBot:
                 update.message.reply_text(APOLOGY_TEXT)
             return
         from pkbrokers.kite.examples.pkkite import kite_ticks
+
         kite_ticks(test_mode=True)
         if update is not None:
-            update.message.reply_text("Kite Tick testing kicked off! Try sending /ticks in sometime.")
+            update.message.reply_text(
+                "Kite Tick testing kicked off! Try sending /ticks in sometime."
+            )
 
     def send_zipped(self, file_name, file_path, update):
         try:
@@ -170,6 +178,7 @@ class PKTickBot:
 
             # Create zip file
             from PKDevTools.classes import Fileinfo
+
             zip_path, zip_size = Fileinfo.create_zip_file(file_path)
 
             try:
@@ -198,7 +207,9 @@ class PKTickBot:
                                 filename=f"{file_name}.part{i}.zip",
                                 caption=f"For file {file_name}, Part {i} of {len(part_paths)}",
                             )
-                        self.logger.info(f"For file {file_name}, Sent part {i} of {len(part_paths)}")
+                        self.logger.info(
+                            f"For file {file_name}, Sent part {i} of {len(part_paths)}"
+                        )
 
                     update.message.reply_text(
                         f"✅ All parts of {file_name} sent! To reconstruct:\n"
@@ -221,14 +232,14 @@ class PKTickBot:
             update.message.reply_text(
                 f"❌ Error preparing or sending file ({file_name}). Please try again later."
             )
-        
+
     def send_zipped_ticks(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
             if update is not None:
                 update.message.reply_text(APOLOGY_TEXT)
             return
         """Send zipped ticks.json file to user with size handling"""
-        self.send_zipped("ticks.json",self.ticks_file_path,update)
+        self.send_zipped("ticks.json", self.ticks_file_path, update)
 
     def send_zipped_db(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
@@ -236,22 +247,25 @@ class PKTickBot:
                 update.message.reply_text(APOLOGY_TEXT)
             return
         """Send zipped ticks.db file to user with size handling"""
-        self.send_zipped("ticks.db",self.ticks_db_path,update)
+        self.send_zipped("ticks.db", self.ticks_db_path, update)
 
     def find_part_files(self, base_path: str) -> list:
         """Find any existing part files for a given base path"""
         import glob
+
         return glob.glob(f"{base_path}.part*")
 
     def get_top_ticks_formatted(self, limit=20):
         try:
-            with open(self.ticks_file_path, 'r') as f:
+            with open(self.ticks_file_path, "r") as f:
                 data = json.load(f)
         except BaseException:
             return None
-        
+
         instruments = list(data.values())
-        top_limit = sorted(instruments, key=lambda x: x.get('tick_count', 0), reverse=True)[:limit+2]
+        top_limit = sorted(
+            instruments, key=lambda x: x.get("tick_count", 0), reverse=True
+        )[: limit + 2]
         output = None
         if len(top_limit) > 0:
             output = "Symbol         |Tick |Price\n"
@@ -259,15 +273,15 @@ class PKTickBot:
             NIFTY_50 = 256265
             BSE_SENSEX = 265
             for i, instrument in enumerate(top_limit, 1):
-                instrument_token = instrument.get('instrument_token', 0)
-                if instrument_token in [NIFTY_50,BSE_SENSEX]:
+                instrument_token = instrument.get("instrument_token", 0)
+                if instrument_token in [NIFTY_50, BSE_SENSEX]:
                     continue
-                symbol = instrument.get('trading_symbol', 'N/A')
-                tick_count = instrument.get('tick_count', 0)
-                price = instrument.get('ohlcv', {}).get('close', 0)
-                
+                symbol = instrument.get("trading_symbol", "N/A")
+                tick_count = instrument.get("tick_count", 0)
+                price = instrument.get("ohlcv", {}).get("close", 0)
+
                 output += f"{symbol:15}|{tick_count:4} | {price:6.1f}\n"
-        
+
         return f"<pre>{html.escape(output)}</pre>"
 
     def top_ticks(self, update: Update, context: CallbackContext) -> None:
@@ -283,13 +297,18 @@ class PKTickBot:
         message = f"📊 Top 20 Instruments by Tick Count:\n\n{top_instruments}"
         update.message.reply_text(message, parse_mode="HTML")
 
-    def _update_stats(self, file_name:str=None, file_path:str=None, status_msg:str=None):
+    def _update_stats(
+        self, file_name: str = None, file_path: str = None, status_msg: str = None
+    ):
         if os.path.exists(file_path):
             from PKDevTools.classes import Fileinfo
+
             f_info = Fileinfo.get_file_info(file_path)
             file_size = f_info.bytes
             status_msg += f"📁 {file_name}: {f_info.human_readable}\n"
-            status_msg += f"📁 Modified {f_info.seconds_ago} sec ago: {f_info.modified_ist}\n"
+            status_msg += (
+                f"📁 Modified {f_info.seconds_ago} sec ago: {f_info.modified_ist}\n"
+            )
 
             # Check zip size
             try:
@@ -299,10 +318,12 @@ class PKTickBot:
                     os.unlink(zip_path)  # Clean up temp zip
 
                     if zip_size > self.MAX_FILE_SIZE:
-                        parts_needed = (zip_size + self.MAX_FILE_SIZE - 1) // self.MAX_FILE_SIZE
+                        parts_needed = (
+                            zip_size + self.MAX_FILE_SIZE - 1
+                        ) // self.MAX_FILE_SIZE
                         status_msg += f"⚠️  Will be split into {parts_needed} parts\n"
                 else:
-                    status_msg += f"📦 Compression Error\n"
+                    status_msg += "📦 Compression Error\n"
             except Exception as e:
                 status_msg += f"📦 Compression: Error ({e})\n"
 
@@ -317,11 +338,13 @@ class PKTickBot:
                 elif file_name.endswith(".db"):
                     db_info = Fileinfo.get_sqlite_db_info(file_path)
                     if db_info:
-                        status_msg += f"🛢️ Database file size: {db_info.file_size_human}\n"
+                        status_msg += (
+                            f"🛢️ Database file size: {db_info.file_size_human}\n"
+                        )
                         status_msg += f"🛢️ Number of tables: {len(db_info.tables)}\n"
                         status_msg += f"🛢️ Tables: {', '.join(db_info.tables)}\n"
                         status_msg += f"🛢️ Total rows: {db_info.total_rows}\n"
-                        
+
                         for table, row_count in db_info.table_stats.items():
                             status_msg += f"🧱 {table}: {row_count} rows\n"
             else:
@@ -338,8 +361,10 @@ class PKTickBot:
         """Check bot and data status"""
         try:
             status_msg = "✅ PKTickBot is online\n"
-            status_msg = self._update_stats("ticks.json",self.ticks_file_path,status_msg)
-            status_msg = self._update_stats("ticks.db",self.ticks_db_path,status_msg)
+            status_msg = self._update_stats(
+                "ticks.json", self.ticks_file_path, status_msg
+            )
+            status_msg = self._update_stats("ticks.db", self.ticks_db_path, status_msg)
             update.message.reply_text(status_msg)
 
         except Exception as e:
@@ -351,7 +376,7 @@ class PKTickBot:
             if update is not None:
                 update.message.reply_text(APOLOGY_TEXT)
             return
-        
+
         Channel_Id = PKEnvironment().CHAT_ID
         """Log the error and send a telegram message to notify the developer."""
         # Log the error before we do anything else, so we can see it even if something breaks.
@@ -363,27 +388,34 @@ class PKTickBot:
             None, context.error, context.error.__traceback__
         )
         tb_string = "".join(tb_list)
-        global start_time
-        timeSinceStarted = datetime.now() - start_time
-        
+
+        if start_time is not None:
+            timeSinceStarted = datetime.now() - start_time
+        else:
+            timeSinceStarted = datetime.now()
+
         # Check for conflict error
         if "telegram.error.Conflict" in tb_string or "409" in tb_string:
             global conflict_detected
             conflict_detected = True
             self.conflict_detected = True
-            logger.error("Conflict detected: Another instance is running. Longer running instance should shut down gracefully.")
-            
+            logger.error(
+                "Conflict detected: Another instance is running. Longer running instance should shut down gracefully."
+            )
+
             if (
                 timeSinceStarted.total_seconds() >= MINUTES_2_IN_SECONDS
             ):  # shutdown only if we have been running for over 2 minutes.
                 warn_msg = f"❌ This instance is stopping due to conflict after running for {timeSinceStarted.total_seconds()/60} minutes."
                 logger.warn(warn_msg)
-                context.bot.send_message(chat_id=int(f"-{Channel_Id}"), text=warn_msg, parse_mode="HTML")
+                context.bot.send_message(
+                    chat_id=int(f"-{Channel_Id}"), text=warn_msg, parse_mode="HTML"
+                )
                 try:
                     # Signal the main process to shutdown
                     os.kill(os.getpid(), signal.SIGINT)
                     try:
-                        thread.interrupt_main() # causes ctrl + c
+                        thread.interrupt_main()  # causes ctrl + c
                     except RuntimeError:
                         pass
                     except SystemExit:
@@ -392,10 +424,14 @@ class PKTickBot:
                     logger.error(f"Error sending shutdown signal: {e}")
                     sys.exit(1)
             else:
-                info_msg = "✅ Other instance is likely running! This instance will continue."
+                info_msg = (
+                    "✅ Other instance is likely running! This instance will continue."
+                )
                 logger.warn(info_msg)
-                context.bot.send_message(chat_id=int(f"-{Channel_Id}"), text=info_msg, parse_mode="HTML")
-        
+                context.bot.send_message(
+                    chat_id=int(f"-{Channel_Id}"), text=info_msg, parse_mode="HTML"
+                )
+
         # Build the message with some markup and additional information about what happened.
         update_str = update.to_dict() if isinstance(update, Update) else str(update)
         message = (
@@ -409,13 +445,23 @@ class PKTickBot:
 
         try:
             # Finally, send the message only if it's not a conflict error
-            if "telegram.error.Conflict" not in tb_string and "409" not in tb_string and Channel_Id is not None and len(str(Channel_Id)) > 0:
+            if (
+                "telegram.error.Conflict" not in tb_string
+                and "409" not in tb_string
+                and Channel_Id is not None
+                and len(str(Channel_Id)) > 0
+            ):
                 context.bot.send_message(
                     chat_id=int(f"-{Channel_Id}"), text=message, parse_mode="HTML"
                 )
         except Exception:
             try:
-                if "telegram.error.Conflict" not in tb_string and "409" not in tb_string and Channel_Id is not None and len(str(Channel_Id)) > 0:
+                if (
+                    "telegram.error.Conflict" not in tb_string
+                    and "409" not in tb_string
+                    and Channel_Id is not None
+                    and len(str(Channel_Id)) > 0
+                ):
                     context.bot.send_message(
                         chat_id=int(f"-{Channel_Id}"),
                         text=tb_string,
@@ -438,8 +484,10 @@ class PKTickBot:
             dispatcher.add_handler(CommandHandler("status", self.status))
             dispatcher.add_handler(CommandHandler("top", self.top_ticks))
             dispatcher.add_handler(CommandHandler("token", self.send_token))
-            dispatcher.add_handler(CommandHandler("refresh_token", self.send_refreshed_token))
-            
+            dispatcher.add_handler(
+                CommandHandler("refresh_token", self.send_refreshed_token)
+            )
+
             dispatcher.add_handler(CommandHandler("help", self.help_command))
             dispatcher.add_error_handler(self.error_handler)
             self.logger.info("Starting PKTickBot...")
@@ -455,7 +503,7 @@ class PKTickBot:
 
             # Start polling
             self.updater.start_polling()
-            
+
             # Run the bot until interrupted
             self.updater.idle()
 
@@ -492,10 +540,7 @@ class PKTickBot:
         if update.edited_channel_post is not None:
             sentFrom.append(abs(update.edited_channel_post.sender_chat.id))
 
-        if (
-            OWNER_USER in sentFrom
-            or abs(int(chat_idADMIN)) in sentFrom
-        ):
+        if OWNER_USER in sentFrom or abs(int(chat_idADMIN)) in sentFrom:
             return False
             # We want to avoid sending any help message back to channel
             # or group in response to our own messages

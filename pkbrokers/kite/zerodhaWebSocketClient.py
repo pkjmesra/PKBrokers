@@ -274,7 +274,7 @@ class WebSocketProcess:
                                 total_ticks_received += len(ticks)
                                 tick_batch += len(ticks)
                                 # if tick_batch > 0 and tick_batch % 200 >= 0:
-                                if time.time() - last_tick_log > 4*PING_INTERVAL:
+                                if time.time() - last_tick_log > 4 * PING_INTERVAL:
                                     self.logger.info(
                                         f"Websocket_index:{self.websocket_index}: Total Running Count of Ticks:{total_ticks_received}"
                                     )
@@ -300,7 +300,8 @@ class WebSocketProcess:
                                         "oi": tick.oi,
                                         "oi_day_high": tick.oi_day_high,
                                         "oi_day_low": tick.oi_day_low,
-                                        "exchange_timestamp": tick.exchange_timestamp or PKDateUtilities.currentDateTimestamp(),
+                                        "exchange_timestamp": tick.exchange_timestamp
+                                        or PKDateUtilities.currentDateTimestamp(),
                                         "depth": tick.depth,
                                         "websocket_index": self.websocket_index,
                                     }
@@ -360,11 +361,11 @@ class WebSocketProcess:
 
     async def _async_cleanup(self):
         """Async cleanup tasks."""
-        if hasattr(self, 'websocket') and self.websocket:
+        if hasattr(self, "websocket") and self.websocket:
             try:
                 await self.websocket.close()
                 self.logger.warn(f"Websocket_index:{self.websocket_index} closed!")
-            except:
+            except BaseException:
                 pass
 
     def run(self):
@@ -433,7 +434,7 @@ def websocket_process_worker(args):
         print(f"WebSocket process {websocket_index} error: {e}")
     finally:
         # Ensure clean shutdown
-        if hasattr(process, 'close'):
+        if hasattr(process, "close"):
             try:
                 process.close()
             except BaseException:
@@ -464,7 +465,9 @@ class ZerodhaWebSocketClient:
 
         # Use consistent multiprocessing context
         self.mp_context = multiprocessing.get_context(
-            "spawn" if sys.platform.startswith("darwin") else "spawn"  # if not sys.platform.startswith("darwin") else "spawn"
+            "spawn"
+            if sys.platform.startswith("darwin")
+            else "spawn"  # if not sys.platform.startswith("darwin") else "spawn"
         )
         self.manager = self.mp_context.Manager()
         self.data_queue = self.manager.Queue(maxsize=0)
@@ -554,7 +557,9 @@ class ZerodhaWebSocketClient:
                 if tick_data is None or tick_data.get("type") != "tick":
                     continue
                 if tick_data["exchange_timestamp"] is None:
-                    tick_data["exchange_timestamp"] = PKDateUtilities.currentDateTimestamp()
+                    tick_data["exchange_timestamp"] = (
+                        PKDateUtilities.currentDateTimestamp()
+                    )
                 # Convert back to Tick object for processing
                 tick = self._convert_tick_data_to_object(tick_data)
 
@@ -727,7 +732,7 @@ class ZerodhaWebSocketClient:
             if p.is_alive():
                 # Wait for graceful shutdown
                 p.join(timeout=10)  # Increased timeout for graceful shutdown
-            
+
             # Force terminate if still alive after graceful period
             if p.is_alive():
                 self.logger.warn(f"Process {i} not responding, terminating...")

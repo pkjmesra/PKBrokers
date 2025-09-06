@@ -274,10 +274,13 @@ class KiteInstruments:
             return False
 
     def table_exists(self, cursor, table_name):
-        cursor.execute("""
-            SELECT name FROM sqlite_master 
+        cursor.execute(
+            """
+            SELECT name FROM sqlite_master
             WHERE type='table' AND name=?
-        """, (table_name,))
+        """,
+            (table_name,),
+        )
         return cursor.fetchone() is not None
 
     def _init_db(self, drop_table: bool = False) -> None:
@@ -317,7 +320,7 @@ class KiteInstruments:
                 cursor.execute("PRAGMA synchronous=NORMAL")
 
             # Only create if it doesn't exist
-            if not self.table_exists(cursor, 'instruments'):
+            if not self.table_exists(cursor, "instruments"):
                 # Create instruments table with constraints and new nse_stock column
                 # Use INTEGER instead of BOOLEAN for Turso compatibility
                 cursor.execute("""
@@ -580,7 +583,7 @@ class KiteInstruments:
         """
         if self.kite_instruments is not None and len(self.kite_instruments.keys()) > 0:
             return self.kite_instruments.values()
-        
+
         url = f"{self.base_url}/instruments/NSE"
         self.logger.debug(f"Fetching instruments from {url}")
 
@@ -599,7 +602,9 @@ class KiteInstruments:
                     instruments.append(instrument)
 
             self.logger.debug(f"Fetched {len(instruments)} valid instruments")
-            filtered_instruments = [inst for inst in instruments if self._filter_instrument(inst)]
+            filtered_instruments = [
+                inst for inst in instruments if self._filter_instrument(inst)
+            ]
             self.logger.debug(
                 f"Filtered out but present in NSE_symbols:{set(self._nse_trading_symbols) - set(self._filtered_trading_symbols)}"
             )

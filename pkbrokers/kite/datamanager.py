@@ -23,22 +23,25 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 """
-import pickle
+
 import json
+import pickle
 import sqlite3
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Union, Any
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 import libsql
 import pandas as pd
-import requests
 import pytz
+import requests
+from PKDevTools.classes import Archiver
 from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
-from PKDevTools.classes import Archiver
 from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+
 from pkbrokers.kite.threadSafeDatabase import DEFAULT_DB_PATH
+
 
 class InstrumentDataManager:
     """
@@ -113,7 +116,9 @@ class InstrumentDataManager:
         exists, path = Archiver.afterMarketStockDataExists(date_suffix=False)
         self.pickle_file_name = path
         self.pickle_exists = exists
-        self.local_pickle_path = Path(Archiver.get_user_data_dir()) / self.pickle_file_name
+        self.local_pickle_path = (
+            Path(Archiver.get_user_data_dir()) / self.pickle_file_name
+        )
         self.ticks_json_path = Path(Archiver.get_user_data_dir()) / "ticks.json"
         self.pickle_url = f"https://github.com/pkjmesra/PKScreener/tree/actions-data-download/results/Data/{path}"
         self.raw_pickle_url = f"https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/{path}"
@@ -125,54 +130,58 @@ class InstrumentDataManager:
     def _is_dataframe_format(self, data: Any) -> bool:
         """
         Check if the data is in the new DataFrame-compatible format.
-        
+
         Args:
             data: Data to check
-            
+
         Returns:
             bool: True if data is in DataFrame format, False otherwise
-            
+
         Example:
             >>> is_new_format = self._is_dataframe_format(loaded_data)
         """
-        return (isinstance(data, dict) and 
-                'data' in data and 
-                'columns' in data and 
-                'index' in data)
+        return (
+            isinstance(data, dict)
+            and "data" in data
+            and "columns" in data
+            and "index" in data
+        )
 
-    def _convert_old_format_to_dataframe_format(self, old_format_data: Dict) -> Dict[str, Any]:
+    def _convert_old_format_to_dataframe_format(
+        self, old_format_data: Dict
+    ) -> Dict[str, Any]:
         """
         Convert the old format data to DataFrame-compatible format.
-        
+
         Args:
             old_format_data: Dictionary in the old format {symbol: {date: {ohlcv_data}}}
-            
+
         Returns:
             Dict: DataFrame-compatible dictionary with 'data', 'columns', and 'index' keys
-            
+
         Example:
             >>> new_format_data = self._convert_old_format_to_dataframe_format(old_data)
         """
         if not old_format_data:
-            return {'data': [], 'columns': [], 'index': []}
-        
+            return {"data": [], "columns": [], "index": []}
+
         # Collect all unique dates and symbols
         all_dates = set()
         all_symbols = set(old_format_data.keys())
-        
+
         for symbol_data in old_format_data.values():
             all_dates.update(symbol_data.keys())
-        
+
         # Sort dates and symbols
         sorted_dates = sorted(all_dates)
         sorted_symbols = sorted(all_symbols)
-        
+
         # Create multi-index columns (symbol, ohlcv field)
         columns = pd.MultiIndex.from_product(
-            [sorted_symbols, ['open', 'high', 'low', 'close', 'volume']],
-            names=['symbol', 'field']
+            [sorted_symbols, ["open", "high", "low", "close", "volume"]],
+            names=["symbol", "field"],
         )
-        
+
         # Create 2D data array
         data = []
         for date in sorted_dates:
@@ -180,60 +189,60 @@ class InstrumentDataManager:
             for symbol in sorted_symbols:
                 if date in old_format_data.get(symbol, {}):
                     ohlcv = old_format_data[symbol][date]
-                    row.extend([
-                        ohlcv.get('open', None),
-                        ohlcv.get('high', None),
-                        ohlcv.get('low', None),
-                        ohlcv.get('close', None),
-                        ohlcv.get('volume', None)
-                    ])
+                    row.extend(
+                        [
+                            ohlcv.get("open", None),
+                            ohlcv.get("high", None),
+                            ohlcv.get("low", None),
+                            ohlcv.get("close", None),
+                            ohlcv.get("volume", None),
+                        ]
+                    )
                 else:
                     # Add None values for missing data
                     row.extend([None, None, None, None, None])
             data.append(row)
-        
-        return {
-            'data': data,
-            'columns': columns,
-            'index': sorted_dates
-        }
 
-    def _convert_dataframe_format_to_old_format(self, df_format: Dict[str, Any]) -> Dict:
+        return {"data": data, "columns": columns, "index": sorted_dates}
+
+    def _convert_dataframe_format_to_old_format(
+        self, df_format: Dict[str, Any]
+    ) -> Dict:
         """
         Convert DataFrame-compatible format back to the old internal dictionary format.
-        
+
         Args:
             df_format: Dictionary with 'data', 'columns', and 'index' keys
-            
+
         Returns:
             Dict: Old format dictionary {symbol: {date: {ohlcv_data}}}
-            
+
         Example:
             >>> old_format_data = self._convert_dataframe_format_to_old_format(new_data)
         """
-        if not df_format or not df_format.get('data'):
+        if not df_format or not df_format.get("data"):
             return {}
-        
-        data = df_format['data']
-        columns = df_format['columns']
-        index = df_format['index']
-        
+
+        data = df_format["data"]
+        columns = df_format["columns"]
+        index = df_format["index"]
+
         # Reconstruct old format
         old_format_data = {}
-        
+
         # Process each column to extract symbol and field
         for col_idx, col in enumerate(columns):
             symbol, field = col
             if symbol not in old_format_data:
                 old_format_data[symbol] = {}
-            
+
             # Add data for each date
             for row_idx, date in enumerate(index):
                 if date not in old_format_data[symbol]:
                     old_format_data[symbol][date] = {}
-                
+
                 old_format_data[symbol][date][field] = data[row_idx][col_idx]
-        
+
         return old_format_data
 
     def _connect_to_database(self) -> bool:
@@ -318,7 +327,10 @@ class InstrumentDataManager:
             >>> if exists:
             >>>     print("Pickle file available locally")
         """
-        return self.local_pickle_path.exists() and self.local_pickle_path.stat().st_size > 0
+        return (
+            self.local_pickle_path.exists()
+            and self.local_pickle_path.stat().st_size > 0
+        )
 
     def _check_pickle_exists_remote(self) -> bool:
         """
@@ -358,9 +370,9 @@ class InstrumentDataManager:
             >>>     print(f"Loaded pickle data with {len(data.get('data', []))} rows from local file")
         """
         try:
-            with open(self.local_pickle_path, 'rb') as f:
+            with open(self.local_pickle_path, "rb") as f:
                 loaded_data = pickle.load(f)
-            
+
             # Handle both old and new formats
             if self._is_dataframe_format(loaded_data):
                 # Data is already in the new format
@@ -369,11 +381,15 @@ class InstrumentDataManager:
             else:
                 # Data is in old format, convert to new format
                 self.logger.info("Converting old format data to DataFrame format")
-                self.pickle_data = self._convert_old_format_to_dataframe_format(loaded_data)
+                self.pickle_data = self._convert_old_format_to_dataframe_format(
+                    loaded_data
+                )
                 # Save in new format for future use
                 self._save_pickle_file()
-                
-            self.logger.info(f"Loaded pickle data from local file: {self.local_pickle_path}")
+
+            self.logger.info(
+                f"Loaded pickle data from local file: {self.local_pickle_path}"
+            )
             return self.pickle_data
         except Exception as e:
             self.logger.error(f"Failed to load local pickle file: {e}")
@@ -399,17 +415,17 @@ class InstrumentDataManager:
         try:
             response = requests.get(self.raw_pickle_url)
             response.raise_for_status()
-            
+
             # Ensure directory exists
             self.local_pickle_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Save to local file first
-            with open(self.local_pickle_path, 'wb') as f:
+            with open(self.local_pickle_path, "wb") as f:
                 f.write(response.content)
-            
+
             # Load the data
             loaded_data = pickle.loads(response.content)
-            
+
             # Handle both old and new formats
             if self._is_dataframe_format(loaded_data):
                 # Data is already in the new format
@@ -417,12 +433,18 @@ class InstrumentDataManager:
                 self.logger.info("Loaded data in DataFrame format from GitHub")
             else:
                 # Data is in old format, convert to new format
-                self.logger.info("Converting old format data to DataFrame format from GitHub")
-                self.pickle_data = self._convert_old_format_to_dataframe_format(loaded_data)
+                self.logger.info(
+                    "Converting old format data to DataFrame format from GitHub"
+                )
+                self.pickle_data = self._convert_old_format_to_dataframe_format(
+                    loaded_data
+                )
                 # Save in new format for future use
                 self._save_pickle_file()
-                
-            self.logger.info(f"Downloaded and loaded pickle data from GitHub: {self.raw_pickle_url}")
+
+            self.logger.info(
+                f"Downloaded and loaded pickle data from GitHub: {self.raw_pickle_url}"
+            )
             return self.pickle_data
         except Exception as e:
             self.logger.error(f"Failed to load pickle from GitHub: {e}")
@@ -431,21 +453,21 @@ class InstrumentDataManager:
     def _save_pickle_file(self):
         """
         Save the current pickle data to file in DataFrame-compatible format.
-        
+
         Example:
             >>> self._save_pickle_file()
         """
         if self.pickle_data is None:
             self.logger.warning("No data to save")
             return
-            
+
         # Ensure directory exists
         self.local_pickle_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Save to local pickle file
         with open(self.local_pickle_path, "wb") as f:
             pickle.dump(self.pickle_data, f)
-            
+
         self.logger.info(f"Pickle file saved successfully: {self.local_pickle_path}")
 
     def _get_max_date_from_pickle_data(self) -> Optional[datetime]:
@@ -467,13 +489,15 @@ class InstrumentDataManager:
 
         try:
             # Convert to old format to extract dates (easier to work with)
-            old_format_data = self._convert_dataframe_format_to_old_format(self.pickle_data)
-            
+            old_format_data = self._convert_dataframe_format_to_old_format(
+                self.pickle_data
+            )
+
             max_date = None
             for symbol_data in old_format_data.values():
                 if not isinstance(symbol_data, dict):
                     continue
-                
+
                 # Extract all date keys
                 date_keys = []
                 for key in symbol_data.keys():
@@ -481,10 +505,12 @@ class InstrumentDataManager:
                         date_keys.append(key)
                     elif isinstance(key, str):
                         try:
-                            date_keys.append(datetime.strptime(key.split("T")[0], '%Y-%m-%d'))
+                            date_keys.append(
+                                datetime.strptime(key.split("T")[0], "%Y-%m-%d")
+                            )
                         except ValueError:
                             continue
-                
+
                 if date_keys:
                     symbol_max = max(date_keys)
                     if max_date is None or symbol_max > max_date:
@@ -526,12 +552,12 @@ class InstrumentDataManager:
             # Format dates
             start_date_str = self._format_date(start_date)
             end_date_str = self._format_date(datetime.now())
-            
+
             # Fetch historical data
             historical_data = kite_history.get_multiple_instruments_history(
-                tradingsymbols=tradingsymbols, 
-                from_date=start_date_str, 
-                to_date=end_date_str
+                tradingsymbols=tradingsymbols,
+                from_date=start_date_str,
+                to_date=end_date_str,
             )
 
             # Save to database if available
@@ -547,7 +573,9 @@ class InstrumentDataManager:
             self.logger.error(f"Error fetching data from Kite: {e}")
             return None
 
-    def _fetch_data_from_database(self, start_date: datetime, end_date: datetime) -> Dict:
+    def _fetch_data_from_database(
+        self, start_date: datetime, end_date: datetime
+    ) -> Dict:
         """
         Fetch historical data from instrument_history table for the specified date range.
 
@@ -571,7 +599,7 @@ class InstrumentDataManager:
             # Format dates
             start_date_str = self._format_date(start_date)
             end_date_str = self._format_date(end_date)
-            
+
             # Fetch instrument history data
             cursor = self.db_conn.cursor()
             query = """
@@ -609,17 +637,17 @@ class InstrumentDataManager:
         """
         try:
             from pkbrokers.bot.orchestrator import orchestrate_consumer
-            
+
             # Send command to download ticks
             orchestrate_consumer(command="/ticks")
-            
+
             if self.ticks_json_path.exists():
                 self.logger.debug("Ticks download completed successfully")
                 return True
             else:
                 self.logger.error("Ticks download failed or file not created")
                 return False
-                
+
         except ImportError:
             self.logger.error("orchestrate_consumer not available")
             return False
@@ -647,47 +675,51 @@ class InstrumentDataManager:
             return None
 
         try:
-            with open(self.ticks_json_path, 'r') as f:
+            with open(self.ticks_json_path, "r") as f:
                 ticks_data = json.load(f)
 
             # Convert ticks.json format to pickle data format
             processed_data = {}
-            
+
             for instrument_data in ticks_data.values():
-                tradingsymbol = instrument_data.get('trading_symbol')
+                tradingsymbol = instrument_data.get("trading_symbol")
                 if not tradingsymbol:
                     continue
-                
+
                 # Extract date from timestamp
-                timestamp = instrument_data.get('ohlcv').get("timestamp")
+                timestamp = instrument_data.get("ohlcv").get("timestamp")
                 if not timestamp:
                     continue
-                    
+
                 try:
                     # Convert timestamp to date
                     if isinstance(timestamp, str):
-                        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00')).astimezone(tz=pytz.timezone("Asia/Kolkata"))
+                        dt = datetime.fromisoformat(
+                            timestamp.replace("Z", "+00:00")
+                        ).astimezone(tz=pytz.timezone("Asia/Kolkata"))
                     else:
-                        dt = datetime.fromtimestamp(timestamp).astimezone(tz=pytz.timezone("Asia/Kolkata"))
+                        dt = datetime.fromtimestamp(timestamp).astimezone(
+                            tz=pytz.timezone("Asia/Kolkata")
+                        )
 
                     date_key = dt.date()
-                    
+
                     # Create or update symbol data
                     if tradingsymbol not in processed_data:
                         processed_data[tradingsymbol] = {}
-                    
+
                     processed_data[tradingsymbol][date_key] = {
-                        'open': instrument_data.get('ohlcv').get('open'),
-                        'high': instrument_data.get('ohlcv').get('high'),
-                        'low': instrument_data.get('ohlcv').get('low'),
-                        'close': instrument_data.get('ohlcv').get('close'),
-                        'volume': instrument_data.get('ohlcv').get('volume'),
+                        "open": instrument_data.get("ohlcv").get("open"),
+                        "high": instrument_data.get("ohlcv").get("high"),
+                        "low": instrument_data.get("ohlcv").get("low"),
+                        "close": instrument_data.get("ohlcv").get("close"),
+                        "volume": instrument_data.get("ohlcv").get("volume"),
                         # 'oi': instrument_data.get('oi', 0),
                         # 'instrument_token': instrument_data.get('instrument_token'),
-                        'timestamp': str(dt),
-                        'source': 'ticks.json'  # Mark source for debugging
+                        "timestamp": str(dt),
+                        "source": "ticks.json",  # Mark source for debugging
                     }
-                    
+
                 except (ValueError, TypeError) as e:
                     self.logger.debug(f"Error processing timestamp {timestamp}: {e}")
                     continue
@@ -733,7 +765,9 @@ class InstrumentDataManager:
         """
         if self.pickle_data:
             # Convert to old format to extract symbols
-            old_format_data = self._convert_dataframe_format_to_old_format(self.pickle_data)
+            old_format_data = self._convert_dataframe_format_to_old_format(
+                self.pickle_data
+            )
             return list(old_format_data.keys())
         else:
             # Fetch from database
@@ -801,7 +835,9 @@ class InstrumentDataManager:
                     "close": row.get("close"),
                     "volume": row.get("volume"),
                     # "instrument_token": row.get("instrument_token"),
-                    "timestamp": PKDateUtilities.utc_str_to_ist(row.get("timestamp")).strftime('%Y-%m-%d %H:%M:%S')
+                    "timestamp": PKDateUtilities.utc_str_to_ist(
+                        row.get("timestamp")
+                    ).strftime("%Y-%m-%d %H:%M:%S"),
                 }
 
             master_data[tradingsymbol] = symbol_data
@@ -821,8 +857,10 @@ class InstrumentDataManager:
         """
         if self.pickle_data:
             # Convert current data to old format for merging
-            current_old_format = self._convert_dataframe_format_to_old_format(self.pickle_data)
-            
+            current_old_format = self._convert_dataframe_format_to_old_format(
+                self.pickle_data
+            )
+
             # Merge new data with existing data
             for tradingsymbol, daily_data in new_data.items():
                 if tradingsymbol in current_old_format:
@@ -831,9 +869,11 @@ class InstrumentDataManager:
                 else:
                     # Add new symbol
                     current_old_format[tradingsymbol] = daily_data
-                    
+
             # Convert back to DataFrame format
-            self.pickle_data = self._convert_old_format_to_dataframe_format(current_old_format)
+            self.pickle_data = self._convert_old_format_to_dataframe_format(
+                current_old_format
+            )
         else:
             # Create new pickle data
             self.pickle_data = self._convert_old_format_to_dataframe_format(new_data)
@@ -859,7 +899,7 @@ class InstrumentDataManager:
         """
         if not self.pickle_data:
             return None
-            
+
         # Convert to old format to extract symbol data
         old_format_data = self._convert_dataframe_format_to_old_format(self.pickle_data)
         return old_format_data.get(tradingsymbol)
@@ -878,42 +918,46 @@ class InstrumentDataManager:
         """
         if not self.pickle_data:
             return None
-            
+
         return pd.DataFrame(
-            data=self.pickle_data['data'],
-            columns=self.pickle_data['columns'],
-            index=self.pickle_data['index']
+            data=self.pickle_data["data"],
+            columns=self.pickle_data["columns"],
+            index=self.pickle_data["index"],
         )
 
-    def convert_old_pickle_to_dataframe_format(self, file_path: Union[str, Path]) -> bool:
+    def convert_old_pickle_to_dataframe_format(
+        self, file_path: Union[str, Path]
+    ) -> bool:
         """
         Convert an old format pickle file to the new DataFrame-compatible format.
-        
+
         Args:
             file_path: Path to the old format pickle file
-            
+
         Returns:
             bool: True if conversion was successful, False otherwise
-            
+
         Example:
             >>> success = manager.convert_old_pickle_to_dataframe_format("old_data.pkl")
         """
         try:
             # Load the old format data
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 old_data = pickle.load(f)
-                
+
             # Convert to new format
             new_format_data = self._convert_old_format_to_dataframe_format(old_data)
-            
+
             # Save in new format
-            new_file_path = Path(file_path).with_name(f"new_format_{Path(file_path).name}")
-            with open(new_file_path, 'wb') as f:
+            new_file_path = Path(file_path).with_name(
+                f"new_format_{Path(file_path).name}"
+            )
+            with open(new_file_path, "wb") as f:
                 pickle.dump(new_format_data, f)
-                
+
             self.logger.info(f"Converted {file_path} to new format: {new_file_path}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to convert pickle file: {e}")
             return False
@@ -962,9 +1006,11 @@ class InstrumentDataManager:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=365)
             historical_data = self._fetch_data_from_database(start_date, end_date)
-            
+
             if historical_data:
-                self.pickle_data = self._convert_old_format_to_dataframe_format(historical_data)
+                self.pickle_data = self._convert_old_format_to_dataframe_format(
+                    historical_data
+                )
                 self._save_pickle_file()  # Save initial data
                 self.logger.debug("Initial pickle file created from database data")
             else:
@@ -974,49 +1020,54 @@ class InstrumentDataManager:
         # Step 3: Find latest date and fetch incremental data
         max_date = self._get_max_date_from_pickle_data()
         today = datetime.now().date()
-        
+
         if max_date and max_date.date() < today:
-            self.logger.debug(f"Fetching incremental data from {max_date.date()} to {today}")
-            
+            self.logger.debug(
+                f"Fetching incremental data from {max_date.date()} to {today}"
+            )
+
             # Convert max_date to datetime for calculations
             if isinstance(max_date, datetime):
                 start_datetime = max_date
             else:
                 start_datetime = datetime.combine(max_date, datetime.min.time())
-            
+
             # Add one day to start from the next day
             start_datetime += timedelta(days=1)
-            
+
             # Fetch from multiple sources (prioritized)
             incremental_data = {}
-            
+
             if fetch_kite:
                 # Try Kite API first
                 kite_data = self._get_recent_data_from_kite(start_datetime)
                 if kite_data:
                     incremental_data.update(kite_data)
                     self.logger.debug(f"Added {len(kite_data)} symbols from Kite API")
-            
+
             # Try database next
             if not incremental_data:
                 db_data = self._fetch_data_from_database(start_datetime, datetime.now())
                 if db_data:
                     incremental_data.update(db_data)
                     self.logger.debug(f"Added {len(db_data)} symbols from database")
-                        
+
             # Update pickle with incremental data
             if incremental_data:
                 self._update_pickle_file(incremental_data)
-                self.logger.debug(f"Updated with {len(incremental_data)} incremental records")
-        
+                self.logger.debug(
+                    f"Updated with {len(incremental_data)} incremental records"
+                )
+
         # Step 4: Download and process ticks.json
         self.logger.debug("Initiating ticks download...")
         if self._orchestrate_ticks_download():
             ticks_data = self._load_and_process_ticks_json()
             if ticks_data:
                 self._update_pickle_file(ticks_data)
-                self.logger.debug(f"Updated with {len(ticks_data)} records from ticks.json")
-        
+                self.logger.debug(
+                    f"Updated with {len(ticks_data)} records from ticks.json"
+                )
+
         self.logger.debug("Data synchronization process completed")
         return self.pickle_data is not None
-

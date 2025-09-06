@@ -143,7 +143,8 @@ class ZerodhaWebSocketParser:
             low_price=index_tick.low_price,
             open_price=index_tick.open_price,
             prev_day_close=index_tick.prev_day_close,
-            exchange_timestamp=index_tick.exchange_timestamp or PKDateUtilities.currentDateTimestamp(),
+            exchange_timestamp=index_tick.exchange_timestamp
+            or PKDateUtilities.currentDateTimestamp(),
             # Set all unused fields to None explicitly
             last_quantity=None,
             avg_price=None,

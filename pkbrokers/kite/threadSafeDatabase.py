@@ -72,7 +72,9 @@ if sys.platform.startswith("darwin"):
     os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
 
 # Set spawn context globally
-multiprocessing.set_start_method("spawn" if sys.platform.startswith("darwin") else "spawn", force=True)
+multiprocessing.set_start_method(
+    "spawn" if sys.platform.startswith("darwin") else "spawn", force=True
+)
 
 
 class HighPerformanceTursoWriter:
@@ -91,7 +93,9 @@ class HighPerformanceTursoWriter:
         self.batch_size = batch_size
         self.writer_id = writer_id
         self.mp_context = mp_context or multiprocessing.get_context(
-            "spawn" if sys.platform.startswith("darwin") else "spawn"  # if not sys.platform.startswith("darwin") else "spawn"
+            "spawn"
+            if sys.platform.startswith("darwin")
+            else "spawn"  # if not sys.platform.startswith("darwin") else "spawn"
         )
         self.data_queue = PKJoinableQueue(maxsize=max_queue_size, ctx=self.mp_context)
         self.stop_event = self.mp_context.Event()
@@ -458,7 +462,9 @@ class ThreadSafeDatabase:
         self.max_queue_size = max_queue_size
         # Use consistent multiprocessing context
         self.mp_context = mp_context or multiprocessing.get_context(
-            "spawn" if sys.platform.startswith("darwin") else "spawn"  # if not sys.platform.startswith("darwin") else "spawn"
+            "spawn"
+            if sys.platform.startswith("darwin")
+            else "spawn"  # if not sys.platform.startswith("darwin") else "spawn"
         )
 
         self.local = threading.local()
@@ -480,10 +486,13 @@ class ThreadSafeDatabase:
             self._start_turso_writers()
 
     def table_exists(self, cursor, table_name):
-        cursor.execute("""
-            SELECT name FROM sqlite_master 
+        cursor.execute(
+            """
+            SELECT name FROM sqlite_master
             WHERE type='table' AND name=?
-        """, (table_name,))
+        """,
+            (table_name,),
+        )
         return cursor.fetchone() is not None
 
     def _initialize_db(self, force_drop: bool = False):
@@ -498,7 +507,7 @@ class ThreadSafeDatabase:
                 cursor.execute("DROP TABLE IF EXISTS ticks")
 
             # Only create if it doesn't exist
-            if not self.table_exists(cursor, 'ticks'):
+            if not self.table_exists(cursor, "ticks"):
                 has_commit = True
                 # Main ticks table - optimized structure
                 cursor.execute("""
@@ -525,7 +534,7 @@ class ThreadSafeDatabase:
                     ON ticks(instrument_token, timestamp)
                 """)
 
-            if not self.table_exists(cursor, 'market_depth'):
+            if not self.table_exists(cursor, "market_depth"):
                 has_commit = True
                 # Market depth table
                 cursor.execute("""

@@ -86,15 +86,21 @@ if sys.platform.startswith("darwin"):
     os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
 
 # Set spawn context globally
-multiprocessing.set_start_method("spawn" if sys.platform.startswith("darwin") else "spawn", force=True)
+multiprocessing.set_start_method(
+    "spawn" if sys.platform.startswith("darwin") else "spawn", force=True
+)
 
 
 class JSONFileWriter:
     """Multiprocessing process to write ticks to JSON file with instrument_token as primary key"""
 
-    def __init__(self, json_file_path, max_queue_size=OPTIMAL_MAX_QUEUE_SIZE, log_level=0):
+    def __init__(
+        self, json_file_path, max_queue_size=OPTIMAL_MAX_QUEUE_SIZE, log_level=0
+    ):
         self.json_file_path = json_file_path
-        self.mp_context = multiprocessing.get_context("spawn" if sys.platform.startswith("darwin") else "spawn")
+        self.mp_context = multiprocessing.get_context(
+            "spawn" if sys.platform.startswith("darwin") else "spawn"
+        )
         self.data_queue = PKJoinableQueue(maxsize=max_queue_size, ctx=self.mp_context)
         self.stop_event = self.mp_context.Event()
         self.process = None
@@ -369,18 +375,18 @@ class KiteTokenWatcher:
     def set_stop_queue(self, stop_queue):
         """
         Set a queue to listen for stop signals from parent process
-        
+
         Args:
             stop_queue: multiprocessing.Queue instance to listen for stop signals
         """
         self._stop_queue = stop_queue
         self._start_stop_listener()
-    
+
     def _start_stop_listener(self):
         """Start a thread to listen for stop signals from the queue"""
         if self._stop_queue is None:
             return
-            
+
         def listen_for_stop():
             while not self._shutdown_event.is_set():
                 try:
@@ -388,7 +394,9 @@ class KiteTokenWatcher:
                     if self._stop_queue and not self._stop_queue.empty():
                         signal = self._stop_queue.get(timeout=0.1)
                         if signal == "STOP":
-                            self.logger.info("Received stop signal from launcher/orchestrator")
+                            self.logger.info(
+                                "Received stop signal from launcher/orchestrator"
+                            )
                             self.stop()
                             break
                     time.sleep(0.1)
@@ -397,11 +405,9 @@ class KiteTokenWatcher:
                 except Exception as e:
                     self.logger.error(f"Error in stop listener: {e}")
                     break
-        
+
         self._stop_listener_thread = threading.Thread(
-            target=listen_for_stop, 
-            daemon=True, 
-            name="StopListener"
+            target=listen_for_stop, daemon=True, name="StopListener"
         )
         self._stop_listener_thread.start()
         self.logger.debug("Started stop signal listener thread")
@@ -434,8 +440,12 @@ class KiteTokenWatcher:
                 kite.sync_instruments(force_fetch=True)
             instruments = kite.fetch_instruments()
             # Start JSON writer first
-            self.json_writer.start(kite_instruments=kite.kite_instruments if len(instruments) > 0 else {})
-            time.sleep(JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC)  # Let JSON writer initialize
+            self.json_writer.start(
+                kite_instruments=kite.kite_instruments if len(instruments) > 0 else {}
+            )
+            time.sleep(
+                JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC
+            )  # Let JSON writer initialize
 
             equities = kite.get_equities(column_names="instrument_token")
             tokens = kite.get_instrument_tokens(equities=equities)

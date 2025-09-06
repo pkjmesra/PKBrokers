@@ -119,14 +119,20 @@ except BaseException as e:
         "You can use like this :\npkkite --auth\npkkite --ticks\npkkite --history\npkkite --instruments\npkkite --pickle\n\n"
     )
     from pkbrokers.kite.instrumentHistory import Historical_Interval
-    intervals = ', '.join(map(lambda x: x.value, Historical_Interval))
-    example_lines = '\n'.join(map(lambda x: f"pkkite --history={x.value}", Historical_Interval))
-    print(f"--history= requires at least one of the following parameters: {intervals}\nFor example:\n{example_lines}")
+
+    intervals = ", ".join(map(lambda x: x.value, Historical_Interval))
+    example_lines = "\n".join(
+        map(lambda x: f"pkkite --history={x.value}", Historical_Interval)
+    )
+    print(
+        f"--history= requires at least one of the following parameters: {intervals}\nFor example:\n{example_lines}"
+    )
     sys.exit(0)
 
 args = argsv[0]
 
 TEST_WAIT_TIME_SEC = 180
+
 
 def validate_credentials():
     if not os.path.exists(".env.dev"):
@@ -139,33 +145,40 @@ def validate_credentials():
 
 
 def kite_ticks(stop_queue=None, parent=None, test_mode=False):
-    from pkbrokers.kite.kiteTokenWatcher import KiteTokenWatcher
     import signal
+
+    from pkbrokers.kite.kiteTokenWatcher import KiteTokenWatcher
+
     watcher = KiteTokenWatcher()
     print("We're now ready to begin listening to ticks from Zerodha's Kite...")
     # Store reference
-    if parent is not None and hasattr(parent,"child_process_ref"):
+    if parent is not None and hasattr(parent, "child_process_ref"):
         parent.child_process_ref = os.getpid()
-    
+
     # Start stop listener
     if stop_queue is not None:
         watcher.set_stop_queue(stop_queue)
-    
+
     # Set up signal handler
     def signal_handler(signum, frame):
         print(f"Received signal {signum}, stopping watcher...")
         if watcher:
             watcher.stop()
         sys.exit(0)
-    
+
     signal.signal(signal.SIGTERM, signal_handler)
     if test_mode:
         import threading
+
         def kill_watcher():
             import time
+
             time.sleep(TEST_WAIT_TIME_SEC)
             watcher.stop()
-        kill_thread = threading.Thread(target=kill_watcher, daemon=True, name="kill_watcher")
+
+        kill_thread = threading.Thread(
+            target=kill_watcher, daemon=True, name="kill_watcher"
+        )
         kill_thread.start()
 
     try:
@@ -202,12 +215,14 @@ def kite_auth():
 
 
 def kite_history():
-    from pkbrokers.kite.authenticator import KiteAuthenticator
-    from pkbrokers.kite.instrumentHistory import KiteTickerHistory
-    from pkbrokers.kite.instruments import KiteInstruments
     from PKDevTools.classes.Environment import PKEnvironment
 
-    instruments = KiteInstruments(api_key="kitefront", access_token=PKEnvironment().KTOKEN)
+    from pkbrokers.kite.instrumentHistory import KiteTickerHistory
+    from pkbrokers.kite.instruments import KiteInstruments
+
+    instruments = KiteInstruments(
+        api_key="kitefront", access_token=PKEnvironment().KTOKEN
+    )
     tokens = instruments.get_or_fetch_instrument_tokens(all_columns=True)
     # Create history client with the full response object
     history = KiteTickerHistory(enctoken=PKEnvironment().KTOKEN)
@@ -221,15 +236,18 @@ def kite_history():
             interval=args.history,
             forceFetch=True,
             insertOnly=True,
-            past_offset= args.pastoffset if args.pastoffset else 0
+            past_offset=args.pastoffset if args.pastoffset else 0,
         )
 
 
 def kite_instruments():
     from PKDevTools.classes.Environment import PKEnvironment
+
     from pkbrokers.kite.instruments import KiteInstruments
 
-    instruments = KiteInstruments(api_key="kitefront", access_token=PKEnvironment().KTOKEN, recreate_schema=False)
+    instruments = KiteInstruments(
+        api_key="kitefront", access_token=PKEnvironment().KTOKEN, recreate_schema=False
+    )
     instruments.get_or_fetch_instrument_tokens(all_columns=True)
 
 
@@ -256,60 +274,81 @@ def setupLogger(logLevel=LOG_LEVEL):
         filter=None,
     )
 
+
 def try_refresh_token():
     from pkbrokers.bot.orchestrator import orchestrate_consumer
+
     access_token = orchestrate_consumer(command="/refresh_token")
     _save_update_environment(access_token=access_token)
 
-def _save_update_environment(access_token:str=None):
+
+def _save_update_environment(access_token: str = None):
     try:
-        from PKDevTools.classes.log import default_logger
-        from pkbrokers.envupdater import env_update_context
-        from PKDevTools.classes.Environment import PKEnvironment
         import os
+
+        from PKDevTools.classes.Environment import PKEnvironment
+        from PKDevTools.classes.log import default_logger
+
+        from pkbrokers.envupdater import env_update_context
+
         os.environ["KTOKEN"] = access_token if access_token else PKEnvironment().KTOKEN
         default_logger().debug(f"Token received: {access_token}")
-        with env_update_context(os.path.join(os.getcwd(),".env.dev")) as updater:
+        with env_update_context(os.path.join(os.getcwd(), ".env.dev")) as updater:
             updater.update_values({"KTOKEN": access_token})
             updater.reload_env()
-            default_logger().debug(f"Token updated in os.environment: {PKEnvironment().KTOKEN}")
+            default_logger().debug(
+                f"Token updated in os.environment: {PKEnvironment().KTOKEN}"
+            )
     except Exception as e:
         default_logger().error(f"Error while fetching remote auth token from bot: {e}")
 
+
 def commit_ticks(file_name="ticks.json", branch_name="main"):
-    from PKDevTools.classes.Committer import Committer
-    from PKDevTools.classes import Archiver
-    from PKDevTools.classes.PKDateUtilities import PKDateUtilities
     import os
+
+    from PKDevTools.classes import Archiver
+    from PKDevTools.classes.Committer import Committer
+    from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+
     try:
-        tick_file = os.path.join(Archiver.get_user_data_dir(),file_name)
+        tick_file = os.path.join(Archiver.get_user_data_dir(), file_name)
         default_logger().info(f"File being committed:{tick_file}")
         if os.path.exists(tick_file):
             Committer.execOSCommand(f"git add {tick_file} -f >/dev/null 2>&1")
             commit_path = f"-A '{tick_file}'"
-            default_logger().info(f"File being committed:{os.path.basename(tick_file)} in branch:{branch_name}")
-            Committer.commitTempOutcomes(addPath=commit_path,
-                                         commitMessage=f"[{os.path.basename(tick_file)}-Commit-{PKDateUtilities.currentDateTime()}]",
-                                         branchName=branch_name,
-                                         showStatus=True,
-                                         timeout = 900)
+            default_logger().info(
+                f"File being committed:{os.path.basename(tick_file)} in branch:{branch_name}"
+            )
+            Committer.commitTempOutcomes(
+                addPath=commit_path,
+                commitMessage=f"[{os.path.basename(tick_file)}-Commit-{PKDateUtilities.currentDateTime()}]",
+                branchName=branch_name,
+                showStatus=True,
+                timeout=900,
+            )
             default_logger().info(f"File committed:{tick_file}")
     except Exception as e:
         default_logger().error(f"Error commiting {tick_file} to {branch_name}: {e}")
 
+
 def remote_bot_auth_token():
-    from pkbrokers.bot.orchestrator import orchestrate_consumer
     from PKDevTools.classes.log import default_logger
+
+    from pkbrokers.bot.orchestrator import orchestrate_consumer
+
     try:
         access_token = orchestrate_consumer(command="/token")
         _save_update_environment(access_token=access_token)
     except Exception as e:
         default_logger().error(f"Error while fetching remote auth token from bot: {e}")
 
+
 def pkkite():
     if sys.platform.startswith("darwin"):
         try:
-            multiprocessing.set_start_method("spawn" if sys.platform.startswith("darwin") else "spawn", force=True)
+            multiprocessing.set_start_method(
+                "spawn" if sys.platform.startswith("darwin") else "spawn", force=True
+            )
         except RuntimeError:  # pragma: no cover
             pass
 
@@ -326,23 +365,30 @@ def pkkite():
         kite_ticks(test_mode=True if args.test else False)
 
     if args.history:
-        from pkbrokers.kite.instrumentHistory import Historical_Interval
         import os
+
+        from pkbrokers.kite.instrumentHistory import Historical_Interval
 
         supported_intervals = [member.value for member in Historical_Interval]
         if args.history not in supported_intervals:
-            intervals = ', '.join(map(lambda x: x.value, Historical_Interval))
-            example_lines = '\n'.join(map(lambda x: f"--history={x.value}", Historical_Interval))
-            print(f"--history= requires at least one of the following parameters: {intervals}\nFor example:\n{example_lines}")
+            intervals = ", ".join(map(lambda x: x.value, Historical_Interval))
+            example_lines = "\n".join(
+                map(lambda x: f"--history={x.value}", Historical_Interval)
+            )
+            print(
+                f"--history= requires at least one of the following parameters: {intervals}\nFor example:\n{example_lines}"
+            )
         else:
             setupLogger()
-            github_output = os.environ.get('GITHUB_OUTPUT')
+            github_output = os.environ.get("GITHUB_OUTPUT")
             if github_output:
-                print("GITHUB_OUTPUT env variable FOUND! Will use the bot to get the token.")
+                print(
+                    "GITHUB_OUTPUT env variable FOUND! Will use the bot to get the token."
+                )
             else:
                 print("Running locally? GITHUB_OUTPUT env variable NOT FOUND!")
                 remote_bot_auth_token()
-            from pkbrokers.bot.orchestrator import orchestrate_consumer
+
             try_refresh_token()
             kite_history()
 
@@ -356,41 +402,34 @@ def pkkite():
         remote_bot_auth_token()
         success = kite_fetch_save_pickle()
         if success:
-            # from PKDevTools.classes.Committer import SafeGitHubCommitter
-            # from PKDevTools.classes.Environment import PKEnvironment
-            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
-            from PKDevTools.classes import Archiver
             import os
+
+            from PKDevTools.classes import Archiver
+            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+
             exists, pickle_path = Archiver.afterMarketStockDataExists(date_suffix=False)
             if exists:
                 commit_ticks(pickle_path, branch_name="actions-data-download")
-                # commiter = SafeGitHubCommitter(PKEnvironment().GITHUB_TOKEN,"pkjmesra")
-                # response = commiter.commit_large_binary_file(target_repo="pkscreener", 
-                #                                 target_branch="actions-data-download",
-                #                                 local_file_path= os.path.join(Archiver.get_user_data_dir(),pickle_path),
-                #                                 remote_file_path=f"results/Data/{pickle_path}",
-                #                                 commit_message=f"[{pickle_path}-Commit-{PKDateUtilities.currentDateTime()}]"
-                #                                 )
-                # if response:
-                #     if response["success"]:
-                #         log.default_logger().info(response["message"])
-                #     else:
-                #         log.default_logger().error(f"Error committing {response['file_path']}. {response['error']}")
-                # else:
-                #     log.default_logger().error(f"Error committing {pickle_path}.")
             else:
-                default_logger().error(f"Error pickling. File does not exist: {pickle_path}.")
+                default_logger().error(
+                    f"Error pickling. File does not exist: {pickle_path}."
+                )
 
     if args.orchestrate:
         from pkbrokers.bot.orchestrator import orchestrate, orchestrate_consumer
+
         setupLogger()
         try:
             # Let's try and get the latest ticks file from an existing running bot.
             orchestrate_consumer(command="/ticks")
             commit_ticks(file_name="ticks.json")
-            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+
             cur_ist = PKDateUtilities.currentDateTime()
-            is_non_market_hour = (cur_ist.hour >= 15 and cur_ist.minute >= 30) or (cur_ist.hour <= 9 and cur_ist.minute <= 15) or PKDateUtilities.isTodayHoliday()
+            is_non_market_hour = (
+                (cur_ist.hour >= 15 and cur_ist.minute >= 30)
+                or (cur_ist.hour <= 9 and cur_ist.minute <= 15)
+                or PKDateUtilities.isTodayHoliday()
+            )
             if is_non_market_hour:
                 orchestrate_consumer(command="/db")
                 commit_ticks(file_name="ticks.db.zip")
@@ -402,6 +441,7 @@ def pkkite():
 
     if args.consumer:
         from pkbrokers.bot.orchestrator import orchestrate_consumer
+
         orchestrate_consumer(command="/ticks")
 
     if args.refresh_token:
@@ -410,16 +450,17 @@ def pkkite():
         args.token = True
 
     if args.token:
-        from pkbrokers.bot.orchestrator import orchestrate_consumer
         import os
-        
+
+        from pkbrokers.bot.orchestrator import orchestrate_consumer
+
         token = orchestrate_consumer(command="/token")
         # For GitHub Actions, write to GITHUB_OUTPUT file if the environment variable exists
-        github_output = os.environ.get('GITHUB_OUTPUT')
+        github_output = os.environ.get("GITHUB_OUTPUT")
         if github_output:
             # Append to the GITHUB_OUTPUT file with proper format
-            with open(github_output, 'a') as f:
-                f.write(f'kite_token={token}\n')
+            with open(github_output, "a") as f:
+                f.write(f"kite_token={token}\n")
             print("Token successfully captured for GitHub Actions")
         else:
             # Fallback for local execution

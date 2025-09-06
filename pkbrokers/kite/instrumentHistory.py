@@ -37,7 +37,8 @@ from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
 from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
-MAX_CANDLES_COUNT=365
+MAX_CANDLES_COUNT = 365
+
 
 class Historical_Interval(Enum):
     """
@@ -99,8 +100,8 @@ class KiteTickerHistory:
         db_conn: Database connection for data caching
 
     # Limits
-        The Zerodha Kite Connect Historical Data API has specific limitations on 
-        the maximum number of days of historical data that can be fetched in a 
+        The Zerodha Kite Connect Historical Data API has specific limitations on
+        the maximum number of days of historical data that can be fetched in a
         single request, depending on the chosen interval. These limits are:
 
         Minute intervals (1, 2-minute): 60 days
@@ -109,9 +110,9 @@ class KiteTickerHistory:
         Hourly intervals (60-minute, hour, 2, 3, 4-hour): 400 days
         Daily and Weekly intervals: 2000 days
 
-        While there are limits per request, it is possible to retrieve historical 
-        data beyond these limits by making multiple requests and stitching the data 
-        together. For example, to get 1-minute data for a year, one would need to 
+        While there are limits per request, it is possible to retrieve historical
+        data beyond these limits by making multiple requests and stitching the data
+        together. For example, to get 1-minute data for a year, one would need to
         make multiple requests, each fetching a maximum of 60 days of data.
 
     # Example:
@@ -212,7 +213,7 @@ class KiteTickerHistory:
         )
 
         # Only create if it doesn't exist
-        if not self.table_exists(self.db_conn.cursor(), 'instrument_history'):
+        if not self.table_exists(self.db_conn.cursor(), "instrument_history"):
             self._initialize_database()
 
     def update_session_headers(self):
@@ -226,12 +227,15 @@ class KiteTickerHistory:
         )
 
     def table_exists(self, cursor, table_name):
-        cursor.execute("""
-            SELECT name FROM sqlite_master 
+        cursor.execute(
+            """
+            SELECT name FROM sqlite_master
             WHERE type='table' AND name=?
-        """, (table_name,))
+        """,
+            (table_name,),
+        )
         return cursor.fetchone() is not None
-    
+
     def _initialize_database(self):
         """
         Initialize the database schema for storing historical data.
@@ -452,12 +456,12 @@ class KiteTickerHistory:
         intervals_dict = {
             "day": timedelta(days=MAX_CANDLES_COUNT),
             "minute": timedelta(minutes=MAX_CANDLES_COUNT),
-            "5minute": timedelta(minutes=5*MAX_CANDLES_COUNT),
-            "10minute": timedelta(minutes=10*MAX_CANDLES_COUNT),
-            "30minute": timedelta(minutes=30*MAX_CANDLES_COUNT),
-            "60minute": timedelta(minutes=60*MAX_CANDLES_COUNT),
+            "5minute": timedelta(minutes=5 * MAX_CANDLES_COUNT),
+            "10minute": timedelta(minutes=10 * MAX_CANDLES_COUNT),
+            "30minute": timedelta(minutes=30 * MAX_CANDLES_COUNT),
+            "60minute": timedelta(minutes=60 * MAX_CANDLES_COUNT),
         }
-        return intervals_dict.get(interval,timedelta(days=MAX_CANDLES_COUNT))
+        return intervals_dict.get(interval, timedelta(days=MAX_CANDLES_COUNT))
 
     def get_historical_data(
         self,
@@ -525,7 +529,8 @@ class KiteTickerHistory:
             raise ValueError("instrument_token is required")
         if from_date is None or len(from_date) == 0:
             from_date = PKDateUtilities.YmdStringFromDate(
-                PKDateUtilities.currentDateTime() - self.timedelta_for_interval(interval=interval.lower())
+                PKDateUtilities.currentDateTime()
+                - self.timedelta_for_interval(interval=interval.lower())
             )
         if to_date is None or len(to_date) == 0:
             to_date = PKDateUtilities.YmdStringFromDate(
@@ -640,25 +645,35 @@ class KiteTickerHistory:
                 self.logger.error(e)
                 last_error = e
                 if attempt < max_retries - 1:
-                    if response and response.status_code not in [400,500]:
+                    if response and response.status_code not in [400, 500]:
                         if response.status_code in [401, 403]:
-                            if attempt<= max_retries - 2:
-                                # Still the first try. Let's just retry with a possible existing 
+                            if attempt <= max_retries - 2:
+                                # Still the first try. Let's just retry with a possible existing
                                 # valid token that bot may already have
-                                from pkbrokers.kite.examples.pkkite import remote_bot_auth_token
+                                from pkbrokers.kite.examples.pkkite import (
+                                    remote_bot_auth_token,
+                                )
+
                                 remote_bot_auth_token()
-                            elif attempt<= max_retries - 1:
+                            elif attempt <= max_retries - 1:
                                 # We failed even with the most recent token that was provided by
                                 # the bot. So let's try and refresh the token instead and ask
                                 # the bot to refresh the token.
-                                self.logger.error("❌❌❌ There may be a need for refreshing the token! ❌❌❌")
-                                from pkbrokers.kite.examples.pkkite import try_refresh_token
+                                self.logger.error(
+                                    "❌❌❌ There may be a need for refreshing the token! ❌❌❌"
+                                )
+                                from pkbrokers.kite.examples.pkkite import (
+                                    try_refresh_token,
+                                )
+
                                 try_refresh_token()
                         self.update_session_headers()
                     time.sleep(2**attempt)
                 else:
                     if response and response.status_code in [401, 403]:
-                        self.logger.error("❌❌❌ Either check the rate-limit violations or manually refresh the token! ❌❌❌")
+                        self.logger.error(
+                            "❌❌❌ Either check the rate-limit violations or manually refresh the token! ❌❌❌"
+                        )
                 continue
 
         self.logger.error(
@@ -680,7 +695,7 @@ class KiteTickerHistory:
         delay: float = 1.0,
         forceFetch=False,
         insertOnly=False,
-        past_offset = 0
+        past_offset=0,
     ) -> Dict[int, Dict]:
         """
         Fetch historical data for multiple instruments with optimized batching.
@@ -735,7 +750,9 @@ class KiteTickerHistory:
             raise ValueError("list of instruments is required")
         if from_date is None or len(from_date) == 0:
             from_date = PKDateUtilities.YmdStringFromDate(
-                PKDateUtilities.currentDateTime() - self.timedelta_for_interval(interval=interval.lower()) - timedelta(days=past_offset)
+                PKDateUtilities.currentDateTime()
+                - self.timedelta_for_interval(interval=interval.lower())
+                - timedelta(days=past_offset)
             )
         if to_date is None or len(to_date) == 0:
             to_date = PKDateUtilities.YmdStringFromDate(
@@ -755,9 +772,11 @@ class KiteTickerHistory:
         need_fresh_data = (
             formatted_to_date >= current_date and is_market_open
         ) or forceFetch
-        
-        self.logger.debug(f"Fresh data needed:{need_fresh_data}. Fetching instrument history with batch_size:{batch_size} at: {begin_time} from: {formatted_from_date} to:{formatted_to_date}. Market open:{is_market_open}")
-        
+
+        self.logger.debug(
+            f"Fresh data needed:{need_fresh_data}. Fetching instrument history with batch_size:{batch_size} at: {begin_time} from: {formatted_from_date} to:{formatted_to_date}. Market open:{is_market_open}"
+        )
+
         if not need_fresh_data and not insertOnly:
             # Try to get all possible data from database first
             placeholders = ",".join(["?"] * len(instruments))
@@ -817,7 +836,9 @@ class KiteTickerHistory:
         # Process instruments that need API fetch
         counter = 0
         batch_begin = time.time()
-        self.logger.info(f"Going to fetch historical data for interval:{interval} for dates from: {from_date} to:{to_date}")
+        self.logger.info(
+            f"Going to fetch historical data for interval:{interval} for dates from: {from_date} to:{to_date}"
+        )
         for i in range(0, len(instruments_to_fetch), batch_size):
             batch = instruments_to_fetch[i : i + batch_size]
             for instrument in batch:

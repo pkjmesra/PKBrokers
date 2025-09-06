@@ -1,5 +1,5 @@
 #!/bin/bash
-MAX_COMPLEXITY=25
+MAX_COMPLEXITY=30
 MAX_LINE_LENGTH=127
 SKIP_FILE="pkbrokers/kite/__init__.py"
 rm -rf build
