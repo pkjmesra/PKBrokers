@@ -121,7 +121,7 @@ class InstrumentDataManager:
         )
         self.ticks_json_path = Path(Archiver.get_user_data_dir()) / "ticks.json"
         self.pickle_url = f"https://github.com/pkjmesra/PKScreener/tree/actions-data-download/results/Data/{path}"
-        self.raw_pickle_url = f"https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/{path}"
+        self.raw_pickle_url = f"https://raw.githubusercontent.com/pkjmesra/PKScreener/refs/heads/actions-data-download/results/Data/{path}"
         self.db_conn = None
         self.pickle_data = None
         self.db_type = "turso" or PKEnvironment().DB_TYPE
