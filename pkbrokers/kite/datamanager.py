@@ -147,48 +147,75 @@ class InstrumentDataManager:
             and "index" in data
         )
 
-    def _normalize_date(self, date_obj: Union[date, datetime, str]) -> date:
+    def _normalize_date(self, date_obj: Union[date, datetime, str]) -> str:
         """
-        Convert various date formats to a consistent datetime.date object.
-
+        Convert various date formats to a consistent datetime string with timezone.
+        
         Args:
             date_obj: Date in various formats (datetime.date, datetime, str)
-
+            
         Returns:
-            date: Normalized datetime.date object
-
+            str: Normalized datetime string in ISO format with timezone
+            
         Example:
-            >>> normalized = self._normalize_date("2023-12-25")
-            >>> print(normalized)  # datetime.date(2023, 12, 25)
+            >>> normalized = self._normalize_date("2023-12-25T15:30:45+05:30")
+            >>> print(normalized)  # "2023-12-25T15:30:45+05:30"
         """
-        if isinstance(date_obj, date):
-            date_time = datetime.combine(date_obj, time(0, 0, 0)).astimezone(tz=pytz.timezone("Asia/Kolkata")).strftime('%Y-%m-%d %H:%M:%S')
-            date_time = f'{date_time.split(" ")[0]}T00:00:00+5:30'
-            return date_time
-        elif isinstance(date_obj, datetime):
-            return date_obj #.date()
-        elif isinstance(date_obj, str):
-            try:
-                return date_obj
-            #     # Try parsing various date string formats
-            #     if "T" in date_obj:
-            #         return PKDateUtilities.datetimeFromYmdString(
-            #             date_obj.replace("Z", "+00:00").replace("T"," ").split("+")[0]) # datetime.fromisoformat(date_obj.replace("Z", "+00:00"))
-            #     else:
-            #         return datetime.strptime(date_obj.split(" ")[0], "%Y-%m-%d").date()
-            except (ValueError, TypeError):
-                self.logger.error(f"Could not parse date string: {date_obj}")
-                return None
-        else:
-            self.logger.error(f"Unsupported date type: {type(date_obj)}")
-            return None
+        try:
+            if isinstance(date_obj, datetime):
+                # Convert to Asia/Kolkata timezone and format as ISO string
+                kolkata_tz = pytz.timezone("Asia/Kolkata")
+                if date_obj.tzinfo is None:
+                    date_obj = date_obj.replace(tzinfo=pytz.UTC)
+                date_obj_kolkata = date_obj.astimezone(kolkata_tz)
+                return date_obj_kolkata.isoformat()
+                
+            elif isinstance(date_obj, date):
+                # For date objects, create a datetime at midnight in Kolkata timezone
+                kolkata_tz = pytz.timezone("Asia/Kolkata")
+                datetime_obj = datetime.combine(date_obj, time(0, 0, 0))
+                datetime_kolkata = kolkata_tz.localize(datetime_obj)
+                return datetime_kolkata.isoformat()
+                
+            elif isinstance(date_obj, str):
+                # Parse string and convert to Kolkata timezone
+                try:
+                    # Try ISO format first
+                    if 'T' in date_obj:
+                        dt = datetime.fromisoformat(date_obj.replace('Z', '+00:00'))
+                    else:
+                        # Try date-only format
+                        dt = datetime.strptime(date_obj, '%Y-%m-%d')
+                    
+                    kolkata_tz = pytz.timezone("Asia/Kolkata")
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=pytz.UTC)
+                    dt_kolkata = dt.astimezone(kolkata_tz)
+                    return dt_kolkata.isoformat()
+                    
+                except ValueError:
+                    # Try other date formats if needed
+                    try:
+                        dt = datetime.strptime(date_obj, '%Y-%m-%d %H:%M:%S')
+                        kolkata_tz = pytz.timezone("Asia/Kolkata")
+                        dt_kolkata = kolkata_tz.localize(dt)
+                        return dt_kolkata.isoformat()
+                    except ValueError:
+                        self.logger.error(f"Could not parse date string: {date_obj}")
+                        return date_obj  # Return original if cannot parse
+            
+            else:
+                self.logger.error(f"Unsupported date type: {type(date_obj)}")
+                return str(date_obj)  # Convert to string as fallback
+                
+        except Exception as e:
+            self.logger.error(f"Error normalizing date {date_obj}: {e}")
+            return str(date_obj)  # Return original as fallback
 
-    def _convert_old_format_to_dataframe_format(
-        self, old_format_data: Dict
-    ) -> Dict[str, Any]:
+    def _convert_old_format_to_dataframe_format(self, old_format_data: Dict) -> Dict[str, Any]:
         """
         Convert the old format data to DataFrame-compatible format.
-
+        Preserves full datetime with timezone information.
         Args:
             old_format_data: Dictionary in the old format {symbol: {date: {ohlcv_data}}}
 
@@ -201,18 +228,18 @@ class InstrumentDataManager:
         if not old_format_data:
             return {"data": [], "columns": [], "index": []}
 
-        # Collect all unique dates and symbols
-        all_dates = set()
+        # Collect all unique timestamps and symbols
+        all_timestamps = set()
         all_symbols = set(old_format_data.keys())
 
         for symbol_data in old_format_data.values():
-            for date_key in symbol_data.keys():
-                normalized_date = self._normalize_date(date_key)
-                if normalized_date:
-                    all_dates.add(normalized_date)
+            for timestamp_key in symbol_data.keys():
+                normalized_timestamp = self._normalize_date(timestamp_key)
+                if normalized_timestamp:
+                    all_timestamps.add(normalized_timestamp)
 
-        # Sort dates and symbols
-        sorted_dates = sorted(all_dates)
+        # Sort timestamps
+        sorted_timestamps = sorted(all_timestamps)
         sorted_symbols = sorted(all_symbols)
 
         # Create multi-index columns (symbol, ohlcv field)
@@ -223,36 +250,34 @@ class InstrumentDataManager:
 
         # Create 2D data array
         data = []
-        for date_obj in sorted_dates:
+        for timestamp_str in sorted_timestamps:
             row = []
             for symbol in sorted_symbols:
-                # Find the data for this symbol and date
+                # Find the data for this symbol and timestamp
                 symbol_data = old_format_data.get(symbol, {})
                 found_data = None
 
-                # Try to find data for this date, checking different key formats
+                # Try to find data for this timestamp, checking different key formats
                 for key, value in symbol_data.items():
                     normalized_key = self._normalize_date(key)
-                    if normalized_key == date_obj:
+                    if normalized_key == timestamp_str:
                         found_data = value
                         break
 
                 if found_data:
-                    row.extend(
-                        [
-                            found_data.get("open", None),
-                            found_data.get("high", None),
-                            found_data.get("low", None),
-                            found_data.get("close", None),
-                            found_data.get("volume", None),
-                        ]
-                    )
+                    row.extend([
+                        found_data.get("open", None),
+                        found_data.get("high", None),
+                        found_data.get("low", None),
+                        found_data.get("close", None),
+                        found_data.get("volume", None),
+                    ])
                 else:
                     # Add None values for missing data
                     row.extend([None, None, None, None, None])
             data.append(row)
 
-        return {"data": data, "columns": columns, "index": sorted_dates}
+        return {"data": data, "columns": columns, "index": sorted_timestamps}
 
     def _convert_dataframe_format_to_old_format(
         self, df_format: Dict[str, Any]
@@ -711,7 +736,7 @@ class InstrumentDataManager:
     def _load_and_process_ticks_json(self) -> Optional[Dict]:
         """
         Load and process data from ticks.json file.
-
+        Preserves full timestamp with timezone information.
         Reads the ticks.json file, parses its content, and converts it to the same
         format as the pickle data for merging.
 
@@ -739,13 +764,13 @@ class InstrumentDataManager:
                 if not tradingsymbol:
                     continue
 
-                # Extract date from timestamp
+                # Extract timestamp
                 timestamp = instrument_data.get("ohlcv").get("timestamp")
                 if not timestamp:
                     continue
 
                 try:
-                    # Convert timestamp to date
+                    # Convert timestamp to datetime with timezone
                     if isinstance(timestamp, str):
                         dt = datetime.fromisoformat(
                             timestamp.replace("Z", "+00:00")
@@ -755,19 +780,20 @@ class InstrumentDataManager:
                             tz=pytz.timezone("Asia/Kolkata")
                         )
 
-                    date_key = dt.date().isoformat()  # Store as string for consistency
+                    # Use full ISO format timestamp as key
+                    timestamp_key = dt.isoformat()
 
                     # Create or update symbol data
                     if tradingsymbol not in processed_data:
                         processed_data[tradingsymbol] = {}
 
-                    processed_data[tradingsymbol][date_key] = {
+                    processed_data[tradingsymbol][timestamp_key] = {
                         "open": instrument_data.get("ohlcv").get("open"),
                         "high": instrument_data.get("ohlcv").get("high"),
                         "low": instrument_data.get("ohlcv").get("low"),
                         "close": instrument_data.get("ohlcv").get("close"),
                         "volume": instrument_data.get("ohlcv").get("volume"),
-                        "timestamp": str(dt),
+                        "timestamp": dt.isoformat(),  # Full ISO format with timezone
                         "source": "ticks.json",
                     }
 
@@ -850,7 +876,8 @@ class InstrumentDataManager:
     def _process_database_data(self, results: List, columns: List[str]) -> Dict:
         """
         Process raw database results into structured dictionary format.
-
+        Preserves full timestamp information.
+        
         Args:
             results: Raw database query results
             columns: Column names from database query
@@ -871,33 +898,36 @@ class InstrumentDataManager:
 
         # Group by tradingsymbol and process
         for tradingsymbol, group in df.groupby("tradingsymbol"):
-            # Convert to dictionary format with date as key
+            # Convert to dictionary format with full timestamp as key
             symbol_data = {}
             for _, row in group.iterrows():
                 timestamp = row.get("timestamp")
-                if hasattr(timestamp, "date"):
-                    date_key = timestamp.date().isoformat()  # Store as string
+                
+                # Convert timestamp to ISO format string
+                if hasattr(timestamp, "isoformat"):
+                    timestamp_key = timestamp.isoformat()
                 else:
                     # Try to parse string timestamp
                     try:
-                        date_key = (
-                            datetime.strptime(str(timestamp).split(" ")[0], "%Y-%m-%d")
-                            .date()
-                            .isoformat()
-                        )
+                        if isinstance(timestamp, str):
+                            if 'T' in timestamp:
+                                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                            else:
+                                dt = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+                            timestamp_key = dt.isoformat()
+                        else:
+                            timestamp_key = str(timestamp)
                     except ValueError:
                         self.logger.error(f"Could not parse timestamp: {timestamp}")
                         continue
 
-                symbol_data[date_key] = {
+                symbol_data[timestamp_key] = {
                     "open": row.get("open"),
                     "high": row.get("high"),
                     "low": row.get("low"),
                     "close": row.get("close"),
                     "volume": row.get("volume"),
-                    "timestamp": PKDateUtilities.utc_str_to_ist(
-                        row.get("timestamp")
-                    ).strftime("%Y-%m-%d %H:%M:%S"),
+                    "timestamp": timestamp_key,  # Use the same formatted timestamp
                 }
 
             master_data[tradingsymbol] = symbol_data
