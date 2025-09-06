@@ -27,7 +27,7 @@ SOFTWARE.
 import json
 import pickle
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -147,6 +147,40 @@ class InstrumentDataManager:
             and "index" in data
         )
 
+    def _normalize_date(self, date_obj: Union[date, datetime, str]) -> date:
+        """
+        Convert various date formats to a consistent datetime.date object.
+
+        Args:
+            date_obj: Date in various formats (datetime.date, datetime, str)
+
+        Returns:
+            date: Normalized datetime.date object
+
+        Example:
+            >>> normalized = self._normalize_date("2023-12-25")
+            >>> print(normalized)  # datetime.date(2023, 12, 25)
+        """
+        if isinstance(date_obj, date):
+            return date_obj
+        elif isinstance(date_obj, datetime):
+            return date_obj.date()
+        elif isinstance(date_obj, str):
+            try:
+                # Try parsing various date string formats
+                if "T" in date_obj:
+                    return datetime.fromisoformat(
+                        date_obj.replace("Z", "+00:00")
+                    ).date()
+                else:
+                    return datetime.strptime(date_obj.split(" ")[0], "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                self.logger.error(f"Could not parse date string: {date_obj}")
+                return None
+        else:
+            self.logger.error(f"Unsupported date type: {type(date_obj)}")
+            return None
+
     def _convert_old_format_to_dataframe_format(
         self, old_format_data: Dict
     ) -> Dict[str, Any]:
@@ -170,7 +204,10 @@ class InstrumentDataManager:
         all_symbols = set(old_format_data.keys())
 
         for symbol_data in old_format_data.values():
-            all_dates.update(symbol_data.keys())
+            for date_key in symbol_data.keys():
+                normalized_date = self._normalize_date(date_key)
+                if normalized_date:
+                    all_dates.add(normalized_date)
 
         # Sort dates and symbols
         sorted_dates = sorted(all_dates)
@@ -184,18 +221,28 @@ class InstrumentDataManager:
 
         # Create 2D data array
         data = []
-        for date in sorted_dates:
+        for date_obj in sorted_dates:
             row = []
             for symbol in sorted_symbols:
-                if date in old_format_data.get(symbol, {}):
-                    ohlcv = old_format_data[symbol][date]
+                # Find the data for this symbol and date
+                symbol_data = old_format_data.get(symbol, {})
+                found_data = None
+
+                # Try to find data for this date, checking different key formats
+                for key, value in symbol_data.items():
+                    normalized_key = self._normalize_date(key)
+                    if normalized_key == date_obj:
+                        found_data = value
+                        break
+
+                if found_data:
                     row.extend(
                         [
-                            ohlcv.get("open", None),
-                            ohlcv.get("high", None),
-                            ohlcv.get("low", None),
-                            ohlcv.get("close", None),
-                            ohlcv.get("volume", None),
+                            found_data.get("open", None),
+                            found_data.get("high", None),
+                            found_data.get("low", None),
+                            found_data.get("close", None),
+                            found_data.get("volume", None),
                         ]
                     )
                 else:
@@ -237,11 +284,18 @@ class InstrumentDataManager:
                 old_format_data[symbol] = {}
 
             # Add data for each date
-            for row_idx, date in enumerate(index):
-                if date not in old_format_data[symbol]:
-                    old_format_data[symbol][date] = {}
+            for row_idx, date_obj in enumerate(index):
+                # Convert date to string for consistency with old format
+                date_str = (
+                    date_obj.isoformat()
+                    if isinstance(date_obj, date)
+                    else str(date_obj)
+                )
 
-                old_format_data[symbol][date][field] = data[row_idx][col_idx]
+                if date_str not in old_format_data[symbol]:
+                    old_format_data[symbol][date_str] = {}
+
+                old_format_data[symbol][date_str][field] = data[row_idx][col_idx]
 
         return old_format_data
 
@@ -498,25 +552,20 @@ class InstrumentDataManager:
                 if not isinstance(symbol_data, dict):
                     continue
 
-                # Extract all date keys
-                date_keys = []
+                # Extract all date keys and normalize them
+                date_objects = []
                 for key in symbol_data.keys():
-                    if isinstance(key, (datetime, pd.Timestamp)):
-                        date_keys.append(key)
-                    elif isinstance(key, str):
-                        try:
-                            date_keys.append(
-                                datetime.strptime(key.split("T")[0], "%Y-%m-%d")
-                            )
-                        except ValueError:
-                            continue
+                    normalized_date = self._normalize_date(key)
+                    if normalized_date:
+                        date_objects.append(normalized_date)
 
-                if date_keys:
-                    symbol_max = max(date_keys)
+                if date_objects:
+                    symbol_max = max(date_objects)
                     if max_date is None or symbol_max > max_date:
                         max_date = symbol_max
 
-            return max_date
+            return datetime.combine(max_date, datetime.min.time()) if max_date else None
+
         except Exception as e:
             self.logger.error(f"Error finding max date from pickle data: {e}")
             return None
@@ -702,7 +751,7 @@ class InstrumentDataManager:
                             tz=pytz.timezone("Asia/Kolkata")
                         )
 
-                    date_key = dt.date()
+                    date_key = dt.date().isoformat()  # Store as string for consistency
 
                     # Create or update symbol data
                     if tradingsymbol not in processed_data:
@@ -714,10 +763,8 @@ class InstrumentDataManager:
                         "low": instrument_data.get("ohlcv").get("low"),
                         "close": instrument_data.get("ohlcv").get("close"),
                         "volume": instrument_data.get("ohlcv").get("volume"),
-                        # 'oi': instrument_data.get('oi', 0),
-                        # 'instrument_token': instrument_data.get('instrument_token'),
                         "timestamp": str(dt),
-                        "source": "ticks.json",  # Mark source for debugging
+                        "source": "ticks.json",
                     }
 
                 except (ValueError, TypeError) as e:
@@ -823,18 +870,27 @@ class InstrumentDataManager:
             # Convert to dictionary format with date as key
             symbol_data = {}
             for _, row in group.iterrows():
-                date_key = (
-                    row["timestamp"].date()
-                    if hasattr(row["timestamp"], "date")
-                    else row["timestamp"]
-                )
+                timestamp = row.get("timestamp")
+                if hasattr(timestamp, "date"):
+                    date_key = timestamp.date().isoformat()  # Store as string
+                else:
+                    # Try to parse string timestamp
+                    try:
+                        date_key = (
+                            datetime.strptime(str(timestamp).split(" ")[0], "%Y-%m-%d")
+                            .date()
+                            .isoformat()
+                        )
+                    except ValueError:
+                        self.logger.error(f"Could not parse timestamp: {timestamp}")
+                        continue
+
                 symbol_data[date_key] = {
                     "open": row.get("open"),
                     "high": row.get("high"),
                     "low": row.get("low"),
                     "close": row.get("close"),
                     "volume": row.get("volume"),
-                    # "instrument_token": row.get("instrument_token"),
                     "timestamp": PKDateUtilities.utc_str_to_ist(
                         row.get("timestamp")
                     ).strftime("%Y-%m-%d %H:%M:%S"),
