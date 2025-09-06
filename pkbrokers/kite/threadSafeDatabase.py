@@ -575,8 +575,9 @@ class ThreadSafeDatabase:
             # Optimize connection for batch inserts
             self.local.conn.execute("PRAGMA journal_mode=WAL")
             self.local.conn.execute("PRAGMA synchronous = NORMAL")
-            self.local.conn.execute("PRAGMA cache_size = -100000")
+            self.local.conn.execute("PRAGMA cache_size = -100000")  # 100MB cache
             self.local.conn.execute("PRAGMA temp_store = MEMORY")
+            self.local.conn.execute("PRAGMA mmap_size = 30000000000")  # 30GB mmap
         return self.local.conn
 
     def _get_turso_connection(self, force_connect=False):

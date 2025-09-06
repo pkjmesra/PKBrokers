@@ -70,7 +70,9 @@ class DatabaseWriterProcess:
 
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
-            conn.execute("PRAGMA cache_size=-2000")
+            conn.execute("PRAGMA cache_size = -100000")  # 100MB cache
+            conn.execute("PRAGMA temp_store = MEMORY")
+            conn.execute("PRAGMA mmap_size = 30000000000")  # 30GB mmap
             return conn
         except Exception as e:
             self.logger.error(f"Failed to create local connection: {str(e)}")
