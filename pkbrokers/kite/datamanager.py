@@ -119,15 +119,42 @@ class InstrumentDataManager:
         Returns:
             bool: True if data is in symbol-indexed DataFrame format, False otherwise
         """
-        if not isinstance(data, dict):
+        if not isinstance(data, dict) or not data:
             return False
         
         # Check if it's symbol-indexed format
         for symbol, symbol_data in data.items():
             if not isinstance(symbol_data, dict):
                 return False
+            
+            # Check for required keys
             if not all(key in symbol_data for key in ['data', 'columns', 'index']):
                 return False
+            
+            # Validate data types and structure
+            if not isinstance(symbol_data['data'], list):
+                return False
+            
+            if not isinstance(symbol_data['columns'], list):
+                return False
+            
+            if not isinstance(symbol_data['index'], list):
+                return False
+            
+            # Check if columns match expected OHLCV format
+            expected_columns = ['open', 'high', 'low', 'close', 'volume']
+            if symbol_data['columns'] != expected_columns:
+                return False
+            
+            # Check if data rows match index length
+            if len(symbol_data['data']) != len(symbol_data['index']):
+                return False
+            
+            # Check if each data row has correct number of columns
+            for row in symbol_data['data']:
+                if not isinstance(row, list) or len(row) != len(expected_columns):
+                    return False
+        
         return True
 
     def _is_old_format(self, data: Any) -> bool:
@@ -140,18 +167,60 @@ class InstrumentDataManager:
         Returns:
             bool: True if data is in old format, False otherwise
         """
-        if not isinstance(data, dict):
+        if not isinstance(data, dict) or not data:
             return False
         
-        for symbol, symbol_data in data.items():
+        # Check first few symbols to determine format
+        sample_symbols = list(data.keys())[:3]  # Check first 3 symbols
+        
+        for symbol in sample_symbols:
+            symbol_data = data[symbol]
+            
             if not isinstance(symbol_data, dict):
                 return False
-            for date_key, ohlcv_data in symbol_data.items():
+            
+            # Check if it's old format (nested dictionaries)
+            sample_dates = list(symbol_data.keys())[:2] if symbol_data else []
+            
+            for date_key in sample_dates:
+                ohlcv_data = symbol_data[date_key]
+                
                 if not isinstance(ohlcv_data, dict):
                     return False
+                
+                # Check for OHLCV keys (old format)
                 if not all(key in ohlcv_data for key in ['open', 'high', 'low', 'close', 'volume']):
                     return False
+                
+                # Additional check: values should be numeric
+                for key in ['open', 'high', 'low', 'close', 'volume']:
+                    value = ohlcv_data.get(key)
+                    if value is not None and not isinstance(value, (int, float)):
+                        return False
+        
         return True
+
+    def _is_hybrid_format(self, data: Any) -> bool:
+        """
+        Check if data is in hybrid format (previous implementation).
+        This method can be removed if hybrid format is no longer used.
+        """
+        return (isinstance(data, dict) and 
+                "symbol_data" in data and 
+                "dataframe_format" in data and
+                "metadata" in data and
+                isinstance(data["symbol_data"], dict))
+
+    def _is_legacy_dataframe_format(self, data: Any) -> bool:
+        """
+        Check if data is in the legacy single DataFrame format.
+        This would be the format where the entire pickle is one big DataFrame structure.
+        """
+        return (isinstance(data, dict) and 
+                "data" in data and 
+                "columns" in data and 
+                "index" in data and
+                not any(key in data for key in ['symbol_data', 'metadata']))  # Not hybrid format
 
     def _normalize_timestamp(self, timestamp_obj: Union[date, datetime, str]) -> str:
         """
@@ -213,6 +282,75 @@ class InstrumentDataManager:
         except Exception as e:
             self.logger.error(f"Error normalizing timestamp {timestamp_obj}: {e}")
             return str(timestamp_obj)
+
+    def _detect_data_format(self, data: Any) -> str:
+        """
+        Detect the format of the loaded data.
+        
+        Returns:
+            str: Format type - 'symbol_dataframe', 'old', 'hybrid', 'legacy_dataframe', or 'unknown'
+        """
+        if self._is_symbol_dataframe_format(data):
+            return 'symbol_dataframe'
+        elif self._is_old_format(data):
+            return 'old'
+        elif self._is_hybrid_format(data):
+            return 'hybrid'
+        elif self._is_legacy_dataframe_format(data):
+            return 'legacy_dataframe'
+        else:
+            return 'unknown'
+
+    def _convert_legacy_dataframe_to_symbol_format(self, legacy_data: Dict) -> Dict[str, Any]:
+        """
+        Convert legacy single DataFrame format to symbol-indexed format.
+        
+        Args:
+            legacy_data: Dictionary with 'data', 'columns', 'index' keys
+            
+        Returns:
+            Dict: Symbol-indexed DataFrame format
+        """
+        if not legacy_data or not all(key in legacy_data for key in ['data', 'columns', 'index']):
+            return {}
+        
+        symbol_dataframe_format = {}
+        
+        # Extract symbols from MultiIndex columns if present
+        if isinstance(legacy_data['columns'], pd.MultiIndex):
+            symbols = legacy_data['columns'].get_level_values(0).unique()
+        else:
+            # Assume columns are in order: [symbol1_open, symbol1_high, ..., symbol2_open, ...]
+            symbols = set()
+            for col in legacy_data['columns']:
+                if '_' in col:
+                    symbols.add(col.split('_')[0])
+        
+        for symbol in symbols:
+            # Extract data for this symbol
+            symbol_columns = [col for col in legacy_data['columns'] if str(col).startswith(f"{symbol}_")]
+            if not symbol_columns:
+                continue
+            
+            # Get column indices
+            col_indices = [legacy_data['columns'].index(col) for col in symbol_columns]
+            
+            # Extract data rows
+            symbol_data = []
+            for row in legacy_data['data']:
+                symbol_row = [row[i] for i in col_indices]
+                symbol_data.append(symbol_row)
+            
+            # Clean column names (remove symbol prefix)
+            clean_columns = [col.split('_', 1)[1] for col in symbol_columns]
+            
+            symbol_dataframe_format[symbol] = {
+                'data': symbol_data,
+                'columns': clean_columns,
+                'index': legacy_data['index']
+            }
+        
+        return symbol_dataframe_format
 
     def _convert_old_format_to_symbol_dataframe_format(self, old_format_data: Dict) -> Dict[str, Any]:
         """
@@ -371,32 +509,229 @@ class InstrumentDataManager:
 
     def _load_pickle_from_local(self) -> Optional[Dict]:
         """
-        Load pickle data from local file with format detection and conversion.
+        Load pickle data from local file with improved format detection and conversion.
         """
         try:
             with open(self.local_pickle_path, "rb") as f:
                 loaded_data = pickle.load(f)
-
-            # Handle different formats
-            if self._is_symbol_dataframe_format(loaded_data):
+            
+            format_type = self._detect_data_format(loaded_data)
+            
+            if format_type == 'symbol_dataframe':
                 self.pickle_data = loaded_data
                 self.logger.info("Loaded data in symbol-indexed DataFrame format from local file")
                 
-            elif self._is_old_format(loaded_data):
+            elif format_type == 'old':
                 self.logger.info("Converting old format to symbol-indexed DataFrame format")
                 self.pickle_data = self._convert_old_format_to_symbol_dataframe_format(loaded_data)
+                self._save_pickle_file()
+                
+            elif format_type == 'legacy_dataframe':
+                self.logger.info("Converting legacy DataFrame format to symbol-indexed format")
+                self.pickle_data = self._convert_legacy_dataframe_to_symbol_format(loaded_data)
+                self._save_pickle_file()
+                
+            elif format_type == 'hybrid':
+                self.logger.info("Converting hybrid format to symbol-indexed DataFrame format")
+                # Extract symbol_data from hybrid format and convert
+                old_format = self._convert_hybrid_to_old_format(loaded_data)
+                self.pickle_data = self._convert_old_format_to_symbol_dataframe_format(old_format)
                 self._save_pickle_file()
                 
             else:
                 self.logger.error("Unknown data format in local pickle file")
                 return None
-
+            
             return self.pickle_data
             
         except Exception as e:
             self.logger.error(f"Failed to load local pickle file: {e}")
             return None
 
+    def _create_dataframe_format(self, symbol_data: Dict, all_timestamps: set) -> Dict:
+        """
+        Create DataFrame-compatible format from symbol data.
+        """
+        sorted_timestamps = sorted(all_timestamps)
+        sorted_symbols = sorted(symbol_data.keys())
+        
+        # Create MultiIndex columns
+        columns = pd.MultiIndex.from_product(
+            [sorted_symbols, ['open', 'high', 'low', 'close', 'volume']],
+            names=['symbol', 'field']
+        )
+        
+        data = []
+        for timestamp in sorted_timestamps:
+            row = []
+            for symbol in sorted_symbols:
+                ohlcv = symbol_data.get(symbol, {}).get(timestamp)
+                if ohlcv:
+                    row.extend([
+                        ohlcv.get('open'),
+                        ohlcv.get('high'),
+                        ohlcv.get('low'),
+                        ohlcv.get('close'),
+                        ohlcv.get('volume')
+                    ])
+                else:
+                    row.extend([None, None, None, None, None])
+            data.append(row)
+        
+        return {
+            "data": data,
+            "columns": columns,
+            "index": sorted_timestamps
+        }
+
+    def _create_metadata(self, symbol_data: Dict, all_timestamps: set) -> Dict:
+        """
+        Create metadata for the hybrid format.
+        """
+        kolkata_tz = pytz.timezone("Asia/Kolkata")
+        return {
+            "version": "1.0",
+            "created_at": datetime.now(kolkata_tz).isoformat(),
+            "symbol_count": len(symbol_data),
+            "timestamp_count": len(all_timestamps),
+            "timezone": "Asia/Kolkata",
+            "data_format": "hybrid"
+        }
+
+    def _create_empty_hybrid_format(self) -> Dict:
+        """
+        Create an empty hybrid format structure.
+        """
+        kolkata_tz = pytz.timezone("Asia/Kolkata")
+        return {
+            "symbol_data": {},
+            "dataframe_format": {"data": [], "columns": [], "index": []},
+            "metadata": {
+                "version": "1.0",
+                "created_at": datetime.now(kolkata_tz).isoformat(),
+                "symbol_count": 0,
+                "timestamp_count": 0,
+                "timezone": "Asia/Kolkata",
+                "data_format": "hybrid"
+            }
+        }
+
+    def _convert_old_to_hybrid_format(self, old_format_data: Dict) -> Dict:
+        """
+        Convert old format to hybrid format (for backward compatibility if needed).
+        
+        Args:
+            old_format_data: Dictionary in old format {symbol: {date: {ohlcv_data}}}
+            
+        Returns:
+            Dict: Hybrid format dictionary
+        """
+        if not old_format_data:
+            return self._create_empty_hybrid_format()
+        
+        try:
+            # Preserve original symbol data structure
+            symbol_data = {}
+            all_timestamps = set()
+            
+            for symbol, symbol_data_old in old_format_data.items():
+                symbol_data[symbol] = {}
+                for timestamp, ohlcv in symbol_data_old.items():
+                    normalized_ts = self._normalize_timestamp(timestamp)
+                    if normalized_ts:
+                        symbol_data[symbol][normalized_ts] = ohlcv.copy()
+                        all_timestamps.add(normalized_ts)
+            
+            # Create DataFrame-compatible format
+            dataframe_format = self._create_dataframe_format(symbol_data, all_timestamps)
+            
+            # Create metadata
+            metadata = self._create_metadata(symbol_data, all_timestamps)
+            
+            return {
+                "symbol_data": symbol_data,
+                "dataframe_format": dataframe_format,
+                "metadata": metadata
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error converting to hybrid format: {e}")
+            return self._create_empty_hybrid_format()
+        
+    def _convert_hybrid_to_old_format(self, hybrid_data: Dict) -> Dict:
+        """
+        Convert hybrid format data to old format {symbol: {date: {ohlcv_data}}}.
+        
+        Args:
+            hybrid_data: Dictionary in hybrid format with 'symbol_data', 'dataframe_format', 'metadata'
+            
+        Returns:
+            Dict: Old format dictionary {symbol: {date: {ohlcv_data}}}
+        """
+        if not hybrid_data or not isinstance(hybrid_data, dict):
+            return {}
+        
+        # If symbol_data is available in hybrid format, use it directly
+        if 'symbol_data' in hybrid_data and isinstance(hybrid_data['symbol_data'], dict):
+            old_format_data = {}
+            
+            for symbol, symbol_data in hybrid_data['symbol_data'].items():
+                old_format_data[symbol] = {}
+                for timestamp, ohlcv_data in symbol_data.items():
+                    # Extract only OHLCV values, excluding metadata
+                    old_format_data[symbol][timestamp] = {
+                        'open': ohlcv_data.get('open'),
+                        'high': ohlcv_data.get('high'),
+                        'low': ohlcv_data.get('low'),
+                        'close': ohlcv_data.get('close'),
+                        'volume': ohlcv_data.get('volume')
+                    }
+            
+            return old_format_data
+        
+        # If only dataframe_format is available, reconstruct old format from it
+        elif 'dataframe_format' in hybrid_data and isinstance(hybrid_data['dataframe_format'], dict):
+            df_format = hybrid_data['dataframe_format']
+            
+            if not all(key in df_format for key in ['data', 'columns', 'index']):
+                return {}
+            
+            old_format_data = {}
+            
+            # Process MultiIndex columns to extract symbol information
+            if isinstance(df_format['columns'], pd.MultiIndex):
+                # MultiIndex format: (symbol, field)
+                for col_idx, (symbol, field) in enumerate(df_format['columns']):
+                    if symbol not in old_format_data:
+                        old_format_data[symbol] = {}
+                    
+                    for row_idx, timestamp in enumerate(df_format['index']):
+                        if timestamp not in old_format_data[symbol]:
+                            old_format_data[symbol][timestamp] = {}
+                        
+                        old_format_data[symbol][timestamp][field] = df_format['data'][row_idx][col_idx]
+            
+            else:
+                # Flat columns format: assume [symbol1_open, symbol1_high, ..., symbol2_open, ...]
+                for col_idx, col_name in enumerate(df_format['columns']):
+                    if '_' in col_name:
+                        symbol, field = col_name.split('_', 1)
+                        
+                        if symbol not in old_format_data:
+                            old_format_data[symbol] = {}
+                        
+                        for row_idx, timestamp in enumerate(df_format['index']):
+                            if timestamp not in old_format_data[symbol]:
+                                old_format_data[symbol][timestamp] = {}
+                            
+                            old_format_data[symbol][timestamp][field] = df_format['data'][row_idx][col_idx]
+            
+            return old_format_data
+        
+        else:
+            self.logger.warning("Hybrid format data doesn't contain expected structure")
+            return {}
+        
     def _load_pickle_from_github(self) -> Optional[Dict]:
         """
         Download and load pickle data from GitHub.
@@ -412,13 +747,27 @@ class InstrumentDataManager:
             
             loaded_data = pickle.loads(response.content)
             
-            if self._is_symbol_dataframe_format(loaded_data):
+            format_type = self._detect_data_format(loaded_data)
+            
+            if format_type == 'symbol_dataframe':
                 self.pickle_data = loaded_data
-                self.logger.info("Loaded data in symbol-indexed DataFrame format from GitHub")
+                self.logger.info("Loaded data in symbol-indexed DataFrame format from local file")
                 
-            elif self._is_old_format(loaded_data):
-                self.logger.info("Converting old format to symbol-indexed DataFrame format from GitHub")
+            elif format_type == 'old':
+                self.logger.info("Converting old format to symbol-indexed DataFrame format")
                 self.pickle_data = self._convert_old_format_to_symbol_dataframe_format(loaded_data)
+                self._save_pickle_file()
+                
+            elif format_type == 'legacy_dataframe':
+                self.logger.info("Converting legacy DataFrame format to symbol-indexed format")
+                self.pickle_data = self._convert_legacy_dataframe_to_symbol_format(loaded_data)
+                self._save_pickle_file()
+                
+            elif format_type == 'hybrid':
+                self.logger.info("Converting hybrid format to symbol-indexed DataFrame format")
+                # Extract symbol_data from hybrid format and convert
+                old_format = self._convert_hybrid_to_old_format(loaded_data)
+                self.pickle_data = self._convert_old_format_to_symbol_dataframe_format(old_format)
                 self._save_pickle_file()
                 
             else:

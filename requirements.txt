@@ -1,7 +1,7 @@
 gitpython #>=3.1.43
-libsql
-numpy
-pandas
+libsql==0.1.6
+numpy==1.26.4
+pandas==2.2.3
 PKDevTools>=0.13.20250904.301
 PKNSETools>=0.1.20250224.139
 pygithub
@@ -10,5 +10,5 @@ python-telegram-bot[all]>=13.4,<20.0
 pytz #>=2024.2
 telethon
 urllib3 #>=1.26.20
-kiteconnect
+kiteconnect==5.0.1
 websockets<11.0,>=10.4 #pyppeteer 2.0.0 requires websockets<11.0,>=10.0
