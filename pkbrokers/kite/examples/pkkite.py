@@ -248,6 +248,7 @@ def kite_instruments():
     instruments = KiteInstruments(
         api_key="kitefront", access_token=PKEnvironment().KTOKEN, recreate_schema=False
     )
+    instruments.sync_instruments(force_fetch=True)
     instruments.get_or_fetch_instrument_tokens(all_columns=True)
 
 
