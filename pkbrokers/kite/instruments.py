@@ -605,9 +605,9 @@ class KiteInstruments:
             filtered_instruments = [
                 inst for inst in instruments if self._filter_instrument(inst)
             ]
-            self.logger.debug(
-                f"Filtered out but present in NSE_symbols:{set(self._nse_trading_symbols) - set(self._filtered_trading_symbols)}"
-            )
+            # self.logger.debug(
+            #     f"Filtered out but present in NSE_symbols:{set(self._nse_trading_symbols) - set(self._filtered_trading_symbols)}"
+            # )
             return filtered_instruments
 
         except requests.exceptions.RequestException as e:
@@ -633,9 +633,9 @@ class KiteInstruments:
             return
 
         self.logger.info(f"Updating/Inserting {len(instruments)} instruments")
-        self.logger.debug(
-            f"Filtered out but present in NSE_symbols:{set(self._nse_trading_symbols) - set(instruments)}"
-        )
+        # self.logger.debug(
+        #     f"Filtered out but present in NSE_symbols:{set(self._nse_trading_symbols) - set(instruments)}"
+        # )
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
