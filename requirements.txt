@@ -1,4 +1,7 @@
 gitpython #>=3.1.43
+libsql
+numpy
+pandas
 PKDevTools>=0.13.20250904.301
 PKNSETools>=0.1.20250224.139
 pygithub
