@@ -1017,7 +1017,7 @@ class InstrumentDataManager:
         if self.pickle_data:
             saved_symbols = list(self.pickle_data.keys())
         db_symbols = self._get_trading_intruments_from_db(column="tradingsymbol")
-        return db_symbols - saved_symbols
+        return list(set(db_symbols) - set(saved_symbols))
     
     def _get_trading_intruments(self) -> List[int]:
         """
