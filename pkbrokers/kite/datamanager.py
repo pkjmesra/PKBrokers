@@ -834,10 +834,10 @@ class InstrumentDataManager:
             kite_history = KiteTickerHistory()
 
             # Get tradingsymbols from pickle or database
-            tradingsymbols = self._get_tradingsymbols()
+            trading_instruments = self._get_trading_intruments()
 
-            if not tradingsymbols:
-                self.logger.info("No tradingsymbols found to fetch data")
+            if not trading_instruments:
+                self.logger.info("No trading instruments found to fetch data")
                 return None
 
             # Format dates
@@ -846,7 +846,7 @@ class InstrumentDataManager:
 
             # Fetch historical data
             historical_data = kite_history.get_multiple_instruments_history(
-                tradingsymbols=tradingsymbols,
+                instruments=trading_instruments,
                 from_date=start_date_str,
                 to_date=end_date_str,
             )
@@ -1012,31 +1012,38 @@ class InstrumentDataManager:
             return date.strftime("%Y-%m-%d")
         return date
 
-    def _get_tradingsymbols(self) -> List[str]:
+    def _get_missing_tradingsymbols(self) -> List[str]:
+        saved_symbols = []
+        if self.pickle_data:
+            saved_symbols = list(self.pickle_data.keys())
+        db_symbols = self._get_trading_intruments_from_db(column="tradingsymbol")
+        return db_symbols - saved_symbols
+    
+    def _get_trading_intruments(self) -> List[int]:
         """
         Retrieve list of trading symbols from available data sources.
 
         Returns:
-            List[str]: List of trading symbols
+            List[int]: List of trading instruments
         """
-        if self.pickle_data:
-            return list(self.pickle_data.keys())
-        else:
-            return self._get_tradingsymbols_from_db()
+        # if self.pickle_data:
+        #     return list(self.pickle_data.keys())
+        # else:
+        return self._get_trading_intruments_from_db()
 
-    def _get_tradingsymbols_from_db(self) -> List[str]:
+    def _get_trading_intruments_from_db(self, column="instrument_token") -> List[int]:
         """
-        Fetch distinct trading symbols from instruments database table.
+        Fetch distinct trading instruments from instruments database table.
 
         Returns:
-            List[str]: List of unique trading symbols from database
+            List[int]: List of unique trading instruments from database
         """
         if not self._connect_to_database():
             return []
 
         try:
             cursor = self.db_conn.cursor()
-            cursor.execute("SELECT DISTINCT tradingsymbol FROM instruments")
+            cursor.execute(f"SELECT DISTINCT {column} FROM instruments")
             results = cursor.fetchall()
             return [row[0] for row in results] if results else []
         except Exception as e:
@@ -1280,13 +1287,6 @@ class InstrumentDataManager:
             # Fetch from multiple sources (prioritized)
             incremental_data = {}
 
-            if fetch_kite:
-                # Try Kite API first
-                kite_data = self._get_recent_data_from_kite(start_datetime)
-                if kite_data:
-                    incremental_data.update(kite_data)
-                    self.logger.debug(f"Added {len(kite_data)} symbols from Kite API")
-
             # Try database next
             if not incremental_data:
                 db_data = self._fetch_data_from_database(start_datetime, datetime.now())
@@ -1311,5 +1311,18 @@ class InstrumentDataManager:
                     f"Updated with {len(ticks_data)} records from ticks.json"
                 )
 
+        if fetch_kite:
+            # Try Kite API first
+            kite_data = self._get_recent_data_from_kite(start_datetime)
+            if kite_data:
+                incremental_data.update(kite_data)
+                self.logger.debug(f"Added {len(kite_data)} symbols from Kite API")
+        else:
+            try:
+                missing_symbols = self._get_missing_tradingsymbols()
+                if len(missing_symbols) > 0:
+                    self.logger.error(f"Symbols found missing from pkl file but present in DB: {missing_symbols}. You may wish to enable 'fetch_kite' in instrumentDataManager.execute().")
+            except Exception as e:
+                self.logger.error(f"Error while trying to find missing symbols:{e}")
         self.logger.debug("Data synchronization process completed")
         return self.pickle_data is not None
