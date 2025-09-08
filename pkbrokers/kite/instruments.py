@@ -531,6 +531,12 @@ class KiteInstruments:
         """
         nse_symbols = self._get_nse_trading_symbols()
 
+        # Include all NSE INDICES and BSE SENSEX
+        indices_conditions = (
+            instrument.exchange == "NSE"
+            and instrument.segment == "INDICES"
+            and instrument.instrument_type == "EQ"
+        ) or instrument.instrument_token in [NIFTY_50, BSE_SENSEX]
         basic_conditions = (
             instrument.exchange == "NSE"
             and instrument.segment == "NSE"
@@ -539,10 +545,9 @@ class KiteInstruments:
         )
         if nse_symbols:
             # Use NSE symbol list as the primary filter
-            in_nse_symbols_or_indices = basic_conditions and (
+            in_nse_symbols_or_indices = (basic_conditions and (
                 instrument.tradingsymbol.replace("-BE", "").replace("-BZ", "")
-                in nse_symbols
-                or instrument.instrument_token in [NIFTY_50, BSE_SENSEX]
+                in nse_symbols) or indices_conditions
             )
             if in_nse_symbols_or_indices:
                 self._filtered_trading_symbols.append(
@@ -550,8 +555,8 @@ class KiteInstruments:
                 )
                 self.kite_instruments[instrument.instrument_token] = instrument
             else:
-                if basic_conditions:
-                    self.logger.debug(f"Filtered Out:{instrument.tradingsymbol}")
+                # if basic_conditions:
+                self.logger.debug(f"Filtered Out:{instrument.tradingsymbol}")
             return in_nse_symbols_or_indices
 
         else:
