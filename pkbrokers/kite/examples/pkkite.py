@@ -408,7 +408,7 @@ def pkkite():
             from PKDevTools.classes import Archiver
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
-            exists, pickle_path = Archiver.afterMarketStockDataExists(date_suffix=False)
+            exists, pickle_path = Archiver.afterMarketStockDataExists(date_suffix=True)
             if exists:
                 commit_ticks(pickle_path, branch_name="actions-data-download")
             else:

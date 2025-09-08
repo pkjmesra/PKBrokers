@@ -95,7 +95,7 @@ class InstrumentDataManager:
         and requires proper environment variables for database connections. It sets up
         local file paths using the user data directory.
         """
-        exists, path = Archiver.afterMarketStockDataExists(date_suffix=False)
+        exists, path = Archiver.afterMarketStockDataExists(date_suffix=True)
         self.pickle_file_name = path
         self.pickle_exists = exists
         self.local_pickle_path = (
