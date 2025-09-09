@@ -1110,6 +1110,7 @@ class InstrumentDataManager:
     def _update_pickle_file(self, new_data: Dict):
         """
         Update local pickle file with new data, merging with existing data.
+        Only keeps the latest row for each date (ignoring time component).
 
         Args:
             new_data: Dictionary containing new data to merge (in old format)
@@ -1117,44 +1118,54 @@ class InstrumentDataManager:
         # Convert new data to symbol-indexed DataFrame format
         new_data_symbol_format = self._convert_old_format_to_symbol_dataframe_format(new_data)
         
+        # Convert new data to DataFrames
+        new_dfs = {}
+        for symbol, symbol_data in new_data_symbol_format.items():
+            new_dfs[symbol] = pd.DataFrame(
+                symbol_data['data'],
+                index=symbol_data['index'],
+                columns=symbol_data['columns']
+            )
+        
         if self.pickle_data:
+            # Convert existing pickle data to DataFrames if not already
+            if not hasattr(self, 'pickle_dfs') or self.pickle_dfs is None:
+                self.pickle_dfs = {}
+                for symbol, symbol_data in self.pickle_data.items():
+                    self.pickle_dfs[symbol] = pd.DataFrame(
+                        symbol_data['data'],
+                        index=symbol_data['index'],
+                        columns=symbol_data['columns']
+                    )
+            
             # Merge new data with existing data
-            for symbol, symbol_data in new_data_symbol_format.items():
-                if symbol in self.pickle_data:
-                    # Merge timestamps and data
-                    existing_data = self.pickle_data[symbol]
+            for symbol, new_df in new_dfs.items():
+                if symbol in self.pickle_dfs:
+                    # Combine DataFrames
+                    combined_df = pd.concat([self.pickle_dfs[symbol], new_df])
                     
-                    # Combine indices and data
-                    combined_indices = list(existing_data['index']) + list(symbol_data['index'])
-                    combined_data = existing_data['data'] + symbol_data['data']
+                    # Extract date from index and deduplicate
+                    combined_df = combined_df.sort_index(ascending=False)
+                    date_mask = ~combined_df.index.normalize().duplicated(keep='first')
+                    deduplicated_df = combined_df[date_mask].sort_index(ascending=True)
                     
-                    # Sort by timestamp
-                    sorted_indices = sorted(range(len(combined_indices)), key=lambda i: combined_indices[i])
-                    sorted_indices_list = [combined_indices[i] for i in sorted_indices]
-                    sorted_data = [combined_data[i] for i in sorted_indices]
-                    
-                    # Remove duplicates
-                    unique_indices = []
-                    unique_data = []
-                    seen_indices = set()
-                    
-                    for i, timestamp in enumerate(sorted_indices_list):
-                        if timestamp not in seen_indices:
-                            seen_indices.add(timestamp)
-                            unique_indices.append(timestamp)
-                            unique_data.append(sorted_data[i])
-                    
-                    self.pickle_data[symbol] = {
-                        'data': unique_data,
-                        'columns': ['open', 'high', 'low', 'close', 'volume'],
-                        'index': unique_indices
-                    }
+                    self.pickle_dfs[symbol] = deduplicated_df
                 else:
-                    # Add new symbol
-                    self.pickle_data[symbol] = symbol_data
+                    self.pickle_dfs[symbol] = new_df.sort_index(ascending=True)
         else:
-            # Create new pickle data
-            self.pickle_data = new_data_symbol_format
+            # Initialize with new data
+            self.pickle_dfs = {}
+            for symbol, new_df in new_dfs.items():
+                self.pickle_dfs[symbol] = new_df.sort_index(ascending=True)
+        
+        # Convert back to original format for pickle storage if needed
+        self.pickle_data = {}
+        for symbol, df in self.pickle_dfs.items():
+            self.pickle_data[symbol] = {
+                'data': df.values.tolist(),
+                'columns': df.columns.tolist(),
+                'index': df.index.tolist()
+            }
 
         # Save the updated data
         self._save_pickle_file()
