@@ -1118,54 +1118,57 @@ class InstrumentDataManager:
         # Convert new data to symbol-indexed DataFrame format
         new_data_symbol_format = self._convert_old_format_to_symbol_dataframe_format(new_data)
         
-        # Convert new data to DataFrames
-        new_dfs = {}
-        for symbol, symbol_data in new_data_symbol_format.items():
-            new_dfs[symbol] = pd.DataFrame(
-                symbol_data['data'],
-                index=symbol_data['index'],
-                columns=symbol_data['columns']
-            )
-        
         if self.pickle_data:
-            # Convert existing pickle data to DataFrames if not already
-            if not hasattr(self, 'pickle_dfs') or self.pickle_dfs is None:
-                self.pickle_dfs = {}
-                for symbol, symbol_data in self.pickle_data.items():
-                    self.pickle_dfs[symbol] = pd.DataFrame(
-                        symbol_data['data'],
-                        index=symbol_data['index'],
-                        columns=symbol_data['columns']
-                    )
-            
-            # Merge new data with existing data
-            for symbol, new_df in new_dfs.items():
-                if symbol in self.pickle_dfs:
-                    # Combine DataFrames
-                    combined_df = pd.concat([self.pickle_dfs[symbol], new_df])
+            # Process each symbol
+            for symbol, symbol_data in new_data_symbol_format.items():
+                # Convert new data to list of (timestamp, data) tuples
+                new_timestamps = list(map(pd.to_datetime, symbol_data['index']))
+                new_entries = list(zip(new_timestamps, symbol_data['data']))
+                
+                if symbol in self.pickle_data:
+                    # Convert existing data to list of (timestamp, data) tuples
+                    existing_timestamps = list(map(pd.to_datetime, self.pickle_data[symbol]['index']))
+                    existing_entries = list(zip(existing_timestamps, self.pickle_data[symbol]['data']))
                     
-                    # Extract date from index and deduplicate
-                    combined_df = combined_df.sort_index(ascending=False)
-                    date_mask = ~combined_df.index.normalize().duplicated(keep='first')
-                    deduplicated_df = combined_df[date_mask].sort_index(ascending=True)
+                    # Combine and sort by timestamp (descending)
+                    all_entries = existing_entries + new_entries
+                    all_entries.sort(key=lambda x: x[0], reverse=True)
                     
-                    self.pickle_dfs[symbol] = deduplicated_df
+                    # Deduplicate by date
+                    seen_dates = set()
+                    unique_entries = []
+                    
+                    for timestamp, data in all_entries:
+                        date_key = timestamp.date()
+                        if date_key not in seen_dates:
+                            seen_dates.add(date_key)
+                            unique_entries.append((timestamp, data))
+                    
+                    # Sort chronologically for storage
+                    unique_entries.sort(key=lambda x: x[0])
+                    
+                    # Update pickle data
+                    self.pickle_data[symbol] = {
+                        'data': [data for _, data in unique_entries],
+                        'columns': symbol_data['columns'],
+                        'index': [ts for ts, _ in unique_entries]
+                    }
                 else:
-                    self.pickle_dfs[symbol] = new_df.sort_index(ascending=True)
+                    # For new symbols, just ensure proper datetime format
+                    self.pickle_data[symbol] = {
+                        'data': symbol_data['data'],
+                        'columns': symbol_data['columns'],
+                        'index': list(map(pd.to_datetime, symbol_data['index']))
+                    }
         else:
-            # Initialize with new data
-            self.pickle_dfs = {}
-            for symbol, new_df in new_dfs.items():
-                self.pickle_dfs[symbol] = new_df.sort_index(ascending=True)
-        
-        # Convert back to original format for pickle storage if needed
-        self.pickle_data = {}
-        for symbol, df in self.pickle_dfs.items():
-            self.pickle_data[symbol] = {
-                'data': df.values.tolist(),
-                'columns': df.columns.tolist(),
-                'index': df.index.tolist()
-            }
+            # Create new pickle data with datetime conversion
+            self.pickle_data = {}
+            for symbol, symbol_data in new_data_symbol_format.items():
+                self.pickle_data[symbol] = {
+                    'data': symbol_data['data'],
+                    'columns': symbol_data['columns'],
+                    'index': list(map(pd.to_datetime, symbol_data['index']))
+                }
 
         # Save the updated data
         self._save_pickle_file()
