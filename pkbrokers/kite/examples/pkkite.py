@@ -422,6 +422,7 @@ def pkkite():
         setupLogger()
         try:
             # Let's try and get the latest ticks file from an existing running bot.
+            orchestrate_consumer(command="/status")
             orchestrate_consumer(command="/ticks")
             commit_ticks(file_name="ticks.json")
 
