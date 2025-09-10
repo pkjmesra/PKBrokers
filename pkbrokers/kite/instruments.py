@@ -618,6 +618,14 @@ class KiteInstruments:
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Failed to fetch instruments: {str(e)}")
             raise
+        except UnicodeEncodeError:
+            from pkbrokers.kite.examples.pkkite import try_refresh_token
+            try_refresh_token()
+            self.headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+                "X-Kite-Version": "3",
+                "Authorization": f"token {self.api_key}:{PKEnvironment().KTOKEN}",
+            }
         except Exception as e:
             self.logger.error(f"Unexpected error processing instruments: {str(e)}")
             raise
