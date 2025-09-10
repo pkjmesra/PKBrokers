@@ -796,6 +796,7 @@ class InstrumentDataManager:
     def _get_max_date_from_pickle_data(self) -> Optional[datetime]:
         """
         Find the maximum/latest timestamp in the loaded data.
+        Simple and safe handling of mixed string/datetime timestamps.
         """
         if not self.pickle_data:
             return None
@@ -804,14 +805,26 @@ class InstrumentDataManager:
             max_datetime = None
             
             for symbol_data in self.pickle_data.values():
-                for timestamp_str in symbol_data['index']:
+                for timestamp_item in symbol_data['index']:
                     try:
-                        dt = datetime.fromisoformat(timestamp_str)
+                        # Convert to datetime if it's a string
+                        if isinstance(timestamp_item, str):
+                            dt = datetime.fromisoformat(timestamp_item)
+                        else:
+                            # Assume it's already a datetime object
+                            dt = timestamp_item
+                        
+                        # Make timezone naive for consistent comparison
+                        if hasattr(dt, 'tzinfo') and dt.tzinfo is not None:
+                            dt = dt.replace(tzinfo=None)
+                        
                         if max_datetime is None or dt > max_datetime:
                             max_datetime = dt
-                    except ValueError:
+                            
+                    except (ValueError, TypeError, AttributeError):
+                        # Skip any invalid items
                         continue
-            
+                
             return max_datetime
             
         except Exception as e:

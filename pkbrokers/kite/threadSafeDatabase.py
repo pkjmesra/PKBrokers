@@ -346,12 +346,12 @@ class HighPerformanceTursoWriter:
                 cursor = conn.cursor()
 
                 # Batch insert ticks
-                if tick_data:
-                    cursor.executemany(TICK_INSERT_SQL, tick_data)
+                # if tick_data:
+                #     cursor.executemany(TICK_INSERT_SQL, tick_data)
 
-                # Batch insert depth
-                if depth_data:
-                    cursor.executemany(DEPTH_INSERT_SQL, depth_data)
+                # # Batch insert depth
+                # if depth_data:
+                #     cursor.executemany(DEPTH_INSERT_SQL, depth_data)
 
                 self.logger.info(
                     f"Writer {self.writer_id}: batch insert succeeded: {len(tick_data)}"
