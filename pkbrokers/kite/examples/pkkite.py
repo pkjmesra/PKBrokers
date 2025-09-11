@@ -182,7 +182,7 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False):
         kill_thread.start()
 
     try:
-        watcher.watch()
+        watcher.watch(test_mode=test_mode)
     except KeyboardInterrupt:
         watcher.stop()
     except Exception as e:

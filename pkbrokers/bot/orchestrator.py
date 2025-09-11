@@ -71,6 +71,7 @@ class PKTickOrchestrator:
         self.stop_queue = self.mp_context.Queue()
         self.shutdown_requested = False
         self.token_generated_at_least_once = False
+        self.test_mode = False
 
         # Don't initialize logger or other complex objects here
         # They will be initialized in each process separately
@@ -206,10 +207,13 @@ class PKTickOrchestrator:
 
             # Create and run the bot
             bot = PKTickBot(self.bot_token, self.ticks_file_path, self.chat_id)
-            bot.run()
+            bot.run(parent=self)
 
         except Exception as e:
             logger.error(f"Telegram bot error: {e}")
+
+    def bot_callback(self):
+        self.test_mode = True
 
     def start(self):
         """Start both processes based on market conditions"""
@@ -354,7 +358,9 @@ class PKTickOrchestrator:
     def restart_kite_process_if_needed(self):
         """Restart kite process if market conditions change"""
         logger = self._get_logger()
-
+        if self.test_mode:
+            logger.warn("Running in TEST mode! Skipping test to re-run/stop Kite process!")
+            return
         current_should_run = self.should_run_kite_process()
         kite_running = self.kite_process and self.kite_process.is_alive()
 
@@ -389,6 +395,7 @@ class PKTickOrchestrator:
 
             gh_manager = PKGitHubSecretsManager(repo="pkbrokers")
             gh_manager.test_encryption()
+            test_mode_counter = 0
             while True:
                 time.sleep(1)
 
@@ -422,6 +429,11 @@ class PKTickOrchestrator:
                     and not self.shutdown_requested
                 ):
                     self.restart_kite_process_if_needed()
+                    if self.test_mode:
+                        test_mode_counter += 1
+                    if test_mode_counter >= 5:
+                        self.test_mode = False
+                        test_mode_counter = 0
                     last_market_check = current_time
                     # If it's around 7:30AM IST, let's re-generate the kite token once a day each morning
                     # https://kite.trade/forum/discussion/7759/access-token-validity

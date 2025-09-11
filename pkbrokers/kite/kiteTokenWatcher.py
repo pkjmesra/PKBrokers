@@ -412,7 +412,7 @@ class KiteTokenWatcher:
         self._stop_listener_thread.start()
         self.logger.debug("Started stop signal listener thread")
 
-    def watch(self):
+    def watch(self, test_mode=False):
         """
         Start watching market data for configured tokens.
 

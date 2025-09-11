@@ -83,6 +83,7 @@ class PKTickBot:
         self.updater = None
         self.logger = logging.getLogger(__name__)
         self.conflict_detected = False
+        self.parent = None
 
     def start(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
@@ -153,6 +154,8 @@ class PKTickBot:
             if update is not None:
                 update.message.reply_text(APOLOGY_TEXT)
             return
+        if self.parent and hasattr(self.parent,"bot_callback"):
+            self.parent.bot_callback()
         from pkbrokers.kite.examples.pkkite import kite_ticks
 
         kite_ticks(test_mode=True)
@@ -546,6 +549,8 @@ class PKTickBot:
             # or group in response to our own messages
         return True
 
-    def run(self):
+    def run(self, parent=None):
         """Run the bot - no asyncio needed for v13.4"""
+        if parent is not None:
+            self.parent = parent
         self.run_bot()
