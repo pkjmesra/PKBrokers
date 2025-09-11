@@ -570,10 +570,11 @@ class KiteTokenWatcher:
         # Insert into database
         try:
             db = self._get_database()
-            db.insert_ticks(processed_batch)
-            self.logger.info(
-                f"Successfully added {len(processed_batch)} records to database queue"
-            )
+            if db:
+                db.insert_ticks(processed_batch)
+                self.logger.info(
+                    f"Successfully added {len(processed_batch)} records to database queue"
+                )
         except Exception as e:
             self.logger.error(f"Error inserting to database: {e}")
 
