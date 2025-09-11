@@ -156,9 +156,16 @@ class PKTickBot:
             return
         if self.parent and hasattr(self.parent,"bot_callback"):
             self.parent.bot_callback()
-        from pkbrokers.kite.examples.pkkite import kite_ticks
 
-        kite_ticks(test_mode=True)
+        def kite_trigger():
+            from pkbrokers.kite.examples.pkkite import kite_ticks
+            kite_ticks(test_mode=True)
+        import threading
+        kite_thread = threading.Thread(
+            target=kite_trigger, daemon=True, name="kill_watcher"
+        )
+        kite_thread.start()
+        
         if update is not None:
             update.message.reply_text(
                 "Kite Tick testing kicked off! Try sending /ticks in sometime."
