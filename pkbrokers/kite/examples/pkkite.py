@@ -165,8 +165,13 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False):
         if watcher:
             watcher.stop()
         sys.exit(0)
+    try:
+        if __name__ == "__main__":
+            signal.signal(signal.SIGTERM, signal_handler)
+    except Exception as e:
+        print(e)
+        pass
 
-    signal.signal(signal.SIGTERM, signal_handler)
     if test_mode:
         import threading
 
