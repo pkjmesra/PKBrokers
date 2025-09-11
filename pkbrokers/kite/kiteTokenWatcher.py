@@ -507,11 +507,13 @@ class KiteTokenWatcher:
 
         Note: Uses lazy initialization to avoid unnecessary database connections
         """
-        if self._db_instance is None:
-            from pkbrokers.kite.threadSafeDatabase import ThreadSafeDatabase
+        if PKEnvironment().DB_TICKS and int(PKEnvironment().DB_TICKS) > 0:
+            if self._db_instance is None:
+                from pkbrokers.kite.threadSafeDatabase import ThreadSafeDatabase
 
-            self._db_instance = ThreadSafeDatabase()
-        return self._db_instance
+                self._db_instance = ThreadSafeDatabase()
+            return self._db_instance
+        return None
 
     def _process_tick_batch(self, tick_batch):
         """
@@ -723,8 +725,9 @@ class KiteTokenWatcher:
             processed_batch = self._prepare_batch_for_insertion(tick_batch)
             if processed_batch:
                 db = self._get_database()
-                db.insert_ticks(processed_batch)
-                self.logger.info(f"Fallback inserted {len(processed_batch)} records")
+                if db:
+                    db.insert_ticks(processed_batch)
+                    self.logger.info(f"Fallback inserted {len(processed_batch)} records")
         except Exception as e:
             self.logger.error(f"Fallback processing also failed: {e}")
 

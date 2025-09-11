@@ -638,7 +638,8 @@ class ZerodhaWebSocketClient:
     def _flush_to_db(self, batch):
         """Bulk insert ticks to database."""
         try:
-            self.db_conn.insert_ticks(batch)
+            if self.db_conn:
+                self.db_conn.insert_ticks(batch)
         except Exception as e:
             self.logger.error(f"Database error: {str(e)}")
             import traceback
@@ -740,7 +741,8 @@ class ZerodhaWebSocketClient:
                 p.join(timeout=5)
 
         # Close database connections
-        self.db_conn.close_all()
+        if self.db_conn:
+            self.db_conn.close_all()
 
         # Wait for processor thread
         if hasattr(self, "processor_thread"):

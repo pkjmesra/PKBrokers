@@ -82,6 +82,7 @@ jobs:
         KPWD: ${{ secrets.KPWD }}
         KTOTP: ${{ secrets.KTOTP }}
         DB_TYPE: "local"
+        DB_TICKS: ${{ secrets.DB_TICKS }}
         TBTOKEN: ${{ secrets.TBTOKEN }}
         BBTOKEN: ${{ secrets.BBTOKEN }}
         Tel_API_ID: ${{ secrets.Tel_API_ID }}
@@ -109,6 +110,7 @@ jobs:
         KPWD=$KPWD
         KTOTP=$KTOTP
         DB_TYPE=$DB_TYPE
+        DB_TICKS=$DB_TICKS
         TBTOKEN=$TBTOKEN
         BBTOKEN=$BBTOKEN
         Tel_API_ID=$Tel_API_ID
