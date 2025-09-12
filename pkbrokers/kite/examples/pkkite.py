@@ -256,20 +256,10 @@ def kite_instruments():
     instruments.sync_instruments(force_fetch=True)
     instruments.get_or_fetch_instrument_tokens(all_columns=True)
 
-
 def kite_fetch_save_pickle():
-    from pkbrokers.kite.datamanager import InstrumentDataManager
-
-    manager = InstrumentDataManager()
-    success = manager.execute(fetch_kite=False)
-
-    if success:
-        print("Saved instrument data into the pickle file")
-    else:
-        print("Failed to load or create instrument data")
-    return success
-
-
+    from pkbrokers.kite.examples.externals import kite_fetch_save_pickle
+    kite_fetch_save_pickle()
+    
 def setupLogger(logLevel=LOG_LEVEL):
     os.environ["PKDevTools_Default_Log_Level"] = str(logLevel)
     log.setup_custom_logger(
