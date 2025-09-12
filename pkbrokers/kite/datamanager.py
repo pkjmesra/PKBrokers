@@ -1267,7 +1267,7 @@ class InstrumentDataManager:
         Returns:
             bool: True if data was successfully loaded/created, False otherwise
         """
-        self.logger.debug("Starting data synchronization process...")
+        self.logger.info("Starting data synchronization process...")
 
         # Step 1: Load pickle data (local first, then remote if needed)
         if self._check_pickle_exists_locally():
