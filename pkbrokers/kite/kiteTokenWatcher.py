@@ -208,7 +208,7 @@ class JSONFileWriter:
                     "volume": tick_data.get("day_volume", 0),
                     "timestamp": tick_data["timestamp"].isoformat()
                     if hasattr(tick_data["timestamp"], "isoformat")
-                    else tick_data["timestamp"],
+                    else (tick_data["timestamp"] if "+" in tick_data["timestamp"] else f'{tick_data["timestamp"]}+05:30'),
                 },
                 "prev_day_close": tick_data["prev_day_close"],
                 "buy_quantity": tick_data["buy_quantity"],
