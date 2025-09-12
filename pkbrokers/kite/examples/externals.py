@@ -28,7 +28,7 @@ def kite_fetch_save_pickle():
     from pkbrokers.kite.datamanager import InstrumentDataManager
 
     manager = InstrumentDataManager()
-    success = manager.execute(fetch_kite=False)
+    success = manager.execute(fetch_kite=False, skip_db=True)
 
     if success:
         print("Saved instrument data into the pickle file")

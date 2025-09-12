@@ -251,6 +251,8 @@ class InstrumentDataManager:
                     # Try ISO format first
                     if 'T' in timestamp_obj:
                         dt = datetime.fromisoformat(timestamp_obj.replace('Z', '+00:00'))
+                        if "+" not in dt:
+                            dt = f"{dt}+05:30"
                     else:
                         # Try various string formats
                         for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
@@ -1256,7 +1258,7 @@ class InstrumentDataManager:
             self.logger.error(f"Failed to convert pickle file: {e}")
             return False
 
-    def execute(self, fetch_kite=False) -> bool:
+    def execute(self, fetch_kite=False, skip_db=False) -> bool:
         """
         Main execution method that orchestrates the complete data synchronization process.
 
@@ -1316,7 +1318,7 @@ class InstrumentDataManager:
 
             # Try database next
             if not incremental_data:
-                if not self._is_market_hours():
+                if not self._is_market_hours() and not skip_db:
                     db_data = self._fetch_data_from_database(start_datetime, datetime.now())
                     if db_data:
                         incremental_data.update(db_data)
