@@ -85,18 +85,16 @@ OTHER_INDICES = [
 if sys.platform.startswith("darwin"):
     os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
 
-# Set spawn context globally
-multiprocessing.set_start_method(
-    "spawn" if sys.platform.startswith("darwin") else "spawn", force=True
-)
-
-
 class JSONFileWriter:
     """Multiprocessing process to write ticks to JSON file with instrument_token as primary key"""
 
     def __init__(
         self, json_file_path, max_queue_size=OPTIMAL_MAX_QUEUE_SIZE, log_level=0
     ):
+        # Set spawn context globally
+        multiprocessing.set_start_method(
+            "spawn" if sys.platform.startswith("darwin") else "spawn", force=True
+        )
         self.json_file_path = json_file_path
         self.mp_context = multiprocessing.get_context(
             "spawn" if sys.platform.startswith("darwin") else "spawn"

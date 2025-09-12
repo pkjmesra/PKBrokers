@@ -42,9 +42,6 @@ if sys.platform.startswith("darwin"):
 if __name__ == "__main__":
     multiprocessing.freeze_support()
 
-# Set spawn context globally
-multiprocessing.set_start_method("spawn", force=True)
-
 WAIT_TIME_SEC_CLOSING_ANOTHER_RUNNING_INSTANCE = 10
 
 
@@ -58,6 +55,9 @@ class PKTickOrchestrator:
         ticks_file_path: Optional[str] = None,
         chat_id: Optional[str] = None,
     ):
+        # Set spawn context globally
+        multiprocessing.set_start_method("spawn", force=True)
+
         # Store only primitive data types that can be pickled
         self.bot_token = bot_token
         self.bridge_bot_token = bridge_bot_token

@@ -32,17 +32,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import libsql
-import numpy as np
 import pandas as pd
 import pytz
 import requests
 from PKDevTools.classes import Archiver
 from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
-from PKDevTools.classes.PKDateUtilities import PKDateUtilities
-
-from pkbrokers.kite.threadSafeDatabase import DEFAULT_DB_PATH
-
 
 class InstrumentDataManager:
     """
@@ -446,6 +441,7 @@ class InstrumentDataManager:
 
     def _create_local_connection(self):
         """Create local SQLite connection using libSQL"""
+        from pkbrokers.kite.threadSafeDatabase import DEFAULT_DB_PATH
         db_path = DEFAULT_DB_PATH
         try:
             if libsql:

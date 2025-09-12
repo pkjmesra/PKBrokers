@@ -71,10 +71,6 @@ INSERT or IGNORE INTO market_depth (
 if sys.platform.startswith("darwin"):
     os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
 
-# Set spawn context globally
-multiprocessing.set_start_method(
-    "spawn" if sys.platform.startswith("darwin") else "spawn", force=True
-)
 
 
 class HighPerformanceTursoWriter:
@@ -89,6 +85,10 @@ class HighPerformanceTursoWriter:
         mp_context=None,
         log_level=0,
     ):
+        # Set spawn context globally
+        multiprocessing.set_start_method(
+            "spawn" if sys.platform.startswith("darwin") else "spawn", force=True
+        )
         self.db_config = db_config
         self.batch_size = batch_size
         self.writer_id = writer_id
@@ -452,6 +452,11 @@ class ThreadSafeDatabase:
         if "PKDevTools_Default_Log_Level" not in os.environ.keys()
         else int(os.environ["PKDevTools_Default_Log_Level"]),
     ):
+        # Set spawn context globally
+        multiprocessing.set_start_method(
+            "spawn" if sys.platform.startswith("darwin") else "spawn", force=True
+        )
+
         self.db_type = db_type.lower()
         self.db_path = db_path or os.path.join(DEFAULT_PATH, "ticks.db")
         self.turso_url = turso_url
