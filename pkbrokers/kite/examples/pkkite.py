@@ -155,6 +155,9 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False):
     if parent is not None and hasattr(parent, "child_process_ref"):
         parent.child_process_ref = os.getpid()
 
+    if stop_queue is None:
+        mp_context = multiprocessing.get_context("spawn")
+        stop_queue = mp_context.Queue()
     # Start stop listener
     if stop_queue is not None:
         watcher.set_stop_queue(stop_queue)
@@ -179,7 +182,10 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False):
             import time
 
             time.sleep(TEST_WAIT_TIME_SEC)
-            watcher.stop()
+            if stop_queue is not None:
+                stop_queue.put("STOP")
+            if watcher:
+                watcher.stop()
 
         kill_thread = threading.Thread(
             target=kill_watcher, daemon=True, name="kill_watcher"
