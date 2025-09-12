@@ -30,7 +30,7 @@ import sqlite3
 from datetime import date, datetime, timedelta, time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-
+import numpy as np
 import libsql
 import pandas as pd
 import pytz
@@ -103,6 +103,20 @@ class InstrumentDataManager:
         self.pickle_data = None
         self.db_type = "turso" or PKEnvironment().DB_TYPE
         self.logger = default_logger()
+        self._pickle_data_loaded = False
+        self._pickle_data = None
+
+    @property
+    def pickle_data(self):
+        if not self._pickle_data_loaded:
+            self._load_pickle_data()
+            self._pickle_data_loaded = True
+        return self._pickle_data
+
+    @pickle_data.setter
+    def pickle_data(self, value):
+        self._pickle_data = value
+        self._pickle_data_loaded = True
 
     def _is_symbol_dataframe_format(self, data: Any) -> bool:
         """
@@ -348,45 +362,47 @@ class InstrumentDataManager:
         return symbol_dataframe_format
 
     def _convert_old_format_to_symbol_dataframe_format(self, old_format_data: Dict) -> Dict[str, Any]:
-        """
-        Convert old format data to symbol-indexed DataFrame-compatible format.
-        
-        Args:
-            old_format_data: Dictionary in old format {symbol: {date: {ohlcv_data}}}
-            
-        Returns:
-            Dict: Symbol-indexed dictionary with each symbol containing 'data', 'columns', and 'index'
-        """
+        """Optimized conversion from old format to symbol-indexed DataFrame format."""
         if not old_format_data:
             return {}
 
         symbol_dataframe_format = {}
+        columns = ['open', 'high', 'low', 'close', 'volume']
         
         for symbol, symbol_data in old_format_data.items():
-            # Collect all timestamps for this symbol
+            # Pre-allocate lists
             timestamps = []
             data_rows = []
             
             for timestamp_str, ohlcv in symbol_data.items():
-                normalized_ts = self._normalize_timestamp(timestamp_str)
+                # Use direct string manipulation for faster timestamp normalization
+                if isinstance(timestamp_str, str):
+                    if len(timestamp_str) == 10:  # Date only format "YYYY-MM-DD"
+                        normalized_ts = f"{timestamp_str}T00:00:00+05:30"
+                    else:
+                        normalized_ts = timestamp_str
+                else:
+                    normalized_ts = str(timestamp_str)
+                
                 timestamps.append(normalized_ts)
                 data_rows.append([
                     ohlcv.get('open'),
-                    ohlcv.get('high'),
+                    ohlcv.get('high'), 
                     ohlcv.get('low'),
                     ohlcv.get('close'),
-                    ohlcv.get('volume')
+                    ohlcv.get('volume', 0)
                 ])
             
-            # Sort by timestamp
-            sorted_indices = sorted(range(len(timestamps)), key=lambda i: timestamps[i])
-            sorted_timestamps = [timestamps[i] for i in sorted_indices]
-            sorted_data = [data_rows[i] for i in sorted_indices]
+            # Sort using zip for better performance
+            combined = list(zip(timestamps, data_rows))
+            combined.sort(key=lambda x: x[0])
+            
+            sorted_timestamps, sorted_data = zip(*combined) if combined else ([], [])
             
             symbol_dataframe_format[symbol] = {
-                'data': sorted_data,
-                'columns': ['open', 'high', 'low', 'close', 'volume'],
-                'index': sorted_timestamps
+                'data': list(sorted_data),
+                'columns': columns,
+                'index': list(sorted_timestamps)
             }
         
         return symbol_dataframe_format
@@ -785,7 +801,7 @@ class InstrumentDataManager:
         self.local_pickle_path.parent.mkdir(parents=True, exist_ok=True)
         
         with open(self.local_pickle_path, "wb") as f:
-            pickle.dump(self.pickle_data, f)
+            pickle.dump(self.pickle_data, f, protocol=pickle.HIGHEST_PROTOCOL)
             
         self.logger.info(f"Pickle file saved: {self.local_pickle_path}")
 
@@ -943,70 +959,56 @@ class InstrumentDataManager:
             return False
 
     def _load_and_process_ticks_json(self) -> Optional[Dict]:
-        """
-        Load and process data from ticks.json file.
-        Preserves full timestamp with timezone information.
-
-        Returns:
-            Optional[Dict]: Processed ticks data in old format
-        """
+        """Optimized ticks.json processing."""
         if not self.ticks_json_path.exists():
-            self.logger.error("ticks.json file not found")
             return None
 
         try:
             with open(self.ticks_json_path, "r") as f:
                 ticks_data = json.load(f)
 
-            # Convert ticks.json format to old format
             processed_data = {}
-
+            timezone = pytz.timezone("Asia/Kolkata")
+            
             for instrument_data in ticks_data.values():
                 tradingsymbol = instrument_data.get("trading_symbol")
-                if not tradingsymbol:
+                ohlcv = instrument_data.get("ohlcv", {})
+                timestamp = ohlcv.get("timestamp")
+                
+                if not tradingsymbol or not timestamp:
                     continue
-
-                # Extract timestamp
-                timestamp = instrument_data.get("ohlcv").get("timestamp")
-                if not timestamp:
-                    continue
-
+                
+                # Fast timestamp processing
                 try:
-                    # Convert timestamp to datetime with timezone
                     if isinstance(timestamp, str):
                         if "+" not in timestamp:
-                            timestamp = f"{timestamp}+05:30"
-                        dt = datetime.fromisoformat(
-                            timestamp.replace("Z", "+05:30")
-                        ).astimezone(tz=pytz.timezone("Asia/Kolkata"))
+                            timestamp_str = f"{timestamp}+05:30"
+                        else:
+                            timestamp_str = timestamp
                     else:
-                        dt = datetime.fromtimestamp(timestamp).astimezone(
-                            tz=pytz.timezone("Asia/Kolkata")
-                        )
-
-                    # Use full ISO format timestamp as key
-                    timestamp_key = dt.isoformat()
-
-                    # Create or update symbol data
+                        # Assume it's a timestamp number
+                        dt = datetime.fromtimestamp(timestamp, tz=timezone)
+                        timestamp_str = dt.isoformat()
+                    
+                    # Initialize symbol data if not exists
                     if tradingsymbol not in processed_data:
                         processed_data[tradingsymbol] = {}
-
-                    processed_data[tradingsymbol][timestamp_key] = {
-                        "open": instrument_data.get("ohlcv").get("open"),
-                        "high": instrument_data.get("ohlcv").get("high"),
-                        "low": instrument_data.get("ohlcv").get("low"),
-                        "close": instrument_data.get("ohlcv").get("close"),
-                        "volume": instrument_data.get("ohlcv").get("volume")
+                    
+                    processed_data[tradingsymbol][timestamp_str] = {
+                        "open": ohlcv.get("open"),
+                        "high": ohlcv.get("high"),
+                        "low": ohlcv.get("low"), 
+                        "close": ohlcv.get("close"),
+                        "volume": ohlcv.get("volume", 0)
                     }
-
-                except (ValueError, TypeError) as e:
-                    self.logger.debug(f"Error processing timestamp {timestamp}: {e}")
+                    
+                except (ValueError, TypeError):
                     continue
 
             return processed_data
 
         except Exception as e:
-            self.logger.error(f"Error loading/processing ticks.json: {e}")
+            self.logger.error(f"Error processing ticks.json: {e}")
             return None
 
     def _format_date(self, date: Union[str, datetime]) -> str:
@@ -1120,72 +1122,87 @@ class InstrumentDataManager:
 
         return master_data
 
+    def _optimize_memory_usage(self):
+        """Optimize memory usage of pickle data."""
+        for symbol, symbol_data in self.pickle_data.items():
+            # Convert to numpy arrays for memory efficiency
+            if isinstance(symbol_data['data'], list):
+                symbol_data['data'] = np.array(symbol_data['data'], dtype=np.float32)
+            
+            # Convert timestamps to datetime64 for efficiency
+            if isinstance(symbol_data['index'], list):
+                symbol_data['index'] = pd.to_datetime(symbol_data['index']).values
+                
+    def _update_pickle_file_batch(self, new_data_batch: List[Dict]):
+        """Process multiple updates in batch."""
+        if not new_data_batch:
+            return
+            
+        # Merge all new data first
+        merged_new_data = {}
+        for new_data in new_data_batch:
+            for symbol, symbol_data in new_data.items():
+                if symbol not in merged_new_data:
+                    merged_new_data[symbol] = symbol_data
+                else:
+                    merged_new_data[symbol].update(symbol_data)
+        
+        # Then update pickle once
+        self._update_pickle_file(merged_new_data)
+        
     def _update_pickle_file(self, new_data: Dict):
-        """
-        Update local pickle file with new data, merging with existing data.
-        Only keeps the latest row for each date (ignoring time component).
-
-        Args:
-            new_data: Dictionary containing new data to merge (in old format)
-        """
+        """Optimized pickle file update with efficient merging."""
         # Convert new data to symbol-indexed DataFrame format
         new_data_symbol_format = self._convert_old_format_to_symbol_dataframe_format(new_data)
         
-        if self.pickle_data:
-            # Process each symbol
-            for symbol, symbol_data in new_data_symbol_format.items():
-                # Convert new data to list of (timestamp, data) tuples
-                new_timestamps = list(map(pd.to_datetime, symbol_data['index']))
-                new_entries = list(zip(new_timestamps, symbol_data['data']))
-                
-                if symbol in self.pickle_data:
-                    # Convert existing data to list of (timestamp, data) tuples
-                    existing_timestamps = list(map(pd.to_datetime, self.pickle_data[symbol]['index']))
-                    existing_entries = list(zip(existing_timestamps, self.pickle_data[symbol]['data']))
-                    
-                    # Combine and sort by timestamp (descending)
-                    all_entries = existing_entries + new_entries
-                    all_entries.sort(key=lambda x: x[0], reverse=True)
-                    
-                    # Deduplicate by date
-                    seen_dates = set()
-                    unique_entries = []
-                    
-                    for timestamp, data in all_entries:
-                        date_key = timestamp.date()
-                        if date_key not in seen_dates:
-                            seen_dates.add(date_key)
-                            unique_entries.append((timestamp, data))
-                    
-                    # Sort chronologically for storage
-                    unique_entries.sort(key=lambda x: x[0])
-                    
-                    # Update pickle data
-                    self.pickle_data[symbol] = {
-                        'data': [data for _, data in unique_entries],
-                        'columns': symbol_data['columns'],
-                        'index': [ts for ts, _ in unique_entries]
-                    }
-                else:
-                    # For new symbols, just ensure proper datetime format
-                    self.pickle_data[symbol] = {
-                        'data': symbol_data['data'],
-                        'columns': symbol_data['columns'],
-                        'index': list(map(pd.to_datetime, symbol_data['index']))
-                    }
-        else:
-            # Create new pickle data with datetime conversion
-            self.pickle_data = {}
-            for symbol, symbol_data in new_data_symbol_format.items():
-                self.pickle_data[symbol] = {
-                    'data': symbol_data['data'],
-                    'columns': symbol_data['columns'],
-                    'index': list(map(pd.to_datetime, symbol_data['index']))
-                }
+        if not self.pickle_data:
+            self.pickle_data = new_data_symbol_format
+            self._save_pickle_file()
+            return
 
-        # Save the updated data
+        # Process each symbol in new data
+        for symbol, new_symbol_data in new_data_symbol_format.items():
+            new_timestamps = new_symbol_data['index']
+            new_data_values = new_symbol_data['data']
+            
+            if symbol in self.pickle_data:
+                # Get existing data
+                existing_data = self.pickle_data[symbol]
+                existing_timestamps = existing_data['index']
+                existing_values = existing_data['data']
+                
+                # Create mapping for fast lookup
+                existing_date_map = {}
+                for i, ts in enumerate(existing_timestamps):
+                    if isinstance(ts, str):
+                        date_key = ts.split('T')[0] if 'T' in ts else ts
+                    else:
+                        date_key = str(ts).split()[0]
+                    existing_date_map[date_key] = (ts, existing_values[i])
+                
+                # Update with new data
+                for i, new_ts in enumerate(new_timestamps):
+                    if isinstance(new_ts, str):
+                        date_key = new_ts.split('T')[0] if 'T' in new_ts else new_ts
+                    else:
+                        date_key = str(new_ts).split()[0]
+                    
+                    existing_date_map[date_key] = (new_ts, new_data_values[i])
+                
+                # Convert back to sorted lists
+                all_entries = list(existing_date_map.values())
+                all_entries.sort(key=lambda x: x[0])  # Sort by timestamp
+                
+                self.pickle_data[symbol] = {
+                    'data': [data for _, data in all_entries],
+                    'columns': existing_data['columns'],
+                    'index': [ts for ts, _ in all_entries]
+                }
+            else:
+                # New symbol
+                self.pickle_data[symbol] = new_symbol_data
+
         self._save_pickle_file()
-        self.logger.info(f"Pickle file updated successfully: {self.local_pickle_path}")
 
     def get_data_for_symbol(self, tradingsymbol: str) -> Optional[Dict]:
         """
@@ -1256,15 +1273,7 @@ class InstrumentDataManager:
             self.logger.error(f"Failed to convert pickle file: {e}")
             return False
 
-    def execute(self, fetch_kite=False, skip_db=False) -> bool:
-        """
-        Main execution method that orchestrates the complete data synchronization process.
-
-        Returns:
-            bool: True if data was successfully loaded/created, False otherwise
-        """
-        self.logger.info("Starting data synchronization process...")
-
+    def _load_pickle_data(self):
         # Step 1: Load pickle data (local first, then remote if needed)
         if self._check_pickle_exists_locally():
             self.logger.info("Pickle file found locally, loading...")
@@ -1277,6 +1286,17 @@ class InstrumentDataManager:
             self._load_pickle_from_github()
         else:
             self.logger.info("No pickle file found locally or remotely")
+
+    def execute(self, fetch_kite=False, skip_db=False) -> bool:
+        """
+        Main execution method that orchestrates the complete data synchronization process.
+
+        Returns:
+            bool: True if data was successfully loaded/created, False otherwise
+        """
+        self.logger.info("Starting data synchronization process...")
+
+        self._load_pickle_data()
 
         # Step 2: If no data loaded, fetch full year from database
         if not self.pickle_data:
