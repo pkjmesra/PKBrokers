@@ -251,8 +251,6 @@ class InstrumentDataManager:
                     # Try ISO format first
                     if 'T' in timestamp_obj:
                         dt = datetime.fromisoformat(timestamp_obj.replace('Z', '+00:00'))
-                        if "+" not in dt:
-                            dt = f"{dt}+05:30"
                     else:
                         # Try various string formats
                         for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
