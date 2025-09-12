@@ -978,8 +978,10 @@ class InstrumentDataManager:
                 try:
                     # Convert timestamp to datetime with timezone
                     if isinstance(timestamp, str):
+                        if "+" not in timestamp:
+                            timestamp = f"{timestamp}+05:30"
                         dt = datetime.fromisoformat(
-                            timestamp.replace("Z", "+00:00")
+                            timestamp.replace("Z", "+05:30")
                         ).astimezone(tz=pytz.timezone("Asia/Kolkata"))
                     else:
                         dt = datetime.fromtimestamp(timestamp).astimezone(
@@ -1098,6 +1100,8 @@ class InstrumentDataManager:
                     try:
                         if isinstance(timestamp, str):
                             if 'T' in timestamp:
+                                if "+" not in timestamp:
+                                    timestamp = f"{timestamp}+05:30"
                                 dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
                             else:
                                 dt = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
