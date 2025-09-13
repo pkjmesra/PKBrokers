@@ -22,7 +22,7 @@
 #     SOFTWARE.
 
 # """
-name: 11. pkbrokers Test Coverage
+name: 4. Test Coverage
 
 on:
   # schedule:

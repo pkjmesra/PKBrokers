@@ -22,7 +22,7 @@
 #     SOFTWARE.
 
 # """
-name: 2. PKBrokers Build - New Release
+name: 2. New Release
 
 on:
   # push:
