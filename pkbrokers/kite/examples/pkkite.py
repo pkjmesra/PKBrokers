@@ -264,7 +264,7 @@ def kite_instruments():
 
 def kite_fetch_save_pickle():
     from pkbrokers.kite.examples.externals import kite_fetch_save_pickle
-    kite_fetch_save_pickle()
+    return kite_fetch_save_pickle()
     
 def setupLogger(logLevel=LOG_LEVEL):
     os.environ["PKDevTools_Default_Log_Level"] = str(logLevel)
