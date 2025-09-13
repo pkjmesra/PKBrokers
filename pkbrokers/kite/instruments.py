@@ -342,21 +342,23 @@ class KiteInstruments:
                         PRIMARY KEY (exchange, tradingsymbol, instrument_type)
                     ) -- STRICT
                 """)
-
-                # Create optimized indexes including nse_stock
-                cursor.execute("""
-                    CREATE INDEX idx_instrument_token
-                    ON instruments(instrument_token)
-                """)
-                cursor.execute("""
-                    CREATE INDEX idx_tradingsymbol_segment
-                    ON instruments(tradingsymbol, segment)
-                """)
-                cursor.execute("""
-                    CREATE INDEX idx_nse_stock
-                    ON instruments(nse_stock)
-                """)
-
+                try:
+                    # Create optimized indexes including nse_stock
+                    cursor.execute("""
+                        CREATE INDEX idx_instrument_token
+                        ON instruments(instrument_token)
+                    """)
+                    cursor.execute("""
+                        CREATE INDEX idx_tradingsymbol_segment
+                        ON instruments(tradingsymbol, segment)
+                    """)
+                    cursor.execute("""
+                        CREATE INDEX idx_nse_stock
+                        ON instruments(nse_stock)
+                    """)
+                except Exception as e:
+                    self.logger.error(e)
+                    pass
                 conn.commit()
             self.logger.debug("Database initialised for table instruments.")
 
