@@ -1300,7 +1300,7 @@ class InstrumentDataManager:
 
         # Step 2: If no data loaded, fetch full year from database
         if not self.pickle_data:
-            self.logger.debug("Fetching full year data from database...")
+            self.logger.info("Fetching full year data from database...")
             end_date = datetime.now()
             start_date = end_date - timedelta(days=365)
             historical_data = self._fetch_data_from_database(start_date, end_date)
