@@ -467,7 +467,7 @@ class PKTickOrchestrator:
                                     last_updated_utc
                                 )
                                 if last_updated_ist.date() != cur_ist.date():
-                                    from pkbrokers.kite.examples.pkkite import kite_auth
+                                    from pkbrokers.kite.examples.externals import kite_auth
 
                                     kite_auth()
                                     self.token_generated_at_least_once = True

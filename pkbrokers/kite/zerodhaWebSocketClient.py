@@ -42,6 +42,7 @@ from kiteconnect.ticker import KiteTicker
 from PKDevTools.classes import Archiver, log
 from PKDevTools.classes.log import default_logger
 from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+from PKDevTools.classes.Environment import PKEnvironment
 
 from pkbrokers.kite.ticks import Tick
 from pkbrokers.kite.zerodhaWebSocketParser import ZerodhaWebSocketParser
@@ -133,13 +134,13 @@ class WebSocketProcess:
             raise ValueError("API Key must not be blank")
         if self.user_id is None or len(self.user_id) == 0:
             raise ValueError("user_id must not be blank")
-        if self.enctoken is None or len(self.enctoken) == 0:
+        if self.enctoken is None or len(self.enctoken) == 0 or len(PKEnvironment().KTOKEN) == 0:
             raise ValueError("enctoken must not be blank")
 
         base_params = {
             "api_key": self.api_key,
             "user_id": self.user_id,
-            "enctoken": quote(self.enctoken),
+            "enctoken": quote(PKEnvironment().KTOKEN),
             "uid": str(int(time.time() * 1000)),
             "user-agent": "kite3-web",
             "version": "3.0.0",
@@ -342,6 +343,9 @@ class WebSocketProcess:
                 self.logger.error(
                     f"Websocket_index:{self.websocket_index}: WebSocket connection error: {str(e)}. Reconnecting in 5 seconds..."
                 )
+                if "HTTP 403" in str(e):
+                    from pkbrokers.kite.examples.externals import kite_auth
+                    kite_auth()
                 await asyncio.sleep(5)
 
     def setupLogger(self):

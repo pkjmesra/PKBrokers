@@ -35,3 +35,26 @@ def kite_fetch_save_pickle():
     else:
         print("Failed to load or create instrument data")
     return success
+
+def kite_auth():
+    # Configuration - load from environment in production
+    import os
+    from PKDevTools.classes.Environment import PKEnvironment
+
+    from pkbrokers.kite.authenticator import KiteAuthenticator
+
+    local_secrets = PKEnvironment().allSecrets
+    credentials = {
+        "api_key": "kitefront",
+        "username": os.environ.get(
+            "KUSER", local_secrets.get("KUSER", "You need your Kite username")
+        ),
+        "password": os.environ.get(
+            "KPWD", local_secrets.get("KPWD", "You need your Kite password")
+        ),
+        "totp": os.environ.get(
+            "KTOTP", local_secrets.get("KTOTP", "You need your Kite TOTP")
+        ),
+    }
+    authenticator = KiteAuthenticator(timeout=10)
+    authenticator.get_enctoken(**credentials)

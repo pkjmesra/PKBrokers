@@ -133,7 +133,7 @@ class PKTickBot:
         """Send refreshed token"""
         from PKDevTools.classes.Environment import PKEnvironment
 
-        from pkbrokers.kite.examples.pkkite import kite_auth
+        from pkbrokers.kite.examples.externals import kite_auth
 
         try:
             kite_auth()
