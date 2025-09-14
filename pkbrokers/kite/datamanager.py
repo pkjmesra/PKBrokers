@@ -1336,7 +1336,8 @@ class InstrumentDataManager:
 
             # Try database next
             if not incremental_data:
-                if not self._is_market_hours() and not skip_db:
+                from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+                if not PKDateUtilities.is_extended_market_hours() and not skip_db:
                     db_data = self._fetch_data_from_database(start_datetime, datetime.now())
                     if db_data:
                         incremental_data.update(db_data)
@@ -1374,52 +1375,3 @@ class InstrumentDataManager:
                 self.logger.error(f"Error while trying to find missing symbols:{e}")
         self.logger.debug("Data synchronization process completed")
         return self.pickle_data is not None
-    
-    def _is_market_hours(self):
-        """Check if current time is within NSE market hours (9:15 AM to 3:30 PM IST)"""
-        try:
-            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
-            from datetime import time as dt_time
-            # Get current time in IST (UTC+5:30)
-            utc_now = datetime.utcnow()
-            ist_now = PKDateUtilities.utc_to_ist(
-                utc_dt=utc_now
-            )  # utc_now.replace(hour=utc_now.hour + 5, minute=utc_now.minute + 30)
-
-            # Market hours: 9:15 AM to 3:30 PM IST
-            market_start = dt_time(9, 0)
-            market_end = dt_time(17, 30)
-
-            # Check if within market hours
-            current_time = ist_now.time()
-            return market_start <= current_time <= market_end
-
-        except Exception as e:
-            print(f"Error checking market hours: {e}")
-            return False
-
-    def _is_trading_holiday(self):
-        """Check if today is a trading holiday"""
-        try:
-            # Download holidays JSON
-            response = requests.get(
-                "https://raw.githubusercontent.com/pkjmesra/PKScreener/main/.github/dependencies/nse-holidays.json",
-                timeout=10,
-            )
-            response.raise_for_status()
-            holidays_data = response.json()
-
-            # Get current date in DD-MMM-YYYY format (e.g., 26-Jan-2025)
-            current_date = datetime.now().strftime("%d-%b-%Y")
-
-            # Check if current date is in holidays list under "CM" key
-            trading_holidays = holidays_data.get("CM", [])
-            for holiday in trading_holidays:
-                if holiday.get("tradingDate") == current_date:
-                    return True
-
-            return False
-
-        except Exception as e:
-            print(f"Error checking trading holidays: {e}")
-            return False  # Assume not holiday if we can't check

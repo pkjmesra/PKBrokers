@@ -213,7 +213,8 @@ class PKTickOrchestrator:
             logger.error(f"Telegram bot error: {e}")
 
     def bot_callback(self):
-        self.test_mode = True
+        if hasattr(self, "test_mode"):
+            self.test_mode = True
 
     def start(self):
         """Start both processes based on market conditions"""
