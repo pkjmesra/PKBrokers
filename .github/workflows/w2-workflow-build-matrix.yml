@@ -185,7 +185,7 @@ jobs:
             OUT_PATH: /Users/runner/work/PKBrokers/PKBrokers/dist/pkkite_arm64.run
             FILE_NAME: pkkite_arm64.run
           
-          - os: macos-13
+          - os: macos-15
             platform_id: macosx_x86_64
             TARGET: MacOS
             CMD_BUILD: |
