@@ -421,7 +421,3 @@ class CandleAggregator:
         valid_low = ((df['low'] <= df['open']) & (df['low'] <= df['close'])).all()
         
         return valid_high_low and valid_high and valid_low
-
-
-
-

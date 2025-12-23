@@ -105,6 +105,7 @@ class InstrumentDataManager:
         self.logger = default_logger()
         self._pickle_data_loaded = False
         self._pickle_data = None
+        self._db_blocked = False  # Flag to track if database access is blocked (quota exceeded)
 
     @property
     def pickle_data(self):
@@ -902,6 +903,11 @@ class InstrumentDataManager:
         Returns:
             Dict: Structured historical data with trading symbols as keys
         """
+        # Skip database access if previously blocked (quota exceeded)
+        if self._db_blocked:
+            self.logger.debug("Skipping database fetch - access is blocked (quota exceeded)")
+            return {}
+        
         if not self._connect_to_database():
             return {}
 
@@ -928,7 +934,16 @@ class InstrumentDataManager:
             return self._process_database_data(results, columns)
 
         except Exception as e:
-            self.logger.error(f"Error fetching data from database: {e}")
+            error_str = str(e)
+            if "BLOCKED" in error_str or "reads are blocked" in error_str.lower():
+                self.logger.warning(
+                    "Database access blocked - quota exceeded. "
+                    "Falling back to pickle/GitHub data. "
+                    "Consider upgrading your Turso plan or using the scalable architecture."
+                )
+                self._db_blocked = True
+            else:
+                self.logger.error(f"Error fetching data from database: {e}")
             return {}
 
     def _orchestrate_ticks_download(self) -> bool:
