@@ -69,6 +69,8 @@ class CandleAggregator:
     INTERVALS = {
         '1m': 60,
         '2m': 120,
+        '3m': 180,
+        '4m': 240,
         '5m': 300,
         '10m': 600,
         '15m': 900,
@@ -78,6 +80,9 @@ class CandleAggregator:
         '1d': 86400,
         'day': 86400,
         'minute': 60,
+        '2minute': 120,
+        '3minute': 180,
+        '4minute': 240,
         '5minute': 300,
         '10minute': 600,
         '15minute': 900,
@@ -88,6 +93,8 @@ class CandleAggregator:
     INTERVAL_RULES = {
         '1m': '1min',
         '2m': '2min',
+        '3m': '3min',
+        '4m': '4min',
         '5m': '5min',
         '10m': '10min',
         '15m': '15min',
@@ -97,6 +104,9 @@ class CandleAggregator:
         '1d': '1D',
         'day': '1D',
         'minute': '1min',
+        '2minute': '2min',
+        '3minute': '3min',
+        '4minute': '4min',
         '5minute': '5min',
         '10minute': '10min',
         '15minute': '15min',
@@ -121,6 +131,9 @@ class CandleAggregator:
         interval_map = {
             'minute': '1m',
             '1minute': '1m',
+            '2minute': '2m',
+            '3minute': '3m',
+            '4minute': '4m',
             '5minute': '5m',
             '10minute': '10m',
             '15minute': '15m',
@@ -408,3 +421,7 @@ class CandleAggregator:
         valid_low = ((df['low'] <= df['open']) & (df['low'] <= df['close'])).all()
         
         return valid_high_low and valid_high and valid_low
+
+
+
+

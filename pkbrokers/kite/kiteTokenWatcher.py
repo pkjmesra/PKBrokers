@@ -41,6 +41,7 @@ from PKDevTools.classes.PKJoinableQueue import PKJoinableQueue
 
 from pkbrokers.kite.instruments import KiteInstruments
 from pkbrokers.kite.zerodhaWebSocketClient import ZerodhaWebSocketClient
+from pkbrokers.kite.inMemoryCandleStore import get_candle_store
 
 # Optimal batch size depends on your tick frequency
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
@@ -369,6 +370,10 @@ class KiteTokenWatcher:
         self._tick_batch = {}
 
         self._next_process_time = None
+        
+        # Initialize in-memory candle store for high-performance candle access
+        self._candle_store = get_candle_store()
+        self._kite_instruments = {}
 
     def set_stop_queue(self, stop_queue):
         """
@@ -438,9 +443,13 @@ class KiteTokenWatcher:
                 kite.sync_instruments(force_fetch=True)
             instruments = kite.fetch_instruments()
             # Start JSON writer first
-            self.json_writer.start(
-                kite_instruments=kite.kite_instruments if len(instruments) > 0 else {}
-            )
+            self._kite_instruments = kite.kite_instruments if len(instruments) > 0 else {}
+            self.json_writer.start(kite_instruments=self._kite_instruments)
+            
+            # Register instruments with candle store for symbol mapping
+            for token, inst in self._kite_instruments.items():
+                if hasattr(inst, 'tradingsymbol'):
+                    self._candle_store.register_instrument(int(token), inst.tradingsymbol)
             time.sleep(
                 JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC
             )  # Let JSON writer initialize
@@ -564,6 +573,25 @@ class KiteTokenWatcher:
                 self.json_writer.add_tick(processed)
             except Exception as e:
                 self.logger.error(f"Error sending to JSON writer: {e}")
+            
+            # Update in-memory candle store for high-performance candle access
+            try:
+                trading_symbol = ""
+                if instrument_token in self._kite_instruments:
+                    trading_symbol = getattr(self._kite_instruments[instrument_token], 'tradingsymbol', '')
+                
+                tick_for_candle = {
+                    'instrument_token': latest_tick.instrument_token,
+                    'last_price': latest_tick.last_price or 0,
+                    'day_volume': latest_tick.day_volume or 0,
+                    'oi': latest_tick.oi or 0,
+                    'exchange_timestamp': latest_tick.exchange_timestamp,
+                    'trading_symbol': trading_symbol,
+                    'type': 'tick',
+                }
+                self._candle_store.process_tick(tick_for_candle)
+            except Exception as e:
+                self.logger.debug(f"Error updating candle store: {e}")
 
         # Insert into database
         try:
@@ -817,6 +845,93 @@ class KiteTokenWatcher:
 
         return depth
 
+    def get_candles(
+        self,
+        symbol: str = None,
+        instrument_token: int = None,
+        interval: str = '5m',
+        count: int = 50,
+    ):
+        """
+        Get candles for an instrument from the in-memory store.
+        
+        Args:
+            symbol: Trading symbol (e.g., "RELIANCE")
+            instrument_token: Instrument token (alternative to symbol)
+            interval: Candle interval ('1m', '2m', '3m', '4m', '5m', '10m', '15m', '30m', '60m', 'day')
+            count: Number of candles to return
+            
+        Returns:
+            List of candle dictionaries
+        """
+        return self._candle_store.get_candles(
+            instrument_token=instrument_token,
+            trading_symbol=symbol,
+            interval=interval,
+            count=count,
+        )
+    
+    def get_candles_df(
+        self,
+        symbol: str = None,
+        instrument_token: int = None,
+        interval: str = '5m',
+        count: int = 50,
+    ):
+        """
+        Get candles as a pandas DataFrame.
+        
+        Args:
+            symbol: Trading symbol
+            instrument_token: Instrument token
+            interval: Candle interval
+            count: Number of candles
+            
+        Returns:
+            DataFrame with OHLCV columns
+        """
+        return self._candle_store.get_ohlcv_dataframe(
+            instrument_token=instrument_token,
+            trading_symbol=symbol,
+            interval=interval,
+            count=count,
+        )
+    
+    def get_day_ohlcv(self, symbol: str = None, instrument_token: int = None):
+        """Get today's OHLCV data for an instrument."""
+        return self._candle_store.get_day_ohlcv(
+            instrument_token=instrument_token,
+            trading_symbol=symbol,
+        )
+    
+    def get_all_day_ohlcv(self):
+        """Get today's OHLCV for all instruments."""
+        return self._candle_store.get_all_instruments_ohlcv(interval='day')
+    
+    def get_candle_store_stats(self):
+        """Get statistics from the candle store."""
+        return self._candle_store.get_stats()
+    
+    def export_candle_store(self, pickle_path: str = None, json_path: str = None):
+        """
+        Export candle store data to files.
+        
+        Args:
+            pickle_path: Path for pickle file (optional)
+            json_path: Path for ticks.json file (optional)
+        """
+        if json_path:
+            self._candle_store.save_ticks_json(json_path)
+        elif json_path is None:
+            self._candle_store.save_ticks_json()
+        
+        if pickle_path:
+            data = self._candle_store.export_to_pickle_format()
+            import pickle
+            with open(pickle_path, 'wb') as f:
+                pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            self.logger.info(f"Exported candle store to {pickle_path}")
+
     def stop(self):
         """
         Graceful shutdown of all components.
@@ -828,6 +943,13 @@ class KiteTokenWatcher:
         - Resource cleanup
         """
         self.logger.info("Initiating graceful shutdown...")
+        
+        # Save candle store data before shutdown
+        try:
+            self._candle_store.save_ticks_json()
+            self.logger.info("Saved candle store to ticks.json")
+        except Exception as e:
+            self.logger.error(f"Error saving candle store: {e}")
 
         # Signal shutdown to all components
         self._shutdown_event.set()

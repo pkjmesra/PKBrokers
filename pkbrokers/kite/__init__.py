@@ -31,3 +31,31 @@ The MIT License (MIT)
 # commit the changes into the main/checked-out branch.
 # major.minor.dateOfRelease.pipelineJobNumber
 VERSION = '0.1.20250914.18'
+
+# High-performance candle store exports
+from pkbrokers.kite.inMemoryCandleStore import (
+    InMemoryCandleStore,
+    get_candle_store,
+    Candle,
+    SUPPORTED_INTERVALS,
+)
+
+from pkbrokers.kite.tickProcessor import (
+    TickProcessor,
+    get_tick_processor,
+    HighPerformanceDataProvider,
+)
+
+from pkbrokers.kite.candleAggregator import CandleAggregator
+
+__all__ = [
+    'VERSION',
+    'InMemoryCandleStore',
+    'get_candle_store',
+    'Candle',
+    'SUPPORTED_INTERVALS',
+    'TickProcessor',
+    'get_tick_processor',
+    'HighPerformanceDataProvider',
+    'CandleAggregator',
+]
