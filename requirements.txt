@@ -3,7 +3,7 @@ libsql==0.1.6
 numpy==1.26.4
 pandas==2.2.3
 PKDevTools>=0.13.20251223.308
-PKNSETools>=0.1.20251223.141
+PKNSETools>=0.1.20251223.143
 pygithub
 pyotp
 python-telegram-bot[all]>=13.4,<20.0
