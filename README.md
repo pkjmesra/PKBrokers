@@ -1,5 +1,44 @@
 A simple python library to connect to various brokers using standard user credentials, fetch the instruments (trading symbols), indices and their ticks during as well as off market hours.
 
+## High-Performance In-Memory Candle Store
+
+PKBrokers includes a high-performance, in-memory OHLCV candle storage system that provides instant access to real-time data across all supported timeframes.
+
+### Quick Start
+
+```python
+from pkbrokers.kite import get_candle_store, HighPerformanceDataProvider
+
+# Get the candle store singleton
+store = get_candle_store()
+
+# Or use the high-level data provider
+provider = HighPerformanceDataProvider()
+
+# Get 5-minute candles for any stock
+df = provider.get_stock_data("RELIANCE", interval="5m", count=50)
+
+# Get current day's OHLCV
+ohlcv = provider.get_current_ohlcv("TCS")
+```
+
+### Supported Timeframes
+| Interval | Description |
+|----------|-------------|
+| 1m, 2m, 3m, 4m, 5m | Short-term |
+| 10m, 15m, 30m | Intraday |
+| 60m | Hourly |
+| day | Daily |
+
+### Features
+- **O(1) Access**: Instant access to any candle
+- **No Rate Limits**: Unlike Yahoo Finance
+- **Real-time**: Live data during market hours
+- **Auto-persistence**: Saves to disk every 5 minutes
+- **Memory Efficient**: ~100MB for 2000 instruments
+
+📖 [Full Documentation](pkbrokers/kite/HIGH_PERFORMANCE_CANDLES.md)
+
 [![codecov][codecov-badge]][codecov]
 
 [codecov-badge]: https://codecov.io/gh/pkjmesra/PKBrokers/branch/main/graph/badge.svg
