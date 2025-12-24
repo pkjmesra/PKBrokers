@@ -120,9 +120,10 @@ class PKTickOrchestrator:
         """Check if current time is within NSE market hours (9:15 AM to 3:30 PM IST)"""
         try:
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+            from datetime import timezone
 
             # Get current time in IST (UTC+5:30)
-            utc_now = datetime.utcnow()
+            utc_now = datetime.now(timezone.utc)
             ist_now = PKDateUtilities.utc_to_ist(
                 utc_dt=utc_now
             )  # utc_now.replace(hour=utc_now.hour + 5, minute=utc_now.minute + 30)

@@ -278,9 +278,10 @@ def update_metadata(
                 pass
         
         # Update metadata
-        now = datetime.utcnow()
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
         metadata = {
-            "last_update": now.isoformat() + "Z",
+            "last_update": now.isoformat().replace('+00:00', 'Z'),
             "last_update_timestamp": now.timestamp(),
             "instrument_count": instrument_count,
             "candles_available": candles_published,
