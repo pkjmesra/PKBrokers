@@ -136,6 +136,7 @@ class HighPerformanceTursoWriter:
         # Create connection with retry logic
         conn = None
         connection_attempts = 0
+        use_local_fallback = False
 
         while conn is None and connection_attempts < MAX_CONNECTION_ATTEMPTS:
             try:
@@ -145,11 +146,35 @@ class HighPerformanceTursoWriter:
                     timeout=30,
                 )
             except Exception as e:
-                self.logger.error(
-                    f"Writer {self.writer_id}: Connection attempt {connection_attempts + 1} failed: {e}"
-                )
+                error_str = str(e)
+                if "BLOCKED" in error_str.upper() or "forbidden" in error_str.lower():
+                    self.logger.warning(
+                        f"Writer {self.writer_id}: Turso blocked, will use local SQLite fallback"
+                    )
+                    use_local_fallback = True
+                    break
+                else:
+                    self.logger.error(
+                        f"Writer {self.writer_id}: Connection attempt {connection_attempts + 1} failed: {e}"
+                    )
                 connection_attempts += 1
-                time.sleep(2**connection_attempts)  # Exponential backoff
+                time.sleep(min(2**connection_attempts, MAX_EXPONENTIAL_BACKOFF_INTERVAL_SEC))
+
+        # Fallback to local SQLite if Turso is blocked
+        if use_local_fallback or conn is None:
+            try:
+                local_db_path = os.path.join(
+                    os.path.dirname(self.db_config.get("db_path", DEFAULT_DB_PATH)),
+                    f"ticks_writer_{self.writer_id}.db"
+                )
+                conn = sqlite3.connect(local_db_path, check_same_thread=False)
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                self.logger.info(f"Writer {self.writer_id}: Using local SQLite fallback: {local_db_path}")
+            except Exception as local_error:
+                self.logger.error(
+                    f"Writer {self.writer_id}: Local fallback also failed: {local_error}"
+                )
 
         if conn is None:
             self.logger.error(
@@ -586,14 +611,26 @@ class ThreadSafeDatabase:
         return self.local.conn
 
     def _get_turso_connection(self, force_connect=False):
-        """Get Turso connection - only for queries, not for inserts"""
+        """Get Turso connection - only for queries, not for inserts.
+        Falls back to local SQLite if Turso is blocked."""
         try:
             import libsql
 
             if not hasattr(self.local, "conn") or force_connect:
-                self.local.conn = libsql.connect(
-                    database=self.turso_url, auth_token=self.turso_auth_token
-                )
+                try:
+                    self.local.conn = libsql.connect(
+                        database=self.turso_url, auth_token=self.turso_auth_token
+                    )
+                except Exception as e:
+                    error_str = str(e)
+                    if "BLOCKED" in error_str.upper() or "forbidden" in error_str.lower():
+                        default_logger().warning(
+                            f"Turso blocked, falling back to local SQLite: {e}"
+                        )
+                        # Switch to local mode
+                        self.db_type = "local"
+                        return self._get_local_connection()
+                    raise
             return self.local.conn
         except ImportError:
             raise ImportError("libsql package required for Turso support")

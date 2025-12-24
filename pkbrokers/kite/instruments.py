@@ -274,14 +274,21 @@ class KiteInstruments:
             return False
 
     def table_exists(self, cursor, table_name):
-        cursor.execute(
-            """
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name=?
-        """,
-            (table_name,),
-        )
-        return cursor.fetchone() is not None
+        try:
+            cursor.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name=?
+            """,
+                (table_name,),
+            )
+            return cursor.fetchone() is not None
+        except Exception as e:
+            # Handle database errors gracefully
+            if "BLOCKED" in str(e).upper() or "forbidden" in str(e).lower():
+                self.logger.warning(f"Database blocked during table_exists check: {e}")
+                return False  # Assume table doesn't exist, will be created
+            raise
 
     def _init_db(self, drop_table: bool = False) -> None:
         """
@@ -298,18 +305,37 @@ class KiteInstruments:
             - nse_stock column for NSE stock identification
 
             Also enables WAL mode for local SQLite databases for better concurrency.
+            Falls back to local SQLite if Turso is blocked/unavailable.
         """
         self.logger.debug("Database initialisation in progress...")
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
 
+        try:
+            self._do_init_db(drop_table)
+        except Exception as e:
+            # If any database operation fails with BLOCKED, switch to local mode and retry
+            if "BLOCKED" in str(e).upper() or "forbidden" in str(e).lower():
+                self.logger.warning(f"Database blocked, switching to local SQLite mode: {e}")
+                self.local = True
+                self._do_init_db(drop_table)
+            else:
+                raise
+
+    def _do_init_db(self, drop_table: bool = False) -> None:
+        """Internal method to perform actual database initialization."""
         with self._get_connection() as conn:
             self.logger.debug("Database connected.")
             cursor = conn.cursor()
-            if (
-                drop_table
-                and not self._is_last_updated_today()
-                and self._needs_refresh()
-            ):
+            
+            # Check if we need to drop and recreate
+            needs_drop = drop_table
+            if needs_drop:
+                try:
+                    needs_drop = not self._is_last_updated_today() and self._needs_refresh()
+                except Exception:
+                    needs_drop = True  # If check fails, assume we need refresh
+            
+            if needs_drop:
                 self.logger.debug("Dropping table instruments.")
                 cursor.execute("DROP TABLE IF EXISTS instruments")
 
@@ -357,7 +383,7 @@ class KiteInstruments:
                         ON instruments(nse_stock)
                     """)
                 except Exception as e:
-                    self.logger.error(e)
+                    self.logger.debug(f"Index creation error (may already exist): {e}")
                     pass
                 conn.commit()
             self.logger.debug("Database initialised for table instruments.")
@@ -375,13 +401,22 @@ class KiteInstruments:
         Note:
             Returns either local SQLite connection or remote Turso connection
             based on configuration and the 'local' parameter.
+            Falls back to local SQLite if Turso is blocked/unavailable.
         """
         if local or self.local:
             return sqlite3.connect(self.db_path, timeout=30)
         else:
-            return libsql.connect(
-                database=PKEnvironment().TDU, auth_token=PKEnvironment().TAT
-            )
+            try:
+                return libsql.connect(
+                    database=PKEnvironment().TDU, auth_token=PKEnvironment().TAT
+                )
+            except Exception as e:
+                # Handle Turso blocked/unavailable - fallback to local
+                if "BLOCKED" in str(e).upper() or "forbidden" in str(e).lower():
+                    self.logger.warning(f"Turso database blocked, falling back to local SQLite: {e}")
+                    self.local = True  # Switch to local mode for subsequent calls
+                    return sqlite3.connect(self.db_path, timeout=30)
+                raise
 
     def _get_nse_trading_symbols(self) -> list[str]:
         """
@@ -426,36 +461,43 @@ class KiteInstruments:
         Note:
             The 23.5 hour threshold ensures daily refresh while accounting for
             market timing variations.
+            Returns True if database is unavailable (blocked/error).
         """
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
 
-            # Single efficient query that returns age in seconds
-            try:
-                cursor.execute(
-                    """
-                    SELECT CASE
-                        WHEN NOT EXISTS (SELECT 1 FROM instruments LIMIT 1) THEN 1
-                        WHEN (
-                            strftime('%s','now') -
-                            COALESCE(
-                                (SELECT strftime('%s',MAX(last_updated)) FROM instruments),
-                                0
-                            ) > ?
-                        ) THEN 1
-                        WHEN (
-                            SELECT DATE(MAX(last_updated),'utc')
-                            FROM instruments
-                        ) != DATE('now','utc') THEN 1
-                        ELSE 0
-                    END AS needs_refresh
-                """,
-                    (self._update_threshold,),
-                )
+                # Single efficient query that returns age in seconds
+                try:
+                    cursor.execute(
+                        """
+                        SELECT CASE
+                            WHEN NOT EXISTS (SELECT 1 FROM instruments LIMIT 1) THEN 1
+                            WHEN (
+                                strftime('%s','now') -
+                                COALESCE(
+                                    (SELECT strftime('%s',MAX(last_updated)) FROM instruments),
+                                    0
+                                ) > ?
+                            ) THEN 1
+                            WHEN (
+                                SELECT DATE(MAX(last_updated),'utc')
+                                FROM instruments
+                            ) != DATE('now','utc') THEN 1
+                            ELSE 0
+                        END AS needs_refresh
+                    """,
+                        (self._update_threshold,),
+                    )
 
-                return cursor.fetchone()[0] == 1  # 0 for first run case
-            except BaseException:
-                return True
+                    return cursor.fetchone()[0] == 1  # 0 for first run case
+                except BaseException:
+                    return True
+        except Exception as e:
+            # Database unavailable - needs refresh
+            if "BLOCKED" in str(e).upper():
+                self.logger.warning(f"Database blocked in _needs_refresh: {e}")
+            return True
 
     def _normalize_instrument(self, raw: Dict[str, str]) -> Optional[Instrument]:
         """

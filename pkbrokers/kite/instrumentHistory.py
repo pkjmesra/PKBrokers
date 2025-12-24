@@ -25,6 +25,7 @@ SOFTWARE.
 """
 
 import os
+import sqlite3
 import time
 from datetime import datetime, timedelta
 from enum import Enum
@@ -207,14 +208,34 @@ class KiteTickerHistory:
         # Copy all cookies from the auth response
         # self.session.cookies.update(access_token_response.cookies)
 
-        # Initialize database connection
-        self.db_conn = libsql.connect(
-            database=PKEnvironment().TDU, auth_token=PKEnvironment().TAT
+        # Initialize database connection with fallback
+        self._use_local_db = False
+        self._local_db_path = os.path.join(
+            Archiver.get_user_data_dir(), "instrument_history.db"
         )
+        try:
+            self.db_conn = libsql.connect(
+                database=PKEnvironment().TDU, auth_token=PKEnvironment().TAT
+            )
+        except Exception as e:
+            if "BLOCKED" in str(e).upper() or "forbidden" in str(e).lower():
+                self.logger.warning(f"Turso database blocked, using local SQLite: {e}")
+                self._use_local_db = True
+                self.db_conn = sqlite3.connect(self._local_db_path, check_same_thread=False)
+            else:
+                raise
 
         # Only create if it doesn't exist
-        if not self.table_exists(self.db_conn.cursor(), "instrument_history"):
-            self._initialize_database()
+        try:
+            if not self.table_exists(self.db_conn.cursor(), "instrument_history"):
+                self._initialize_database()
+        except Exception as e:
+            if "BLOCKED" in str(e).upper() or "forbidden" in str(e).lower():
+                self.logger.warning(f"Turso blocked during init, switching to local: {e}")
+                self._use_local_db = True
+                self.db_conn = sqlite3.connect(self._local_db_path, check_same_thread=False)
+                if not self.table_exists(self.db_conn.cursor(), "instrument_history"):
+                    self._initialize_database()
 
     def update_session_headers(self):
         # Set all required headers and cookies
@@ -441,15 +462,31 @@ class KiteTickerHistory:
                 params,
             )
         except ValueError as e:
-            self.logger.error(
-                f"Error executing:Retrial:{retrial} for query:{query}. {e}"
-            )
-            if not retrial:
-                # Re-Initialize database connection
-                self.db_conn = libsql.connect(
-                    database=PKEnvironment().TDU, auth_token=PKEnvironment().TAT
+            error_str = str(e).upper()
+            if "BLOCKED" in error_str or "FORBIDDEN" in error_str:
+                # Database blocked - switch to local SQLite
+                self.logger.warning(f"Turso blocked, switching to local SQLite: {e}")
+                if not self._use_local_db:
+                    self._use_local_db = True
+                    self.db_conn = sqlite3.connect(self._local_db_path, check_same_thread=False)
+                    if not self.table_exists(self.db_conn.cursor(), "instrument_history"):
+                        self._initialize_database()
+                    return self._execute_safe(query=query, params=params, retrial=True)
+            else:
+                self.logger.error(
+                    f"Error executing:Retrial:{retrial} for query:{query}. {e}"
                 )
-                return self._execute_safe(query=query, params=params, retrial=True)
+                if not retrial:
+                    # Re-Initialize database connection
+                    try:
+                        self.db_conn = libsql.connect(
+                            database=PKEnvironment().TDU, auth_token=PKEnvironment().TAT
+                        )
+                    except Exception as conn_error:
+                        if "BLOCKED" in str(conn_error).upper():
+                            self._use_local_db = True
+                            self.db_conn = sqlite3.connect(self._local_db_path, check_same_thread=False)
+                    return self._execute_safe(query=query, params=params, retrial=True)
         return cursor
 
     def timedelta_for_interval(self, interval: str = "day"):

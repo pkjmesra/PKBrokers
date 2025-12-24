@@ -79,7 +79,8 @@ class DatabaseWriterProcess:
             raise
 
     def _create_turso_connection(self):
-        """Create connection to Turso database using libSQL"""
+        """Create connection to Turso database using libSQL.
+        Falls back to local SQLite if Turso is blocked."""
         try:
             if not libsql:
                 raise ImportError(
@@ -93,11 +94,19 @@ class DatabaseWriterProcess:
                 raise ValueError("Turso configuration requires both URL and auth token")
 
             # Create libSQL connection to Turso
-            conn = libsql.connect(database=url, auth_token=auth_token)
-
-            # Set appropriate pragmas for remote database
-            # conn.execute("PRAGMA synchronous=NORMAL")
-            return conn
+            try:
+                conn = libsql.connect(database=url, auth_token=auth_token)
+                return conn
+            except Exception as turso_error:
+                error_str = str(turso_error)
+                if "BLOCKED" in error_str.upper() or "forbidden" in error_str.lower():
+                    self.logger.warning(
+                        f"Turso blocked, falling back to local SQLite: {turso_error}"
+                    )
+                    # Switch to local mode
+                    self.db_config["type"] = "local"
+                    return self._create_local_connection()
+                raise
 
         except Exception as e:
             self.logger.error(f"Failed to create Turso connection: {str(e)}")

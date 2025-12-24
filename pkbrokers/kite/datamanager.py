@@ -944,7 +944,20 @@ class InstrumentDataManager:
                 self.db_conn = self._create_local_connection()
             return True
         except Exception as e:
-            self.logger.error(f"Database connection failed: {e}")
+            error_str = str(e)
+            if "BLOCKED" in error_str.upper() or "forbidden" in error_str.lower():
+                self.logger.warning(f"Turso database blocked, falling back to local: {e}")
+                self._db_blocked = True
+                # Try local connection as fallback
+                try:
+                    self.db_type = "local"
+                    self.db_conn = self._create_local_connection()
+                    return True
+                except Exception as local_error:
+                    self.logger.error(f"Local connection also failed: {local_error}")
+                    return False
+            else:
+                self.logger.error(f"Database connection failed: {e}")
             return False
 
     def _create_local_connection(self):
