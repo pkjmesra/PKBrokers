@@ -2,7 +2,7 @@ gitpython #>=3.1.43
 libsql==0.1.6
 numpy==1.26.4
 pandas==2.2.3
-PKDevTools>=0.13.20251224.310
+PKDevTools>=0.13.20251224.312
 PKNSETools>=0.1.20251223.143
 pygithub
 pyotp
