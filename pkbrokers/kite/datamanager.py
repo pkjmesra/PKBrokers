@@ -202,6 +202,197 @@ class InstrumentDataManager:
             self.logger.debug(f"Error updating local SQLite from ticks: {e}")
             return False
 
+    def _get_realtime_candle_data(self, interval: str = 'day') -> Optional[Dict]:
+        """
+        Get real-time candle data from InMemoryCandleStore for a specific interval.
+        
+        Args:
+            interval: Candle interval ('1m', '2m', '3m', '4m', '5m', '10m', '15m', '30m', '60m', 'day')
+            
+        Returns:
+            Dict: Symbol-indexed data compatible with pickle format
+        """
+        try:
+            from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+            candle_store = get_candle_store()
+            
+            symbols = candle_store.get_all_symbols()
+            if not symbols:
+                self.logger.debug("No symbols in InMemoryCandleStore")
+                return None
+            
+            result = {}
+            timezone = pytz.timezone("Asia/Kolkata")
+            today = datetime.now(timezone).strftime('%Y-%m-%d')
+            
+            for symbol in symbols:
+                try:
+                    # Get current candle for the interval
+                    current_candle = candle_store.get_current_candle(
+                        trading_symbol=symbol, interval=interval
+                    )
+                    
+                    if current_candle and current_candle.get('tick_count', 0) > 0:
+                        # Get timestamp
+                        ts = current_candle.get('timestamp', 0)
+                        if isinstance(ts, (int, float)):
+                            dt = datetime.fromtimestamp(ts, tz=timezone)
+                            index_str = dt.isoformat()
+                        else:
+                            index_str = f"{today}T09:15:00+05:30"
+                        
+                        result[symbol] = {
+                            'data': [[
+                                current_candle.get('open', 0),
+                                current_candle.get('high', 0),
+                                current_candle.get('low', 0) if current_candle.get('low', float('inf')) != float('inf') else current_candle.get('open', 0),
+                                current_candle.get('close', 0),
+                                current_candle.get('volume', 0)
+                            ]],
+                            'columns': ['Open', 'High', 'Low', 'Close', 'Volume'],
+                            'index': [index_str]
+                        }
+                except Exception as e:
+                    self.logger.debug(f"Error getting candle for {symbol}: {e}")
+                    continue
+            
+            if result:
+                self.logger.info(f"Got real-time {interval} candles for {len(result)} symbols")
+            
+            return result if result else None
+            
+        except Exception as e:
+            self.logger.debug(f"Error getting real-time candle data: {e}")
+            return None
+
+    def _merge_realtime_data_with_historical(self, historical_data: Dict, realtime_data: Dict) -> Dict:
+        """
+        Merge real-time candle data with historical data.
+        
+        For each symbol:
+        - Keep all historical data
+        - Update/append today's candle from real-time data
+        
+        Args:
+            historical_data: Symbol-indexed historical data (pickle format)
+            realtime_data: Symbol-indexed real-time data from InMemoryCandleStore
+            
+        Returns:
+            Dict: Merged data in pickle format
+        """
+        if not historical_data:
+            return realtime_data or {}
+        
+        if not realtime_data:
+            return historical_data
+        
+        merged = {}
+        timezone = pytz.timezone("Asia/Kolkata")
+        today_str = datetime.now(timezone).strftime('%Y-%m-%d')
+        
+        # Process all symbols from historical data
+        for symbol, hist_data in historical_data.items():
+            if symbol not in realtime_data:
+                merged[symbol] = hist_data
+                continue
+            
+            rt_data = realtime_data[symbol]
+            
+            try:
+                # Get historical data arrays
+                hist_rows = hist_data.get('data', [])
+                hist_index = hist_data.get('index', [])
+                columns = hist_data.get('columns', ['Open', 'High', 'Low', 'Close', 'Volume'])
+                
+                # Get real-time data
+                rt_rows = rt_data.get('data', [])
+                rt_index = rt_data.get('index', [])
+                
+                if not rt_rows:
+                    merged[symbol] = hist_data
+                    continue
+                
+                # Check if today's data already exists in historical
+                # Remove today's entry if it exists (we'll replace with real-time)
+                new_rows = []
+                new_index = []
+                for idx, row in zip(hist_index, hist_rows):
+                    idx_date = idx[:10] if len(idx) >= 10 else idx
+                    if idx_date != today_str:
+                        new_rows.append(row)
+                        new_index.append(idx)
+                
+                # Append real-time data
+                new_rows.extend(rt_rows)
+                new_index.extend(rt_index)
+                
+                merged[symbol] = {
+                    'data': new_rows,
+                    'columns': columns,
+                    'index': new_index
+                }
+                
+            except Exception as e:
+                self.logger.debug(f"Error merging data for {symbol}: {e}")
+                merged[symbol] = hist_data
+        
+        # Add symbols that only exist in real-time data
+        for symbol, rt_data in realtime_data.items():
+            if symbol not in merged:
+                merged[symbol] = rt_data
+        
+        self.logger.info(f"Merged data: {len(merged)} symbols with real-time updates")
+        return merged
+
+    def _load_market_hours_data(self) -> bool:
+        """
+        Load data optimized for market hours.
+        
+        Priority:
+        1. Load historical data from local SQLite database
+        2. Merge with real-time aggregated candles from InMemoryCandleStore
+        
+        Returns:
+            bool: True if data was loaded successfully
+        """
+        self.logger.info("Loading data for market hours (SQLite + real-time candles)...")
+        
+        # Step 1: Load historical data from SQLite
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365)
+        
+        historical_data = self._fetch_data_from_local_sqlite(start_date, end_date)
+        
+        if not historical_data:
+            # Fallback to pickle if SQLite is empty
+            self.logger.debug("SQLite empty, falling back to pickle for historical data")
+            self._load_pickle_data()
+            historical_data = self._pickle_data
+        
+        if not historical_data:
+            # Try Turso database
+            self.logger.debug("Trying Turso database for historical data")
+            db_data = self._fetch_data_from_database(start_date, end_date)
+            if db_data:
+                historical_data = self._convert_old_format_to_symbol_dataframe_format(db_data)
+        
+        # Step 2: Get real-time data from InMemoryCandleStore
+        realtime_data = self._get_realtime_candle_data(interval='day')
+        
+        # Step 3: Merge historical with real-time
+        if historical_data or realtime_data:
+            self.pickle_data = self._merge_realtime_data_with_historical(
+                historical_data or {}, 
+                realtime_data or {}
+            )
+            
+            # Save merged data to SQLite for persistence
+            self._update_local_sqlite_from_ticks()
+            
+            return True
+        
+        return False
+
     @property
     def pickle_data(self):
         if not self._pickle_data_loaded:
@@ -1401,12 +1592,40 @@ class InstrumentDataManager:
         """
         Main execution method that orchestrates the complete data synchronization process.
 
+        During market hours:
+        - Prioritizes SQLite database for historical data
+        - Merges with real-time aggregated candles from InMemoryCandleStore
+        
+        Outside market hours:
+        - Uses pickle files as primary data source
+        - Falls back to databases if needed
+
         Returns:
             bool: True if data was successfully loaded/created, False otherwise
         """
         self.logger.info("Starting data synchronization process...")
 
-        self._load_pickle_data()
+        # Check if we're in market hours
+        try:
+            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+            is_market_hours = PKDateUtilities.is_extended_market_hours()
+        except Exception as e:
+            self.logger.debug(f"Error checking market hours: {e}")
+            is_market_hours = False
+        
+        # During market hours, use SQLite + real-time candles
+        if is_market_hours:
+            self.logger.info("Market is open - using SQLite + real-time candle data")
+            if self._load_market_hours_data():
+                # Continue to also try ticks download for latest data
+                pass
+            else:
+                # Fallback to normal loading if market hours loading fails
+                self.logger.debug("Market hours loading failed, falling back to normal flow")
+                self._load_pickle_data()
+        else:
+            # Outside market hours, use pickle-first approach
+            self._load_pickle_data()
 
         # Step 2: If no data loaded, fetch full year from database
         if not self.pickle_data:
@@ -1475,17 +1694,40 @@ class InstrumentDataManager:
                     f"Updated with {len(incremental_data)} incremental records"
                 )
 
-        # Step 4: Download and process ticks.json
-        self.logger.debug("Initiating ticks download...")
-        if self._orchestrate_ticks_download():
-            ticks_data = self._load_and_process_ticks_json()
-            if ticks_data:
-                self._update_pickle_file(ticks_data)
-                self.logger.debug(
-                    f"Updated with {len(ticks_data)} records from ticks.json"
+        # Step 4: Download and process ticks.json OR use real-time candles
+        self.logger.debug("Initiating ticks/real-time data update...")
+        
+        if is_market_hours:
+            # During market hours, prefer real-time aggregated candles
+            realtime_data = self._get_realtime_candle_data(interval='day')
+            if realtime_data:
+                self.pickle_data = self._merge_realtime_data_with_historical(
+                    self.pickle_data or {}, realtime_data
                 )
-                # Also update local SQLite for persistence
+                self.logger.debug(f"Merged real-time data for {len(realtime_data)} symbols")
+                # Persist to SQLite
                 self._update_local_sqlite_from_ticks()
+            else:
+                # Fallback to ticks.json if InMemoryCandleStore has no data
+                if self._orchestrate_ticks_download():
+                    ticks_data = self._load_and_process_ticks_json()
+                    if ticks_data:
+                        self.pickle_data = self._merge_realtime_data_with_historical(
+                            self.pickle_data or {}, ticks_data
+                        )
+                        self.logger.debug(f"Merged ticks.json data for {len(ticks_data)} symbols")
+                        self._update_local_sqlite_from_ticks()
+        else:
+            # Outside market hours, use ticks.json if available
+            if self._orchestrate_ticks_download():
+                ticks_data = self._load_and_process_ticks_json()
+                if ticks_data:
+                    self._update_pickle_file(ticks_data)
+                    self.logger.debug(
+                        f"Updated with {len(ticks_data)} records from ticks.json"
+                    )
+                    # Also update local SQLite for persistence
+                    self._update_local_sqlite_from_ticks()
 
         if fetch_kite:
             # Try Kite API first
