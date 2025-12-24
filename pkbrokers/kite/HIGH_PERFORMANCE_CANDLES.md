@@ -442,3 +442,92 @@ The `w-local-candle-sync.yml` workflow in PKScreener:
 2. Syncs from Turso or uses existing pickle data
 3. Commits SQLite databases to the repository
 4. Enables offline scan support
+
+## Market Hours Data Flow
+
+During market hours, the `InstrumentDataManager` uses a specialized data loading strategy that prioritizes real-time data:
+
+### Data Priority During Market Hours
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                    MARKET HOURS DATA FLOW                              │
+└────────────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  1. Check if Market is Open (9:13 AM - 3:32 PM IST)                    │
+└─────────────────────────────────────────────────────────────────────────┘
+                               │
+                    ┌──────────┴──────────┐
+                    │                     │
+              Market Open           Market Closed
+                    │                     │
+                    ▼                     ▼
+    ┌───────────────────────┐   ┌───────────────────────┐
+    │ Load from SQLite DB   │   │ Load from Pickle file │
+    │ (Historical Data)     │   │ (Normal flow)         │
+    └───────────────────────┘   └───────────────────────┘
+                    │
+                    ▼
+    ┌───────────────────────────────────────┐
+    │ Get Real-time Candles from            │
+    │ InMemoryCandleStore                   │
+    │ (1m, 2m, 3m, 4m, 5m, 10m, 15m,        │
+    │  30m, 60m, day intervals)             │
+    └───────────────────────────────────────┘
+                    │
+                    ▼
+    ┌───────────────────────────────────────┐
+    │ MERGE: Historical + Real-time         │
+    │ - Keep all historical rows            │
+    │ - Replace/append today's candle       │
+    └───────────────────────────────────────┘
+                    │
+                    ▼
+    ┌───────────────────────────────────────┐
+    │ Save to Local SQLite for persistence  │
+    └───────────────────────────────────────┘
+                    │
+                    ▼
+    ┌───────────────────────────────────────┐
+    │ Run Scans with Latest Data            │
+    └───────────────────────────────────────┘
+```
+
+### Usage Example
+
+```python
+from pkbrokers.kite.datamanager import InstrumentDataManager
+
+# Create manager
+manager = InstrumentDataManager()
+
+# During market hours:
+# - Loads from SQLite (not pickle)
+# - Merges with real-time candles from InMemoryCandleStore
+# - Provides combined historical + live data for scans
+success = manager.execute()
+
+if success:
+    # Get data for a symbol
+    df = manager.get_symbol_dataframe('RELIANCE')
+    print(f"RELIANCE: {len(df)} rows, latest close: {df['Close'].iloc[-1]}")
+```
+
+### Behavior Summary
+
+| Condition | Historical Source | Real-time Source | Merge Strategy |
+|-----------|------------------|------------------|----------------|
+| Market Open | Local SQLite DB | InMemoryCandleStore | Replace today's candle |
+| Market Closed | Pickle file | ticks.json (if available) | Append/update |
+| Turso Blocked | Local SQLite DB | InMemoryCandleStore | Replace today's candle |
+| No Data | Try all sources in order | - | - |
+
+### Benefits
+
+1. **Real-time Updates**: Scans use live aggregated candle data during market hours
+2. **Historical Context**: Full year of historical data from SQLite
+3. **Resilient**: Falls back gracefully when data sources are unavailable
+4. **Persistent**: All updates saved to SQLite for offline access
+5. **Efficient**: Avoids reloading large pickle files during market hours
