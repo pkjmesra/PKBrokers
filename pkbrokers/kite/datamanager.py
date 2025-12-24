@@ -349,13 +349,16 @@ class InstrumentDataManager:
         Load data optimized for market hours.
         
         Priority:
-        1. Load historical data from local SQLite database
-        2. Merge with real-time aggregated candles from InMemoryCandleStore
+        1. Check if SQLite has sufficient data (100+ symbols)
+        2. If yes, load from SQLite and merge with real-time candles
+        3. If no, fall back to pickle file
         
         Returns:
-            bool: True if data was loaded successfully
+            bool: True if data was loaded successfully with sufficient symbols
         """
         self.logger.info("Loading data for market hours (SQLite + real-time candles)...")
+        
+        MIN_SYMBOLS_THRESHOLD = 100  # Minimum symbols required to use SQLite
         
         # Step 1: Load historical data from SQLite
         end_date = datetime.now()
@@ -363,31 +366,45 @@ class InstrumentDataManager:
         
         historical_data = self._fetch_data_from_local_sqlite(start_date, end_date)
         
-        if not historical_data:
-            # Fallback to pickle if SQLite is empty
-            self.logger.debug("SQLite empty, falling back to pickle for historical data")
+        # Check if SQLite has sufficient data
+        sqlite_symbols = len(historical_data) if historical_data else 0
+        
+        if sqlite_symbols < MIN_SYMBOLS_THRESHOLD:
+            # SQLite doesn't have enough data, fall back to pickle
+            self.logger.debug(f"SQLite has only {sqlite_symbols} symbols (need {MIN_SYMBOLS_THRESHOLD}+), falling back to pickle")
             self._load_pickle_data()
             historical_data = self._pickle_data
-        
-        if not historical_data:
-            # Try Turso database
-            self.logger.debug("Trying Turso database for historical data")
-            db_data = self._fetch_data_from_database(start_date, end_date)
-            if db_data:
-                historical_data = self._convert_old_format_to_symbol_dataframe_format(db_data)
-        
-        # Step 2: Get real-time data from InMemoryCandleStore
-        realtime_data = self._get_realtime_candle_data(interval='day')
-        
-        # Step 3: Merge historical with real-time
-        if historical_data or realtime_data:
-            self.pickle_data = self._merge_realtime_data_with_historical(
-                historical_data or {}, 
-                realtime_data or {}
-            )
             
-            # Save merged data to SQLite for persistence
-            self._update_local_sqlite_from_ticks()
+            if historical_data and len(historical_data) >= MIN_SYMBOLS_THRESHOLD:
+                self.logger.info(f"Loaded {len(historical_data)} symbols from pickle")
+            else:
+                # Try Turso database as last resort
+                self.logger.debug("Trying Turso database for historical data")
+                db_data = self._fetch_data_from_database(start_date, end_date)
+                if db_data:
+                    historical_data = self._convert_old_format_to_symbol_dataframe_format(db_data)
+        else:
+            self.logger.info(f"Loaded {sqlite_symbols} symbols from local SQLite")
+        
+        # Step 2: Get real-time data from InMemoryCandleStore (if available)
+        realtime_data = None
+        try:
+            from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+            candle_store = get_candle_store()
+            if candle_store.get_all_symbols():  # Only if store has data
+                realtime_data = self._get_realtime_candle_data(interval='day')
+        except Exception as e:
+            self.logger.debug(f"InMemoryCandleStore not available: {e}")
+        
+        # Step 3: Merge historical with real-time (if real-time available)
+        if historical_data:
+            if realtime_data:
+                self.pickle_data = self._merge_realtime_data_with_historical(
+                    historical_data, realtime_data
+                )
+                self.logger.info(f"Merged {len(realtime_data)} real-time updates")
+            else:
+                self.pickle_data = historical_data
             
             return True
         
@@ -1694,40 +1711,39 @@ class InstrumentDataManager:
                     f"Updated with {len(incremental_data)} incremental records"
                 )
 
-        # Step 4: Download and process ticks.json OR use real-time candles
-        self.logger.debug("Initiating ticks/real-time data update...")
+        # Step 4: Try to get real-time candle updates (only if InMemoryCandleStore has data)
+        # Skip ticks orchestration if we already have sufficient data loaded
+        has_sufficient_data = self.pickle_data and len(self.pickle_data) >= 100
         
-        if is_market_hours:
-            # During market hours, prefer real-time aggregated candles
-            realtime_data = self._get_realtime_candle_data(interval='day')
-            if realtime_data:
-                self.pickle_data = self._merge_realtime_data_with_historical(
-                    self.pickle_data or {}, realtime_data
-                )
-                self.logger.debug(f"Merged real-time data for {len(realtime_data)} symbols")
-                # Persist to SQLite
-                self._update_local_sqlite_from_ticks()
-            else:
-                # Fallback to ticks.json if InMemoryCandleStore has no data
-                if self._orchestrate_ticks_download():
-                    ticks_data = self._load_and_process_ticks_json()
-                    if ticks_data:
+        if is_market_hours and has_sufficient_data:
+            # During market hours, try to get real-time aggregated candles
+            try:
+                from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+                candle_store = get_candle_store()
+                if candle_store.get_all_symbols():  # Only if store has been populated
+                    realtime_data = self._get_realtime_candle_data(interval='day')
+                    if realtime_data:
                         self.pickle_data = self._merge_realtime_data_with_historical(
-                            self.pickle_data or {}, ticks_data
+                            self.pickle_data or {}, realtime_data
                         )
-                        self.logger.debug(f"Merged ticks.json data for {len(ticks_data)} symbols")
+                        self.logger.debug(f"Merged real-time data for {len(realtime_data)} symbols")
                         self._update_local_sqlite_from_ticks()
-        else:
-            # Outside market hours, use ticks.json if available
-            if self._orchestrate_ticks_download():
-                ticks_data = self._load_and_process_ticks_json()
-                if ticks_data:
-                    self._update_pickle_file(ticks_data)
-                    self.logger.debug(
-                        f"Updated with {len(ticks_data)} records from ticks.json"
+            except Exception as e:
+                self.logger.debug(f"Real-time candle update skipped: {e}")
+        
+        # Only try ticks.json if it already exists locally (don't trigger auth-required download)
+        if self.ticks_json_path.exists():
+            ticks_data = self._load_and_process_ticks_json()
+            if ticks_data:
+                if is_market_hours:
+                    self.pickle_data = self._merge_realtime_data_with_historical(
+                        self.pickle_data or {}, ticks_data
                     )
-                    # Also update local SQLite for persistence
-                    self._update_local_sqlite_from_ticks()
+                    self.logger.debug(f"Merged ticks.json data for {len(ticks_data)} symbols")
+                else:
+                    self._update_pickle_file(ticks_data)
+                    self.logger.debug(f"Updated with {len(ticks_data)} records from ticks.json")
+                self._update_local_sqlite_from_ticks()
 
         if fetch_kite:
             # Try Kite API first
