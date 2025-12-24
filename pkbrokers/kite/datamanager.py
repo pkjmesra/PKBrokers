@@ -25,6 +25,7 @@ SOFTWARE.
 """
 
 import json
+import os
 import pickle
 import sqlite3
 from datetime import date, datetime, timedelta, time
@@ -344,6 +345,46 @@ class InstrumentDataManager:
         self.logger.info(f"Merged data: {len(merged)} symbols with real-time updates")
         return merged
 
+    def _try_kite_authentication(self) -> bool:
+        """
+        Try to authenticate with Kite using KUSER/KPWD/KTOTP credentials.
+        
+        Returns:
+            bool: True if KTOKEN is available (either existing or newly generated)
+        """
+        try:
+            ktoken = PKEnvironment().KTOKEN
+            if ktoken and len(ktoken) > 10:
+                self.logger.debug("KTOKEN already available")
+                return True
+            
+            # Try to authenticate using credentials
+            kuser = os.environ.get("KUSER", PKEnvironment().allSecrets.get("KUSER", ""))
+            kpwd = os.environ.get("KPWD", PKEnvironment().allSecrets.get("KPWD", ""))
+            ktotp = os.environ.get("KTOTP", PKEnvironment().allSecrets.get("KTOTP", ""))
+            
+            if kuser and kpwd and ktotp and len(kuser) > 2 and len(kpwd) > 2 and len(ktotp) > 10:
+                self.logger.info("Attempting Kite authentication with credentials...")
+                from pkbrokers.kite.authenticator import KiteAuthenticator
+                auth = KiteAuthenticator()
+                enctoken = auth.get_enctoken(
+                    api_key="kitefront",
+                    username=kuser,
+                    password=kpwd,
+                    totp=ktotp
+                )
+                if enctoken and len(enctoken) > 10:
+                    os.environ["KTOKEN"] = enctoken
+                    self.logger.info("Kite authentication successful")
+                    return True
+            
+            self.logger.debug("Kite credentials not available for authentication")
+            return False
+            
+        except Exception as e:
+            self.logger.debug(f"Kite authentication failed: {e}")
+            return False
+
     def _load_market_hours_data(self) -> bool:
         """
         Load data optimized for market hours.
@@ -352,6 +393,7 @@ class InstrumentDataManager:
         1. Check if SQLite has sufficient data (100+ symbols)
         2. If yes, load from SQLite and merge with real-time candles
         3. If no, fall back to pickle file
+        4. Optionally try Kite API for real-time updates if authenticated
         
         Returns:
             bool: True if data was loaded successfully with sufficient symbols
@@ -396,7 +438,19 @@ class InstrumentDataManager:
         except Exception as e:
             self.logger.debug(f"InMemoryCandleStore not available: {e}")
         
-        # Step 3: Merge historical with real-time (if real-time available)
+        # Step 3: If no real-time data and Kite is authenticated, try Kite API
+        if not realtime_data and self._try_kite_authentication():
+            try:
+                # Get recent data from Kite API
+                yesterday = datetime.now() - timedelta(days=1)
+                kite_data = self._get_recent_data_from_kite(yesterday)
+                if kite_data:
+                    realtime_data = kite_data
+                    self.logger.info(f"Got {len(kite_data)} symbols from Kite API")
+            except Exception as e:
+                self.logger.debug(f"Kite API fetch failed: {e}")
+        
+        # Step 4: Merge historical with real-time (if real-time available)
         if historical_data:
             if realtime_data:
                 self.pickle_data = self._merge_realtime_data_with_historical(
