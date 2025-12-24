@@ -137,7 +137,8 @@ class PKTickOrchestrator:
             return market_start <= current_time <= market_end
 
         except Exception as e:
-            print(f"Error checking market hours: {e}")
+            from PKDevTools.classes.log import default_logger
+            default_logger().debug(f"Error checking market hours: {e}")
             return False
 
     def is_trading_holiday(self):
@@ -163,7 +164,8 @@ class PKTickOrchestrator:
             return False
 
         except Exception as e:
-            print(f"Error checking trading holidays: {e}")
+            from PKDevTools.classes.log import default_logger
+            default_logger().debug(f"Error checking trading holidays: {e}")
             return False  # Assume not holiday if we can't check
 
     def should_run_kite_process(self):

@@ -197,7 +197,8 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False):
     except KeyboardInterrupt:
         watcher.stop()
     except Exception as e:
-        print(f"Error: {e}")
+        from PKDevTools.classes.log import default_logger
+        default_logger().error(f"Kite ticks watcher error: {e}")
         watcher.stop()
 
 

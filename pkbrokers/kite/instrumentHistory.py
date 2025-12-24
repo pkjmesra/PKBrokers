@@ -411,7 +411,7 @@ class KiteTickerHistory:
         except Exception as e:
             # Rollback if any error occurs
             self.db_conn.execute("ROLLBACK")
-            print(f"Error saving to database: {str(e)}")
+            self.logger.error(f"Error saving to database: {str(e)}")
             self.logger.error(
                 f"Rollback:Failed Inserting {len(candles)} rows for token:{instrument_token} and interval:{interval}\n{str(e)}"
             )

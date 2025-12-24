@@ -435,7 +435,8 @@ def websocket_process_worker(args):
     try:
         process.run()
     except Exception as e:
-        print(f"WebSocket process {websocket_index} error: {e}")
+        from PKDevTools.classes.log import default_logger
+        default_logger().error(f"WebSocket process {websocket_index} error: {e}")
     finally:
         # Ensure clean shutdown
         if hasattr(process, "close"):
@@ -443,7 +444,8 @@ def websocket_process_worker(args):
                 process.close()
             except BaseException:
                 pass
-        print(f"WebSocket process {websocket_index} stopped")
+        from PKDevTools.classes.log import default_logger
+        default_logger().info(f"WebSocket process {websocket_index} stopped")
 
 
 class ZerodhaWebSocketClient:
