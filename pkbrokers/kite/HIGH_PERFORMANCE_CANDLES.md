@@ -362,3 +362,83 @@ path = os.path.join(Archiver.get_user_data_dir(), "candle_store.pkl")
 if os.path.exists(path):
     print(f"Store file size: {os.path.getsize(path) / 1024:.2f} KB")
 ```
+
+
+## Local SQLite Database (Offline Support)
+
+For scenarios where the Turso remote database is unavailable (quota exceeded, network issues),
+the `LocalCandleDatabase` module provides local SQLite storage.
+
+### Features
+
+- **Daily Candles**: Stores 1-year historical OHLCV data in `candles_daily_YYMMDD.db`
+- **Intraday Candles**: Stores 1-minute candles in `candles_YYMMDD_intraday.db`
+- **Turso Sync**: Automatically syncs from Turso when available
+- **Tick Fallback**: Falls back to InMemoryCandleStore tick aggregation
+- **Pickle Export**: Exports to PKScreener-compatible pickle format
+
+### Usage
+
+```python
+from pkbrokers.kite.localCandleDatabase import LocalCandleDatabase
+
+# Initialize database
+db = LocalCandleDatabase(base_path='/path/to/data')
+
+# Try to sync from Turso
+if not db.sync_from_turso():
+    # Fall back to tick data
+    from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+    db.update_from_ticks(get_candle_store())
+
+# Export for PKScreener
+daily_pkl, intraday_pkl = db.export_to_pickle()
+
+# Get statistics
+stats = db.get_stats()
+print(f"Daily: {stats['daily']['symbols']} symbols")
+print(f"Intraday: {stats['intraday']['symbols']} symbols")
+
+db.close()
+```
+
+### Database Schema
+
+**Daily Candles Table:**
+```sql
+CREATE TABLE daily_candles (
+    symbol TEXT NOT NULL,
+    date TEXT NOT NULL,
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL,
+    volume INTEGER,
+    updated_at TEXT,
+    PRIMARY KEY (symbol, date)
+);
+```
+
+**Intraday Candles Table:**
+```sql
+CREATE TABLE intraday_candles (
+    symbol TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    interval TEXT NOT NULL,
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL,
+    volume INTEGER,
+    updated_at TEXT,
+    PRIMARY KEY (symbol, timestamp, interval)
+);
+```
+
+### GitHub Workflow Integration
+
+The `w-local-candle-sync.yml` workflow in PKScreener:
+1. Runs during market hours (every 30 min) and after market close
+2. Syncs from Turso or uses existing pickle data
+3. Commits SQLite databases to the repository
+4. Enables offline scan support
