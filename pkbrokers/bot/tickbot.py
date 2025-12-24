@@ -118,11 +118,13 @@ class PKTickBot:
             "/top - Get top 20 ticking symbols\n"
             "/token - Sends the most recent saved token from environment\n"
             "/refresh_token - Generates, saves and sends the token\n"
+            "/restart - Refresh token AND restart tick watcher\n"
             "/db - Get the most recent local SQLite DB file\n"
-            "/test_ticks - Starts ticks for 3 minutes\n"
+            "/test_ticks - Starts ticks for 3 minutes (test mode)\n"
             "/help - Show this help message\n\n"
             "📦 Files are automatically compressed to reduce size. "
-            "If the file is too large, it will be split into multiple parts."
+            "If the file is too large, it will be split into multiple parts.\n\n"
+            "💡 If ticks.json is empty, try /restart to refresh token and restart watcher."
         )
 
     def send_refreshed_token(self, update: Update, context: CallbackContext) -> None:
@@ -171,6 +173,51 @@ class PKTickBot:
                 "Kite Tick testing kicked off! Try sending /ticks in sometime."
             )
 
+    def restart_watcher(self, update: Update, context: CallbackContext) -> None:
+        """Refresh token and restart the tick watcher."""
+        if self._shouldAvoidResponse(update):
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
+            return
+        
+        try:
+            # Step 1: Refresh token
+            from PKDevTools.classes.Environment import PKEnvironment
+            from pkbrokers.kite.examples.externals import kite_auth
+            
+            update.message.reply_text("🔄 Step 1/2: Refreshing KTOKEN...")
+            kite_auth()
+            new_token = PKEnvironment().KTOKEN
+            token_preview = f"{new_token[:10]}...{new_token[-10:]}" if len(new_token) > 20 else new_token
+            update.message.reply_text(f"✅ Token refreshed: {token_preview}")
+            
+            # Step 2: Start tick watcher
+            update.message.reply_text("🔄 Step 2/2: Starting tick watcher...")
+            
+            if self.parent and hasattr(self.parent, "bot_callback"):
+                self.parent.bot_callback()
+            
+            def start_watcher():
+                from pkbrokers.kite.examples.pkkite import kite_ticks
+                kite_ticks(test_mode=False)  # Full mode, not test
+            
+            import threading
+            watcher_thread = threading.Thread(
+                target=start_watcher, daemon=True, name="tick_watcher_restart"
+            )
+            watcher_thread.start()
+            
+            update.message.reply_text(
+                "✅ Tick watcher restarted!\n\n"
+                "Wait 1-2 minutes for instruments to load, then try:\n"
+                "• /status - Check if instruments are loading\n"
+                "• /ticks - Get the tick data"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error restarting watcher: {e}")
+            update.message.reply_text(f"❌ Error: {e}")
+
     def send_zipped(self, file_name, file_path, update):
         try:
             if not os.path.exists(file_path):
@@ -183,6 +230,19 @@ class PKTickBot:
             if file_size == 0:
                 update.message.reply_text(
                     f"⏳ {file_name} file is empty. Data collection might be in progress."
+                )
+                return
+            
+            # Check if file contains only empty JSON (2-3 bytes for {})
+            if file_size <= 5:
+                update.message.reply_text(
+                    f"⏳ {file_name} contains no data (empty JSON). "
+                    f"Possible causes:\n"
+                    f"• Kite websocket not connected\n"
+                    f"• KTOKEN expired - try /refresh_token\n"
+                    f"• No instruments subscribed\n"
+                    f"• Market is closed\n\n"
+                    f"Try /status to check the bot state."
                 )
                 return
 
@@ -370,7 +430,21 @@ class PKTickBot:
             return
         """Check bot and data status"""
         try:
-            status_msg = "✅ PKTickBot is online\n"
+            status_msg = "✅ PKTickBot is online\n\n"
+            
+            # Add candle store diagnostics
+            try:
+                from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+                candle_store = get_candle_store()
+                stats = candle_store.get_stats()
+                status_msg += "📊 Candle Store Status:\n"
+                status_msg += f"  • Registered instruments: {stats.get('instrument_count', 0)}\n"
+                status_msg += f"  • Instruments with ticks: {stats.get('instruments_with_ticks', 0)}\n"
+                status_msg += f"  • Total ticks processed: {stats.get('ticks_processed', 0)}\n"
+                status_msg += f"  • Uptime: {stats.get('uptime_seconds', 0):.0f}s\n\n"
+            except Exception as e:
+                status_msg += f"📊 Candle Store: Error - {e}\n\n"
+            
             status_msg = self._update_stats(
                 "ticks.json", self.ticks_file_path, status_msg
             )
@@ -491,6 +565,7 @@ class PKTickBot:
             dispatcher.add_handler(CommandHandler("ticks", self.send_zipped_ticks))
             dispatcher.add_handler(CommandHandler("db", self.send_zipped_db))
             dispatcher.add_handler(CommandHandler("test_ticks", self.test_ticks))
+            dispatcher.add_handler(CommandHandler("restart", self.restart_watcher))
             dispatcher.add_handler(CommandHandler("status", self.status))
             dispatcher.add_handler(CommandHandler("top", self.top_ticks))
             dispatcher.add_handler(CommandHandler("token", self.send_token))

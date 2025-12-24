@@ -746,24 +746,39 @@ class KiteInstruments:
         Get total count of instruments in database.
 
         Returns:
-            int: Number of instruments stored
+            int: Number of instruments stored (0 if database unavailable)
         """
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(1) FROM instruments")
-            return cursor.fetchone()[0]
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(1) FROM instruments")
+                return cursor.fetchone()[0]
+        except Exception as e:
+            # Handle database blocked/unavailable
+            if "BLOCKED" in str(e).upper():
+                self.logger.warning("Database blocked (quota exceeded), returning 0")
+            else:
+                self.logger.error(f"Error getting instrument count: {e}")
+            return 0
 
     def get_nse_stock_count(self) -> int:
         """
         Get count of instruments marked as NSE stocks.
 
         Returns:
-            int: Number of NSE stocks in database
+            int: Number of NSE stocks in database (0 if database unavailable)
         """
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(1) FROM instruments WHERE nse_stock = 1")
-            return cursor.fetchone()[0]
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(1) FROM instruments WHERE nse_stock = 1")
+                return cursor.fetchone()[0]
+        except Exception as e:
+            if "BLOCKED" in str(e).upper():
+                self.logger.warning("Database blocked (quota exceeded), returning 0")
+            else:
+                self.logger.error(f"Error getting NSE stock count: {e}")
+            return 0
 
     def get_equities(
         self,
@@ -828,10 +843,18 @@ class KiteInstruments:
             SELECT {columns_sql} FROM instruments
             """
 
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            return [dict(zip(requested_columns, row)) for row in cursor.fetchall()]
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, params)
+                return [dict(zip(requested_columns, row)) for row in cursor.fetchall()]
+        except Exception as e:
+            # Handle database blocked/unavailable
+            if "BLOCKED" in str(e).upper():
+                self.logger.warning("Database blocked (quota exceeded), returning empty list")
+            else:
+                self.logger.error(f"Error getting equities: {e}")
+            return []
 
     def get_or_fetch_instrument_tokens(
         self, all_columns: bool = True, only_nse_stocks: bool = False

@@ -697,10 +697,22 @@ class InMemoryCandleStore:
         
         data = self.export_to_ticks_json()
         
+        # Log warning if no data
+        if not data:
+            stats = self.get_stats()
+            self.logger.warning(
+                f"No tick data to export! Stats: instruments={stats.get('instrument_count', 0)}, "
+                f"ticks_processed={stats.get('ticks_processed', 0)}"
+            )
+        
         try:
             with open(file_path, 'w') as f:
                 json.dump(data, f, indent=2)
-            self.logger.debug(f"Saved ticks.json with {len(data)} instruments")
+            
+            if data:
+                self.logger.debug(f"Saved ticks.json with {len(data)} instruments")
+            else:
+                self.logger.warning(f"Saved empty ticks.json - no ticks received yet")
         except Exception as e:
             self.logger.error(f"Error saving ticks.json: {e}")
     
@@ -813,12 +825,42 @@ class InMemoryCandleStore:
     def get_stats(self) -> Dict[str, Any]:
         """Get store statistics."""
         with self.lock:
+            # Count instruments with ticks
+            instruments_with_ticks = 0
+            for instrument in self.instruments.values():
+                current = instrument.current_candle.get('day')
+                if current and current.tick_count > 0:
+                    instruments_with_ticks += 1
+            
             return {
                 **self.stats,
                 'instrument_count': len(self.instruments),
+                'instruments_with_ticks': instruments_with_ticks,
+                'registered_symbols': len(self.instrument_symbols),
                 'uptime_seconds': time.time() - self.stats['start_time'],
                 'memory_mb': self._estimate_memory_usage() / (1024 * 1024),
             }
+    
+    def get_diagnostic_info(self) -> str:
+        """Get diagnostic information for troubleshooting empty ticks."""
+        stats = self.get_stats()
+        lines = [
+            "=== InMemoryCandleStore Diagnostics ===",
+            f"Registered instruments: {stats.get('instrument_count', 0)}",
+            f"Registered symbols: {stats.get('registered_symbols', 0)}",
+            f"Instruments with ticks: {stats.get('instruments_with_ticks', 0)}",
+            f"Total ticks processed: {stats.get('ticks_processed', 0)}",
+            f"Uptime: {stats.get('uptime_seconds', 0):.1f} seconds",
+        ]
+        
+        with self.lock:
+            if self.instrument_symbols:
+                sample_symbols = list(self.instrument_symbols.values())[:5]
+                lines.append(f"Sample symbols: {', '.join(sample_symbols)}")
+            else:
+                lines.append("WARNING: No symbols registered!")
+        
+        return "\n".join(lines)
     
     def _estimate_memory_usage(self) -> int:
         """Estimate memory usage in bytes."""

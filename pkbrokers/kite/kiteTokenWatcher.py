@@ -439,11 +439,18 @@ class KiteTokenWatcher:
             )
             kite = KiteInstruments(api_key=API_KEY, access_token=ACCESS_TOKEN)
 
-            if kite.get_instrument_count() == 0:
-                kite.sync_instruments(force_fetch=True)
-            instruments = kite.fetch_instruments()
-            # Start JSON writer first
-            self._kite_instruments = kite.kite_instruments if len(instruments) > 0 else {}
+            try:
+                if kite.get_instrument_count() == 0:
+                    kite.sync_instruments(force_fetch=True)
+                instruments = kite.fetch_instruments()
+                # Start JSON writer first
+                self._kite_instruments = kite.kite_instruments if len(instruments) > 0 else {}
+            except Exception as db_error:
+                # Handle Turso database blocked/unavailable - use fallback
+                self.logger.warning(f"Database unavailable, using fallback: {db_error}")
+                self._kite_instruments = {}
+                instruments = []
+            
             self.json_writer.start(kite_instruments=self._kite_instruments)
             
             # Register instruments with candle store for symbol mapping
@@ -454,9 +461,41 @@ class KiteTokenWatcher:
                 JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC
             )  # Let JSON writer initialize
 
-            equities = kite.get_equities(column_names="instrument_token")
-            tokens = kite.get_instrument_tokens(equities=equities)
-            tokens = list(set(NIFTY_50 + BSE_SENSEX + tokens))
+            try:
+                equities = kite.get_equities(column_names="instrument_token")
+                tokens = kite.get_instrument_tokens(equities=equities)
+            except Exception as db_error:
+                # Fallback: Use cached instruments or fetch from Kite API directly
+                self.logger.warning(f"Could not get equities from DB, using fallback: {db_error}")
+                try:
+                    # Try to get instruments directly from Kite API
+                    from pkbrokers.kite.instrumentHistory import InstrumentHistory
+                    hist = InstrumentHistory(access_token=ACCESS_TOKEN)
+                    instruments_df = hist.get_instruments(exchange="NSE")
+                    if instruments_df is not None and len(instruments_df) > 0:
+                        tokens = instruments_df[instruments_df['segment'] == 'NSE']['instrument_token'].tolist()
+                        self.logger.info(f"Fetched {len(tokens)} tokens from Kite API directly")
+                        # Also register these instruments
+                        for _, row in instruments_df[instruments_df['segment'] == 'NSE'].iterrows():
+                            self._candle_store.register_instrument(
+                                int(row['instrument_token']), 
+                                row.get('tradingsymbol', str(row['instrument_token']))
+                            )
+                    else:
+                        tokens = []
+                except Exception as api_error:
+                    self.logger.error(f"Could not fetch instruments from Kite API: {api_error}")
+                    tokens = []
+            
+            # Always include indices even if database is unavailable
+            tokens = list(set(NIFTY_50 + BSE_SENSEX + OTHER_INDICES + tokens))
+            
+            # Log warning if we only have indices (no equities)
+            if len(tokens) <= len(NIFTY_50 + BSE_SENSEX + OTHER_INDICES):
+                self.logger.warning(
+                    f"Only {len(tokens)} index tokens available. "
+                    f"Database may be blocked. Ticks will be limited to indices only."
+                )
 
             self.token_batches = [
                 tokens[i : i + OPTIMAL_TOKEN_BATCH_SIZE]
