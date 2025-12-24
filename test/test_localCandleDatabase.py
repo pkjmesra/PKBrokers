@@ -375,5 +375,112 @@ class TestInstrumentDataManagerMarketHours(unittest.TestCase):
         self.assertEqual(merged, historical)
 
 
+class TestTicksDownloadAndConversion(unittest.TestCase):
+    """Test cases for ticks download and conversion functionality."""
+    
+    def test_convert_ticks_to_symbol_format(self):
+        """Test converting ticks.json format to symbol-indexed format."""
+        from pkbrokers.kite.datamanager import InstrumentDataManager
+        
+        manager = InstrumentDataManager()
+        
+        # Sample ticks data in the format from GitHub
+        ticks_data = {
+            '256265': {
+                'instrument_token': 256265,
+                'trading_symbol': 'RELIANCE',
+                'ohlcv': {
+                    'open': 1200.0,
+                    'high': 1220.0,
+                    'low': 1190.0,
+                    'close': 1210.0,
+                    'volume': 100000,
+                    'timestamp': '2025-12-24T15:30:00'
+                },
+                'prev_day_close': 1195.0
+            },
+            '340481': {
+                'instrument_token': 340481,
+                'trading_symbol': 'TCS',
+                'ohlcv': {
+                    'open': 3500.0,
+                    'high': 3550.0,
+                    'low': 3490.0,
+                    'close': 3540.0,
+                    'volume': 50000,
+                    'timestamp': '2025-12-24T15:30:00'
+                },
+                'prev_day_close': 3480.0
+            }
+        }
+        
+        result = manager._convert_ticks_to_symbol_format(ticks_data)
+        
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result), 2)
+        self.assertIn('RELIANCE', result)
+        self.assertIn('TCS', result)
+        
+        # Check RELIANCE data structure
+        reliance_data = result['RELIANCE']
+        self.assertIn('data', reliance_data)
+        self.assertIn('columns', reliance_data)
+        self.assertIn('index', reliance_data)
+        self.assertEqual(reliance_data['columns'], ['Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close'])
+        self.assertEqual(len(reliance_data['data']), 1)
+        self.assertEqual(reliance_data['data'][0][3], 1210.0)  # Close price
+    
+    def test_convert_ticks_with_missing_data(self):
+        """Test handling of incomplete tick data."""
+        from pkbrokers.kite.datamanager import InstrumentDataManager
+        
+        manager = InstrumentDataManager()
+        
+        # Ticks with missing fields
+        ticks_data = {
+            '256265': {
+                'instrument_token': 256265,
+                # Missing trading_symbol
+                'ohlcv': {'open': 100, 'high': 110, 'low': 95, 'close': 105, 'volume': 1000}
+            },
+            '340481': {
+                'instrument_token': 340481,
+                'trading_symbol': 'TCS',
+                # Missing ohlcv
+            },
+            '738561': {
+                'instrument_token': 738561,
+                'trading_symbol': 'INFY',
+                'ohlcv': {'open': 1500, 'high': 1520, 'low': 1480, 'close': 1510, 'volume': 20000}
+            }
+        }
+        
+        result = manager._convert_ticks_to_symbol_format(ticks_data)
+        
+        # Should only have INFY (the complete one)
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result), 1)
+        self.assertIn('INFY', result)
+    
+    def test_convert_ticks_with_zero_close(self):
+        """Test that ticks with zero close price are skipped."""
+        from pkbrokers.kite.datamanager import InstrumentDataManager
+        
+        manager = InstrumentDataManager()
+        
+        ticks_data = {
+            '256265': {
+                'instrument_token': 256265,
+                'trading_symbol': 'RELIANCE',
+                'ohlcv': {'open': 0, 'high': 0, 'low': 0, 'close': 0, 'volume': 0}
+            }
+        }
+        
+        result = manager._convert_ticks_to_symbol_format(ticks_data)
+        
+        # Should be None or empty since close is 0
+        self.assertTrue(result is None or len(result) == 0)
+
+
 if __name__ == '__main__':
     unittest.main()

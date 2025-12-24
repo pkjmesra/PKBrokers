@@ -98,8 +98,16 @@ class InstrumentDataManager:
             Path(Archiver.get_user_data_dir()) / self.pickle_file_name
         )
         self.ticks_json_path = Path(Archiver.get_user_data_dir()) / "ticks.json"
+        
+        # GitHub URLs for dated pickle file
         self.pickle_url = f"https://github.com/pkjmesra/PKScreener/tree/actions-data-download/results/Data/{path}"
-        self.raw_pickle_url = f"https://raw.githubusercontent.com/pkjmesra/PKScreener/refs/heads/actions-data-download/results/Data/{path}"
+        self.raw_pickle_url = f"https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/{path}"
+        
+        # Fallback URLs for undated pickle file (stock_data.pkl)
+        _, undated_path = Archiver.afterMarketStockDataExists(date_suffix=False)
+        self.fallback_pickle_url = f"https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/{undated_path}"
+        self.fallback_local_path = Path(Archiver.get_user_data_dir()) / undated_path
+        
         self.db_conn = None
         self.pickle_data = None
         self.db_type = "turso" or PKEnvironment().DB_TYPE
@@ -385,63 +393,162 @@ class InstrumentDataManager:
             self.logger.debug(f"Kite authentication failed: {e}")
             return False
 
+    def _download_ticks_from_github(self) -> Optional[Dict]:
+        """
+        Download fresh ticks.json.zip from GitHub (uploaded by PKTickBot workflow).
+        
+        ticks.json format:
+        {
+            "instrument_token": {
+                "instrument_token": int,
+                "trading_symbol": str,
+                "ohlcv": {"open": float, "high": float, "low": float, "close": float, "volume": int, "timestamp": str},
+                "prev_day_close": float
+            }
+        }
+        
+        Returns:
+            Optional[Dict]: Tick data converted to symbol-indexed format, or None if failed
+        """
+        import zipfile
+        import io
+        import json
+        
+        try:
+            ticks_zip_url = "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/ticks.json.zip"
+            
+            self.logger.info("Attempting to download fresh ticks from GitHub...")
+            response = requests.get(ticks_zip_url, timeout=60)
+            
+            if response.status_code != 200:
+                self.logger.debug(f"ticks.json.zip not available: HTTP {response.status_code}")
+                return None
+            
+            # Extract and parse ticks.json from the zip
+            with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+                if 'ticks.json' in zf.namelist():
+                    with zf.open('ticks.json') as f:
+                        ticks_data = json.load(f)
+                else:
+                    self.logger.debug("ticks.json not found in zip file")
+                    return None
+            
+            if not ticks_data:
+                return None
+            
+            # Save locally for caching
+            self.ticks_json_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.ticks_json_path, 'w') as f:
+                json.dump(ticks_data, f)
+            
+            self.logger.info(f"Downloaded {len(ticks_data)} instruments from ticks.json.zip")
+            
+            # Convert ticks directly to symbol-indexed format
+            return self._convert_ticks_to_symbol_format(ticks_data)
+            
+        except Exception as e:
+            self.logger.debug(f"Failed to download ticks from GitHub: {e}")
+            return None
+    
+    def _convert_ticks_to_symbol_format(self, ticks_data: Dict) -> Optional[Dict]:
+        """
+        Convert ticks.json data to symbol-indexed DataFrame format.
+        
+        This creates a minimal daily candle from the tick data's OHLCV.
+        
+        Args:
+            ticks_data: Dictionary of instrument_token -> tick data
+            
+        Returns:
+            Optional[Dict]: Symbol-indexed DataFrame format data
+        """
+        try:
+            from dateutil import parser as date_parser
+            
+            result = {}
+            
+            for token, tick_info in ticks_data.items():
+                if not isinstance(tick_info, dict):
+                    continue
+                
+                trading_symbol = tick_info.get('trading_symbol', '')
+                ohlcv = tick_info.get('ohlcv', {})
+                
+                if not trading_symbol or not ohlcv:
+                    continue
+                
+                # Parse timestamp
+                timestamp_str = ohlcv.get('timestamp', datetime.now().isoformat())
+                try:
+                    timestamp = date_parser.parse(timestamp_str)
+                except:
+                    timestamp = datetime.now()
+                
+                # Create minimal candle data
+                open_price = float(ohlcv.get('open', 0))
+                high_price = float(ohlcv.get('high', 0))
+                low_price = float(ohlcv.get('low', 0))
+                close_price = float(ohlcv.get('close', 0))
+                volume = int(ohlcv.get('volume', 0))
+                
+                if close_price == 0:
+                    continue
+                
+                # Store in symbol-indexed DataFrame format
+                result[trading_symbol] = {
+                    'data': [[open_price, high_price, low_price, close_price, volume, close_price]],
+                    'columns': ['Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close'],
+                    'index': [timestamp]
+                }
+            
+            if result:
+                self.logger.info(f"Converted {len(result)} symbols from ticks to candle format")
+            
+            return result if result else None
+            
+        except Exception as e:
+            self.logger.debug(f"Failed to convert ticks to symbol format: {e}")
+            return None
+
     def _load_market_hours_data(self) -> bool:
         """
         Load data optimized for market hours.
         
-        Priority:
-        1. Check if SQLite has sufficient data (100+ symbols)
-        2. If yes, load from SQLite and merge with real-time candles
-        3. If no, fall back to pickle file
-        4. Optionally try Kite API for real-time updates if authenticated
+        Priority (FRESH DATA FIRST):
+        1. Try to get fresh ticks from GitHub (ticks.json.zip uploaded by PKTickBot)
+        2. Try InMemoryCandleStore (real-time tick aggregation)
+        3. Try Kite API if authenticated
+        4. Load historical data from SQLite/pickle for base
+        5. Merge fresh data with historical
         
         Returns:
             bool: True if data was loaded successfully with sufficient symbols
         """
-        self.logger.info("Loading data for market hours (SQLite + real-time candles)...")
+        self.logger.info("Loading data for market hours (prioritizing fresh tick data)...")
         
-        MIN_SYMBOLS_THRESHOLD = 100  # Minimum symbols required to use SQLite
-        
-        # Step 1: Load historical data from SQLite
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=365)
-        
-        historical_data = self._fetch_data_from_local_sqlite(start_date, end_date)
-        
-        # Check if SQLite has sufficient data
-        sqlite_symbols = len(historical_data) if historical_data else 0
-        
-        if sqlite_symbols < MIN_SYMBOLS_THRESHOLD:
-            # SQLite doesn't have enough data, fall back to pickle
-            self.logger.debug(f"SQLite has only {sqlite_symbols} symbols (need {MIN_SYMBOLS_THRESHOLD}+), falling back to pickle")
-            self._load_pickle_data()
-            historical_data = self._pickle_data
-            
-            if historical_data and len(historical_data) >= MIN_SYMBOLS_THRESHOLD:
-                self.logger.info(f"Loaded {len(historical_data)} symbols from pickle")
-            else:
-                # Try Turso database as last resort
-                self.logger.debug("Trying Turso database for historical data")
-                db_data = self._fetch_data_from_database(start_date, end_date)
-                if db_data:
-                    historical_data = self._convert_old_format_to_symbol_dataframe_format(db_data)
-        else:
-            self.logger.info(f"Loaded {sqlite_symbols} symbols from local SQLite")
-        
-        # Step 2: Get real-time data from InMemoryCandleStore (if available)
+        MIN_SYMBOLS_THRESHOLD = 100
         realtime_data = None
-        try:
-            from pkbrokers.kite.inMemoryCandleStore import get_candle_store
-            candle_store = get_candle_store()
-            if candle_store.get_all_symbols():  # Only if store has data
-                realtime_data = self._get_realtime_candle_data(interval='day')
-        except Exception as e:
-            self.logger.debug(f"InMemoryCandleStore not available: {e}")
         
-        # Step 3: If no real-time data and Kite is authenticated, try Kite API
+        # PRIORITY 1: Try to get fresh ticks from GitHub
+        realtime_data = self._download_ticks_from_github()
+        if realtime_data:
+            self.logger.info(f"Got {len(realtime_data)} symbols from GitHub ticks.json.zip")
+        
+        # PRIORITY 2: Try InMemoryCandleStore (real-time tick aggregation)
+        if not realtime_data:
+            try:
+                from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+                candle_store = get_candle_store()
+                if candle_store.get_all_symbols():
+                    realtime_data = self._get_realtime_candle_data(interval='day')
+                    if realtime_data:
+                        self.logger.info(f"Got {len(realtime_data)} symbols from InMemoryCandleStore")
+            except Exception as e:
+                self.logger.debug(f"InMemoryCandleStore not available: {e}")
+        
+        # PRIORITY 3: Try Kite API if authenticated
         if not realtime_data and self._try_kite_authentication():
             try:
-                # Get recent data from Kite API
                 yesterday = datetime.now() - timedelta(days=1)
                 kite_data = self._get_recent_data_from_kite(yesterday)
                 if kite_data:
@@ -450,16 +557,43 @@ class InstrumentDataManager:
             except Exception as e:
                 self.logger.debug(f"Kite API fetch failed: {e}")
         
-        # Step 4: Merge historical with real-time (if real-time available)
-        if historical_data:
-            if realtime_data:
-                self.pickle_data = self._merge_realtime_data_with_historical(
-                    historical_data, realtime_data
-                )
-                self.logger.info(f"Merged {len(realtime_data)} real-time updates")
-            else:
-                self.pickle_data = historical_data
+        # PRIORITY 4: Load historical data (SQLite or pickle as BASE)
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365)
+        
+        historical_data = self._fetch_data_from_local_sqlite(start_date, end_date)
+        sqlite_symbols = len(historical_data) if historical_data else 0
+        
+        if sqlite_symbols < MIN_SYMBOLS_THRESHOLD:
+            self.logger.debug(f"SQLite has only {sqlite_symbols} symbols, falling back to pickle")
+            self._load_pickle_data()
+            historical_data = self._pickle_data
             
+            if not historical_data or len(historical_data) < MIN_SYMBOLS_THRESHOLD:
+                # Try Turso as last resort for historical
+                self.logger.debug("Trying Turso database for historical data")
+                db_data = self._fetch_data_from_database(start_date, end_date)
+                if db_data:
+                    historical_data = self._convert_old_format_to_symbol_dataframe_format(db_data)
+        else:
+            self.logger.info(f"Loaded {sqlite_symbols} historical symbols from SQLite")
+        
+        # PRIORITY 5: Merge fresh data with historical
+        if realtime_data and historical_data:
+            self.pickle_data = self._merge_realtime_data_with_historical(
+                historical_data, realtime_data
+            )
+            self.logger.info(f"Merged {len(realtime_data)} fresh updates with {len(historical_data)} historical")
+            return True
+        elif realtime_data:
+            # Only fresh data available (rare case)
+            self.pickle_data = realtime_data
+            self.logger.info(f"Using {len(realtime_data)} symbols from fresh data only")
+            return True
+        elif historical_data:
+            # Only historical data available
+            self.pickle_data = historical_data
+            self.logger.info(f"Using {len(historical_data)} historical symbols (no fresh data)")
             return True
         
         return False
@@ -867,14 +1001,28 @@ class InstrumentDataManager:
     def _check_pickle_exists_remote(self) -> bool:
         """
         Check if the pickle file exists on GitHub repository.
+        Tries dated file first, then falls back to undated stock_data.pkl.
 
         Returns:
             bool: True if file exists (HTTP 200), False otherwise
         """
         try:
-            response = requests.head(self.raw_pickle_url)
-            return response.status_code == 200
-        except requests.RequestException:
+            # Try dated file first
+            response = requests.head(self.raw_pickle_url, timeout=10)
+            if response.status_code == 200:
+                self._using_fallback_url = False
+                return True
+            
+            # Try fallback undated file
+            response = requests.head(self.fallback_pickle_url, timeout=10)
+            if response.status_code == 200:
+                self._using_fallback_url = True
+                self.logger.info(f"Dated pickle not found, using fallback: {self.fallback_pickle_url}")
+                return True
+            
+            return False
+        except requests.RequestException as e:
+            self.logger.debug(f"Error checking remote pickle: {e}")
             return False
 
     def _load_pickle_from_local(self) -> Optional[Dict]:
@@ -1105,15 +1253,35 @@ class InstrumentDataManager:
     def _load_pickle_from_github(self) -> Optional[Dict]:
         """
         Download and load pickle data from GitHub.
+        Tries dated file first, then falls back to undated stock_data.pkl.
         """
+        # Determine which URL to use
+        url_to_use = self.raw_pickle_url
+        local_path = self.local_pickle_path
+        
+        if getattr(self, '_using_fallback_url', False):
+            url_to_use = self.fallback_pickle_url
+            local_path = self.fallback_local_path
+        
         try:
-            response = requests.get(self.raw_pickle_url)
+            self.logger.info(f"Downloading pickle from: {url_to_use}")
+            response = requests.get(url_to_use, timeout=60)
+            
+            # If dated file fails, try fallback
+            if response.status_code != 200 and url_to_use == self.raw_pickle_url:
+                self.logger.info("Dated pickle not found, trying fallback...")
+                url_to_use = self.fallback_pickle_url
+                local_path = self.fallback_local_path
+                response = requests.get(url_to_use, timeout=60)
+            
             response.raise_for_status()
             
-            self.local_pickle_path.parent.mkdir(parents=True, exist_ok=True)
+            local_path.parent.mkdir(parents=True, exist_ok=True)
             
-            with open(self.local_pickle_path, "wb") as f:
+            with open(local_path, "wb") as f:
                 f.write(response.content)
+            
+            self.logger.info(f"Downloaded {len(response.content)} bytes to {local_path}")
             
             loaded_data = pickle.loads(response.content)
             
@@ -1121,7 +1289,7 @@ class InstrumentDataManager:
             
             if format_type == 'symbol_dataframe':
                 self.pickle_data = loaded_data
-                self.logger.info("Loaded data in symbol-indexed DataFrame format from local file")
+                self.logger.info(f"Loaded {len(loaded_data)} symbols in symbol-indexed DataFrame format")
                 
             elif format_type == 'old':
                 self.logger.info("Converting old format to symbol-indexed DataFrame format")
