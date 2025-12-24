@@ -325,7 +325,7 @@ class LocalCandleDatabase:
                 try:
                     # Get daily candle
                     daily_candle = candle_store.get_current_candle(
-                        symbol=symbol, interval='day'
+                        trading_symbol=symbol, interval='day'
                     )
                     
                     if daily_candle:
@@ -342,7 +342,7 @@ class LocalCandleDatabase:
                     
                     # Get 1-minute candles
                     candles_1m = candle_store.get_candles(
-                        symbol=symbol, interval='1m', count=390  # Full trading day
+                        trading_symbol=symbol, interval='1m', count=390  # Full trading day
                     )
                     
                     for candle in candles_1m:

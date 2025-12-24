@@ -191,6 +191,109 @@ class TestLocalCandleDatabase(unittest.TestCase):
         # Connections should be None after close
         self.assertIsNone(db._daily_conn)
         self.assertIsNone(db._intraday_conn)
+    
+    def test_update_from_ticks_with_mock_candle_store(self):
+        """Test updating database from a mock candle store."""
+        from pkbrokers.kite.localCandleDatabase import LocalCandleDatabase
+        
+        db = LocalCandleDatabase(base_path=self.temp_dir)
+        
+        # Create a mock candle store
+        mock_store = MagicMock()
+        mock_store.get_all_symbols.return_value = ['RELIANCE', 'TCS']
+        mock_store.get_current_candle.return_value = {
+            'open': 1200.0,
+            'high': 1250.0,
+            'low': 1180.0,
+            'close': 1230.0,
+            'volume': 1000000
+        }
+        mock_store.get_candles.return_value = [
+            {
+                'timestamp': datetime.now(self.timezone),
+                'open': 1200.0,
+                'high': 1205.0,
+                'low': 1198.0,
+                'close': 1202.0,
+                'volume': 50000
+            }
+        ]
+        
+        # Update from mock store
+        result = db.update_from_ticks(mock_store)
+        
+        self.assertTrue(result)
+        
+        # Verify data was inserted
+        stats = db.get_stats()
+        self.assertGreaterEqual(stats['daily']['symbols'], 1)
+        
+        db.close()
+    
+    def test_update_from_ticks_with_none_store(self):
+        """Test update_from_ticks handles None store gracefully."""
+        from pkbrokers.kite.localCandleDatabase import LocalCandleDatabase
+        
+        db = LocalCandleDatabase(base_path=self.temp_dir)
+        
+        result = db.update_from_ticks(None)
+        
+        self.assertFalse(result)
+        
+        db.close()
+
+
+class TestInMemoryCandleStore(unittest.TestCase):
+    """Test cases for InMemoryCandleStore get_all_symbols method."""
+    
+    def test_get_all_symbols(self):
+        """Test getting all registered symbols."""
+        from pkbrokers.kite.inMemoryCandleStore import InMemoryCandleStore
+        
+        # Clear any existing singleton
+        InMemoryCandleStore._instance = None
+        
+        store = InMemoryCandleStore(auto_persist=False, load_existing=False)
+        
+        # Register some instruments
+        store.register_instrument(256265, 'RELIANCE')
+        store.register_instrument(340481, 'TCS')
+        store.register_instrument(738561, 'INFY')
+        
+        symbols = store.get_all_symbols()
+        
+        self.assertIn('RELIANCE', symbols)
+        self.assertIn('TCS', symbols)
+        self.assertIn('INFY', symbols)
+        self.assertEqual(len(symbols), 3)
+        
+        # Clear singleton for other tests
+        InMemoryCandleStore._instance = None
+    
+    def test_get_all_instrument_tokens(self):
+        """Test getting all registered instrument tokens."""
+        from pkbrokers.kite.inMemoryCandleStore import InMemoryCandleStore
+        
+        # Clear any existing singleton
+        InMemoryCandleStore._instance = None
+        
+        store = InMemoryCandleStore(auto_persist=False, load_existing=False)
+        
+        # Register and process ticks
+        store.register_instrument(256265, 'RELIANCE')
+        store.process_tick({
+            'instrument_token': 256265,
+            'last_price': 1200.0,
+            'day_volume': 1000,
+            'exchange_timestamp': datetime.now().timestamp()
+        })
+        
+        tokens = store.get_all_instrument_tokens()
+        
+        self.assertIn(256265, tokens)
+        
+        # Clear singleton for other tests
+        InMemoryCandleStore._instance = None
 
 
 if __name__ == '__main__':

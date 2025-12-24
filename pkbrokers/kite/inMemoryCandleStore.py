@@ -852,6 +852,26 @@ class InMemoryCandleStore:
             self.instrument_symbols[instrument_token] = trading_symbol
             self.symbol_to_token[trading_symbol] = instrument_token
             self._get_or_create_instrument(instrument_token, trading_symbol)
+    
+    def get_all_symbols(self) -> List[str]:
+        """
+        Get all registered trading symbols.
+        
+        Returns:
+            List of trading symbols
+        """
+        with self.lock:
+            return list(self.symbol_to_token.keys())
+    
+    def get_all_instrument_tokens(self) -> List[int]:
+        """
+        Get all registered instrument tokens.
+        
+        Returns:
+            List of instrument tokens
+        """
+        with self.lock:
+            return list(self.instruments.keys())
 
 
 # Singleton accessor

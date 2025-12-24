@@ -106,6 +106,101 @@ class InstrumentDataManager:
         self._pickle_data_loaded = False
         self._pickle_data = None
         self._db_blocked = False  # Flag to track if database access is blocked (quota exceeded)
+        self._local_candle_db = None  # Local SQLite database instance
+
+    def _get_local_candle_db(self):
+        """Get or create the local candle database instance."""
+        if self._local_candle_db is None:
+            try:
+                from pkbrokers.kite.localCandleDatabase import LocalCandleDatabase
+                self._local_candle_db = LocalCandleDatabase()
+            except ImportError:
+                self.logger.debug("LocalCandleDatabase not available")
+            except Exception as e:
+                self.logger.debug(f"Failed to initialize LocalCandleDatabase: {e}")
+        return self._local_candle_db
+
+    def _fetch_data_from_local_sqlite(self, start_date=None, end_date=None) -> Optional[Dict]:
+        """
+        Fetch data from local SQLite database as fallback.
+        
+        Args:
+            start_date: Start date for data fetch
+            end_date: End date for data fetch
+            
+        Returns:
+            Dict: Symbol-indexed data compatible with pickle format
+        """
+        try:
+            local_db = self._get_local_candle_db()
+            if local_db is None:
+                return None
+            
+            # Format dates
+            start_str = start_date.strftime('%Y-%m-%d') if start_date else None
+            end_str = end_date.strftime('%Y-%m-%d') if end_date else None
+            
+            # Get daily candles from local database
+            daily_data = local_db.get_daily_candles(
+                start_date=start_str,
+                end_date=end_str
+            )
+            
+            if not daily_data:
+                self.logger.debug("No data in local SQLite database")
+                return None
+            
+            # Convert to pickle-compatible format
+            result = {}
+            for symbol, df in daily_data.items():
+                if df is not None and not df.empty:
+                    # Ensure columns match expected format
+                    df = df.rename(columns={
+                        'open': 'Open', 'high': 'High', 'low': 'Low',
+                        'close': 'Close', 'volume': 'Volume'
+                    })
+                    
+                    result[symbol] = {
+                        'data': df[['Open', 'High', 'Low', 'Close', 'Volume']].values.tolist(),
+                        'columns': ['Open', 'High', 'Low', 'Close', 'Volume'],
+                        'index': [d.isoformat() for d in df.index]
+                    }
+            
+            if result:
+                self.logger.info(f"Loaded {len(result)} symbols from local SQLite database")
+            
+            return result if result else None
+            
+        except Exception as e:
+            self.logger.debug(f"Error fetching from local SQLite: {e}")
+            return None
+
+    def _update_local_sqlite_from_ticks(self) -> bool:
+        """
+        Update local SQLite database from InMemoryCandleStore tick data.
+        
+        Returns:
+            bool: True if update was successful
+        """
+        try:
+            local_db = self._get_local_candle_db()
+            if local_db is None:
+                return False
+            
+            from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+            candle_store = get_candle_store()
+            
+            # Update local database from ticks
+            success = local_db.update_from_ticks(candle_store)
+            
+            if success:
+                self.logger.debug("Updated local SQLite database from tick data")
+            
+            return success
+            
+        except Exception as e:
+            self.logger.debug(f"Error updating local SQLite from ticks: {e}")
+            return False
 
     @property
     def pickle_data(self):
@@ -1325,8 +1420,16 @@ class InstrumentDataManager:
                 self._save_pickle_file()
                 self.logger.debug("Initial pickle file created from database data")
             else:
-                self.logger.debug("No data available from database")
-                return False
+                # Fallback: Try local SQLite database
+                self.logger.debug("Trying local SQLite database as fallback...")
+                local_data = self._fetch_data_from_local_sqlite(start_date, end_date)
+                if local_data:
+                    self.pickle_data = local_data
+                    self._save_pickle_file()
+                    self.logger.debug("Data loaded from local SQLite database")
+                else:
+                    self.logger.debug("No data available from any source")
+                    return False
 
         # Step 3: Find latest date and fetch incremental data
         max_date = self._get_max_date_from_pickle_data()
@@ -1357,6 +1460,13 @@ class InstrumentDataManager:
                     if db_data:
                         incremental_data.update(db_data)
                         self.logger.debug(f"Added {len(db_data)} symbols from database")
+            
+            # Fallback: Try local SQLite database if Turso blocked
+            if not incremental_data and self._db_blocked:
+                local_data = self._fetch_data_from_local_sqlite(start_datetime, datetime.now())
+                if local_data:
+                    incremental_data.update(local_data)
+                    self.logger.debug(f"Added {len(local_data)} symbols from local SQLite")
 
             # Update pickle with incremental data
             if incremental_data:
@@ -1374,6 +1484,8 @@ class InstrumentDataManager:
                 self.logger.debug(
                     f"Updated with {len(ticks_data)} records from ticks.json"
                 )
+                # Also update local SQLite for persistence
+                self._update_local_sqlite_from_ticks()
 
         if fetch_kite:
             # Try Kite API first
