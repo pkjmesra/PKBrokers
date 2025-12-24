@@ -296,5 +296,84 @@ class TestInMemoryCandleStore(unittest.TestCase):
         InMemoryCandleStore._instance = None
 
 
+class TestInstrumentDataManagerMarketHours(unittest.TestCase):
+    """Test cases for InstrumentDataManager market hours functionality."""
+    
+    def test_merge_realtime_data_with_historical(self):
+        """Test merging real-time data with historical data."""
+        from pkbrokers.kite.datamanager import InstrumentDataManager
+        
+        manager = InstrumentDataManager()
+        
+        # Create historical data
+        historical = {
+            'RELIANCE': {
+                'data': [[1200, 1210, 1190, 1205, 100000]],
+                'columns': ['Open', 'High', 'Low', 'Close', 'Volume'],
+                'index': ['2025-12-23T09:15:00+05:30']
+            }
+        }
+        
+        # Create real-time data
+        realtime = {
+            'RELIANCE': {
+                'data': [[1210, 1250, 1200, 1240, 200000]],
+                'columns': ['Open', 'High', 'Low', 'Close', 'Volume'],
+                'index': ['2025-12-24T09:15:00+05:30']
+            },
+            'TCS': {
+                'data': [[3000, 3100, 2900, 3050, 50000]],
+                'columns': ['Open', 'High', 'Low', 'Close', 'Volume'],
+                'index': ['2025-12-24T09:15:00+05:30']
+            }
+        }
+        
+        merged = manager._merge_realtime_data_with_historical(historical, realtime)
+        
+        # Check RELIANCE has both historical and real-time data
+        self.assertIn('RELIANCE', merged)
+        self.assertEqual(len(merged['RELIANCE']['data']), 2)
+        
+        # Check TCS was added from real-time
+        self.assertIn('TCS', merged)
+        self.assertEqual(len(merged['TCS']['data']), 1)
+    
+    def test_merge_empty_historical(self):
+        """Test merging when historical is empty."""
+        from pkbrokers.kite.datamanager import InstrumentDataManager
+        
+        manager = InstrumentDataManager()
+        
+        realtime = {
+            'RELIANCE': {
+                'data': [[1210, 1250, 1200, 1240, 200000]],
+                'columns': ['Open', 'High', 'Low', 'Close', 'Volume'],
+                'index': ['2025-12-24T09:15:00+05:30']
+            }
+        }
+        
+        merged = manager._merge_realtime_data_with_historical({}, realtime)
+        
+        self.assertEqual(merged, realtime)
+    
+    def test_merge_empty_realtime(self):
+        """Test merging when real-time is empty."""
+        from pkbrokers.kite.datamanager import InstrumentDataManager
+        
+        manager = InstrumentDataManager()
+        
+        historical = {
+            'RELIANCE': {
+                'data': [[1200, 1210, 1190, 1205, 100000]],
+                'columns': ['Open', 'High', 'Low', 'Close', 'Volume'],
+                'index': ['2025-12-23T09:15:00+05:30']
+            }
+        }
+        
+        merged = manager._merge_realtime_data_with_historical(historical, {})
+        
+        self.assertEqual(merged, historical)
+
+
 if __name__ == '__main__':
     unittest.main()
