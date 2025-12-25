@@ -1,0 +1,31 @@
+name: Sync Ticks to PKScreener
+
+# Phase 3: Cross-repository sync to ensure PKScreener has fresh tick data
+# Triggers the PKScreener data publisher to fetch latest ticks from PKBrokers
+
+on:
+  schedule:
+    # Every 5 minutes during market hours (IST 9:15-15:30 = UTC 3:45-10:00)
+    - cron: '*/5 3-10 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Trigger PKScreener data publisher
+        env:
+          GH_TOKEN: ${{ secrets.CI_PAT }}
+        run: |
+          echo "Triggering PKScreener data publisher workflow..."
+          gh workflow run w-data-publisher.yml -R pkjmesra/PKScreener || echo "Could not trigger workflow"
+          echo "Sync trigger sent"
+      
+      - name: Also trigger data warmup
+        env:
+          GH_TOKEN: ${{ secrets.CI_PAT }}
+        run: |
+          echo "Triggering PKScreener data warmup workflow..."
+          gh workflow run w-data-warmup.yml -R pkjmesra/PKScreener || echo "Could not trigger warmup"
+          echo "Warmup trigger sent"

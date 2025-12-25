@@ -49,6 +49,5 @@ LICENSE
 *.whl
 kite/*.txt
 *.sh
-.github/
 *.cache
 *.log
