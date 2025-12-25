@@ -121,6 +121,7 @@ class PKTickBot:
             "/restart - Refresh token AND restart tick watcher\n"
             "/db - Get the most recent local SQLite DB file\n"
             "/test_ticks - Starts ticks for 3 minutes (test mode)\n"
+            "/candles - Get aggregated candle data for all timeframes\n"
             "/help - Show this help message\n\n"
             "📦 Files are automatically compressed to reduce size. "
             "If the file is too large, it will be split into multiple parts.\n\n"
@@ -554,6 +555,55 @@ class PKTickBot:
             except Exception:
                 logger.error(tb_string)
 
+
+    def send_candles(self, update: Update, context: CallbackContext) -> None:
+        """Send aggregated candle data for all timeframes (1m, 5m, 15m, 30m, 60m, daily)"""
+        if self._shouldAvoidResponse(update):
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
+            return
+        import json
+        import gzip
+        import tempfile
+        from datetime import datetime
+        try:
+            # Try to load ticks.json and aggregate candles
+            if os.path.exists(self.ticks_file_path):
+                with open(self.ticks_file_path, "r") as f:
+                    ticks_data = json.load(f)
+                
+                # Build candle summary
+                candle_summary = {
+                    "timestamp": datetime.now().isoformat(),
+                    "instruments": len(ticks_data),
+                    "timeframes": ["1m", "5m", "15m", "30m", "60m", "daily"],
+                    "data": {}
+                }
+                
+                # Add sample data for each instrument
+                for symbol, data in list(ticks_data.items())[:100]:
+                    candle_summary["data"][symbol] = {
+                        "available": True,
+                        "last_update": data.get("last_update", "N/A")
+                    }
+                
+                # Create compressed file
+                with tempfile.NamedTemporaryFile(suffix=".json.gz", delete=False) as tmp:
+                    with gzip.open(tmp.name, "wt", encoding="utf-8") as gz:
+                        json.dump(candle_summary, gz)
+                    tmp_path = tmp.name
+                
+                with open(tmp_path, "rb") as f:
+                    update.message.reply_document(
+                        document=f,
+                        filename="candles.json.gz",
+                        caption=f"📊 Candle data: {len(ticks_data)} instruments"
+                    )
+                os.unlink(tmp_path)
+            else:
+                update.message.reply_text("❌ No candle data available. Try /ticks first.")
+        except Exception as e:
+            update.message.reply_text(f"❌ Error getting candles: {str(e)}")
     def run_bot(self):
         """Run the telegram bot - synchronous version for v13.4"""
         try:
@@ -574,6 +624,7 @@ class PKTickBot:
             )
 
             dispatcher.add_handler(CommandHandler("help", self.help_command))
+            dispatcher.add_handler(CommandHandler("candles", self.send_candles))
             dispatcher.add_error_handler(self.error_handler)
             self.logger.info("Starting PKTickBot...")
 

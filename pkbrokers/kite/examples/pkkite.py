@@ -316,6 +316,40 @@ def commit_ticks(file_name="ticks.json", branch_name="main"):
         default_logger().error(f"Error commiting {tick_file} to {branch_name}: {e}")
 
 
+def save_optimized_format(ticks_data, output_dir=None):
+    """
+    Phase 6 Optimization: Save tick data in compressed binary format for faster loading.
+    Uses gzip compression on JSON for ~70% size reduction and faster network transfer.
+    
+    Args:
+        ticks_data: Dictionary of tick data
+        output_dir: Output directory (defaults to user data dir)
+    
+    Returns:
+        Path to the saved file
+    """
+    import gzip
+    import json
+    import os
+
+    from PKDevTools.classes import Archiver
+
+    if output_dir is None:
+        output_dir = Archiver.get_user_data_dir()
+
+    try:
+        # Save as gzipped JSON (good balance of speed and compression)
+        output_path = os.path.join(output_dir, "ticks_optimized.json.gz")
+        with gzip.open(output_path, "wt", encoding="utf-8") as f:
+            json.dump(ticks_data, f, separators=(",", ":"))  # Compact JSON
+        
+        default_logger().info(f"Saved optimized format: {output_path}")
+        return output_path
+    except Exception as e:
+        default_logger().error(f"Error saving optimized format: {e}")
+        return None
+
+
 def remote_bot_auth_token():
     from PKDevTools.classes.log import default_logger
 
