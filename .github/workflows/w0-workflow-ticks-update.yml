@@ -79,6 +79,15 @@ jobs:
       with:
         python-version: '3.11'
 
+    - name: Restore pip cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-pkbrokers-${{ hashFiles('**/setup.py', '**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-pkbrokers-
+          ${{ runner.os }}-pip-
+
     - name: Install PKBrokers dependencies
       run: |
         pip install -e .
