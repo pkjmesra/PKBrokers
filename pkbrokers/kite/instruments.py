@@ -345,47 +345,46 @@ class KiteInstruments:
                 cursor.execute("PRAGMA journal_mode=WAL")
                 cursor.execute("PRAGMA synchronous=NORMAL")
 
-            # Only create if it doesn't exist
-            if not self.table_exists(cursor, "instruments"):
-                # Create instruments table with constraints and new nse_stock column
-                # Use INTEGER instead of BOOLEAN for Turso compatibility
+            # Use CREATE TABLE IF NOT EXISTS to handle both local and remote cases
+            # This is more reliable than table_exists() which can fail on blocked Turso
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS instruments (
+                    instrument_token INTEGER,
+                    exchange_token TEXT,
+                    tradingsymbol TEXT,
+                    name TEXT,
+                    last_price REAL,
+                    expiry TEXT,
+                    strike REAL,
+                    tick_size REAL,
+                    lot_size INTEGER,
+                    instrument_type TEXT,
+                    segment TEXT,
+                    exchange TEXT,
+                    last_updated TEXT DEFAULT (datetime('now')),
+                    nse_stock INTEGER DEFAULT 0,
+                    PRIMARY KEY (exchange, tradingsymbol, instrument_type)
+                )
+            """)
+            
+            # Create indexes if they don't exist (use CREATE INDEX IF NOT EXISTS)
+            try:
                 cursor.execute("""
-                    CREATE TABLE instruments (
-                        instrument_token INTEGER,
-                        exchange_token TEXT,
-                        tradingsymbol TEXT, -- NOT NULL,
-                        name TEXT,
-                        last_price REAL,
-                        expiry TEXT,
-                        strike REAL,
-                        tick_size REAL, -- NOT NULL CHECK(tick_size >= 0),
-                        lot_size INTEGER, -- NOT NULL CHECK(lot_size >= 0),
-                        instrument_type TEXT, -- NOT NULL,
-                        segment TEXT, -- NOT NULL,
-                        exchange TEXT, -- NOT NULL,
-                        last_updated TEXT DEFAULT (datetime('now')),
-                        nse_stock INTEGER DEFAULT 0, -- CHECK (nse_stock IN (0, 1)),
-                        PRIMARY KEY (exchange, tradingsymbol, instrument_type)
-                    ) -- STRICT
+                    CREATE INDEX IF NOT EXISTS idx_instrument_token
+                    ON instruments(instrument_token)
                 """)
-                try:
-                    # Create optimized indexes including nse_stock
-                    cursor.execute("""
-                        CREATE INDEX idx_instrument_token
-                        ON instruments(instrument_token)
-                    """)
-                    cursor.execute("""
-                        CREATE INDEX idx_tradingsymbol_segment
-                        ON instruments(tradingsymbol, segment)
-                    """)
-                    cursor.execute("""
-                        CREATE INDEX idx_nse_stock
-                        ON instruments(nse_stock)
-                    """)
-                except Exception as e:
-                    self.logger.debug(f"Index creation error (may already exist): {e}")
-                    pass
-                conn.commit()
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_tradingsymbol_segment
+                    ON instruments(tradingsymbol, segment)
+                """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_nse_stock
+                    ON instruments(nse_stock)
+                """)
+            except Exception as e:
+                self.logger.debug(f"Index creation error (may already exist): {e}")
+            
+            conn.commit()
             self.logger.debug("Database initialised for table instruments.")
 
     def _get_connection(self, local: bool = False) -> sqlite3.Connection:
