@@ -3,12 +3,12 @@
     "instrument_token": 278793,
     "trading_symbol": "NA",
     "ohlcv": {
-      "open": 0,
-      "high": 20348.24,
-      "low": 0,
-      "close": 20332.86,
+      "open": 20194.83,
+      "high": 20356.1,
+      "low": 20185.59,
+      "close": 20250.02,
       "volume": 0,
-      "timestamp": "2025-12-26T05:58:15"
+      "timestamp": "2025-12-26T09:24:29"
     },
     "prev_day_close": 20185.09,
     "buy_quantity": 0,
@@ -18,19 +18,19 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2025-12-26T05:58:17.707303",
-    "tick_count": 1103
+    "last_updated": "2025-12-26T09:24:34.282743",
+    "tick_count": 1538
   },
   "265": {
     "instrument_token": 265,
     "trading_symbol": "SENSEX",
     "ohlcv": {
-      "open": 0,
-      "high": 85374.07,
-      "low": 0,
-      "close": 85138.21,
+      "open": 85225.28,
+      "high": 85378.51,
+      "low": 84940.27,
+      "close": 84970.06,
       "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
+      "timestamp": "2025-12-26T09:24:33"
     },
     "prev_day_close": 85408.7,
     "buy_quantity": 0,
@@ -40,19 +40,19 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2025-12-26T05:58:22.715055",
-    "tick_count": 1723
+    "last_updated": "2025-12-26T09:24:34.282669",
+    "tick_count": 2396
   },
   "260873": {
     "instrument_token": 260873,
     "trading_symbol": "NIFTY MIDCAP 50",
     "ohlcv": {
-      "open": 0,
-      "high": 17327.1,
-      "low": 0,
-      "close": 17243.5,
+      "open": 17245.2,
+      "high": 17327.5,
+      "low": 17164.85,
+      "close": 17171.45,
       "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
+      "timestamp": "2025-12-26T09:24:33"
     },
     "prev_day_close": 17248.2,
     "buy_quantity": 0,
@@ -62,19 +62,19 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2025-12-26T05:58:22.715139",
-    "tick_count": 1723
+    "last_updated": "2025-12-26T09:24:34.282404",
+    "tick_count": 2396
   },
   "260105": {
     "instrument_token": 260105,
     "trading_symbol": "NIFTY BANK",
     "ohlcv": {
-      "open": 0,
-      "high": 59183.6,
-      "low": 0,
-      "close": 59060.4,
+      "open": 59092.85,
+      "high": 59180.65,
+      "low": 58947.05,
+      "close": 58976.4,
       "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
+      "timestamp": "2025-12-26T09:24:33"
     },
     "prev_day_close": 59183.6,
     "buy_quantity": 0,
@@ -84,19 +84,19 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2025-12-26T05:58:22.714939",
-    "tick_count": 1723
+    "last_updated": "2025-12-26T09:24:34.282209",
+    "tick_count": 2396
   },
   "274185": {
     "instrument_token": 274185,
     "trading_symbol": "NA",
     "ohlcv": {
-      "open": 0,
-      "high": 62084.16,
-      "low": 0,
-      "close": 61675.42,
+      "open": 61757.71,
+      "high": 62090.09,
+      "low": 61521.76,
+      "close": 61549.7,
       "volume": 0,
-      "timestamp": "2025-12-26T05:58:15"
+      "timestamp": "2025-12-26T09:24:29"
     },
     "prev_day_close": 61946.76,
     "buy_quantity": 0,
@@ -106,580 +106,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2025-12-26T05:58:17.707343",
-    "tick_count": 1104
-  },
-  "256265": {
-    "instrument_token": 256265,
-    "trading_symbol": "NIFTY 50",
-    "ohlcv": {
-      "open": 0,
-      "high": 26163.9,
-      "low": 0,
-      "close": 26064.85,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 26142.1,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715076",
-    "tick_count": 1723
-  },
-  "256777": {
-    "instrument_token": 256777,
-    "trading_symbol": "NIFTY MIDCAP 100",
-    "ohlcv": {
-      "open": 0,
-      "high": 60757.7,
-      "low": 0,
-      "close": 60498.0,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 60451.35,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715159",
-    "tick_count": 1723
-  },
-  "259849": {
-    "instrument_token": 259849,
-    "trading_symbol": "NIFTY IT",
-    "ohlcv": {
-      "open": 0,
-      "high": 39013.35,
-      "low": 0,
-      "close": 38676.9,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 38974.8,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715180",
-    "tick_count": 1723
-  },
-  "261385": {
-    "instrument_token": 261385,
-    "trading_symbol": "NIFTY INFRA",
-    "ohlcv": {
-      "open": 0,
-      "high": 9600.05,
-      "low": 0,
-      "close": 9573.45,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 9587.45,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.714966",
-    "tick_count": 1723
-  },
-  "266249": {
-    "instrument_token": 266249,
-    "trading_symbol": "NIFTY MIDCAP 150",
-    "ohlcv": {
-      "open": 0,
-      "high": 22340.15,
-      "low": 0,
-      "close": 22254.1,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 22247.35,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.714990",
-    "tick_count": 1723
-  },
-  "263177": {
-    "instrument_token": 263177,
-    "trading_symbol": "NIFTY SERV SECTOR",
-    "ohlcv": {
-      "open": 0,
-      "high": 33913.85,
-      "low": 0,
-      "close": 33791.95,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 33913.85,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715097",
-    "tick_count": 1723
-  },
-  "261641": {
-    "instrument_token": 261641,
-    "trading_symbol": "NIFTY ENERGY",
-    "ohlcv": {
-      "open": 0,
-      "high": 35274.95,
-      "low": 0,
-      "close": 35228.05,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 35095.1,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715200",
-    "tick_count": 1723
-  },
-  "275977": {
-    "instrument_token": 275977,
-    "trading_symbol": "NA",
-    "ohlcv": {
-      "open": 0,
-      "high": 37798.23,
-      "low": 0,
-      "close": 37525.62,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:15"
-    },
-    "prev_day_close": 37756.95,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:17.707322",
-    "tick_count": 1104
-  },
-  "264969": {
-    "instrument_token": 264969,
-    "trading_symbol": "INDIA VIX",
-    "ohlcv": {
-      "open": 0,
-      "high": 9.4,
-      "low": 0,
-      "close": 9.12,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 9.19,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715220",
-    "tick_count": 1723
-  },
-  "261897": {
-    "instrument_token": 261897,
-    "trading_symbol": "NIFTY FMCG",
-    "ohlcv": {
-      "open": 0,
-      "high": 55183.35,
-      "low": 0,
-      "close": 55047.95,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 55113.75,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715241",
-    "tick_count": 1723
-  },
-  "279305": {
-    "instrument_token": 279305,
-    "trading_symbol": "NA",
-    "ohlcv": {
-      "open": 4352.06,
-      "high": 4352.06,
-      "low": 4339.02,
-      "close": 4344.48,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:01:00.120656"
-    },
-    "prev_day_close": 4328.7,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T03:31:04.384458",
-    "tick_count": 1
-  },
-  "289545": {
-    "instrument_token": 289545,
-    "trading_symbol": "NIFTY LARGEMID250",
-    "ohlcv": {
-      "open": 0,
-      "high": 16879.35,
-      "low": 0,
-      "close": 16824.0,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 16839.05,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715262",
-    "tick_count": 1723
-  },
-  "263433": {
-    "instrument_token": 263433,
-    "trading_symbol": "NIFTY AUTO",
-    "ohlcv": {
-      "open": 0,
-      "high": 27956.05,
-      "low": 0,
-      "close": 27755.7,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 27885.65,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715282",
-    "tick_count": 1723
-  },
-  "291593": {
-    "instrument_token": 291593,
-    "trading_symbol": "NIFTY100 ESG",
-    "ohlcv": {
-      "open": 0,
-      "high": 5189.6,
-      "low": 0,
-      "close": 5173.55,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 5187.45,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715301",
-    "tick_count": 1723
-  },
-  "261129": {
-    "instrument_token": 261129,
-    "trading_symbol": "NIFTY REALTY",
-    "ohlcv": {
-      "open": 0,
-      "high": 888.25,
-      "low": 0,
-      "close": 885.75,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 885.15,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715320",
-    "tick_count": 1723
-  },
-  "274441": {
-    "instrument_token": 274441,
-    "trading_symbol": "NA",
-    "ohlcv": {
-      "open": 0,
-      "high": 66175.52,
-      "low": 0,
-      "close": 66020.49,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 66147.57,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715117",
-    "tick_count": 1723
-  },
-  "257545": {
-    "instrument_token": 257545,
-    "trading_symbol": "NIFTY CONSUMPTION",
-    "ohlcv": {
-      "open": 0,
-      "high": 12282.1,
-      "low": 0,
-      "close": 12238.0,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 12272.3,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715012",
-    "tick_count": 1723
-  },
-  "289801": {
-    "instrument_token": 289801,
-    "trading_symbol": "NIFTY100ESGSECLDR",
-    "ohlcv": {
-      "open": 0,
-      "high": 4364.2,
-      "low": 0,
-      "close": 4351.9,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 4363.95,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715339",
-    "tick_count": 1723
-  },
-  "262409": {
-    "instrument_token": 262409,
-    "trading_symbol": "NIFTY PHARMA",
-    "ohlcv": {
-      "open": 0,
-      "high": 22806.3,
-      "low": 0,
-      "close": 22669.45,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 22757.4,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715033",
-    "tick_count": 1723
-  },
-  "263945": {
-    "instrument_token": 263945,
-    "trading_symbol": "NIFTY MEDIA",
-    "ohlcv": {
-      "open": 0,
-      "high": 1423.6,
-      "low": 0,
-      "close": 1417.7,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 1419.75,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.714905",
-    "tick_count": 1723
-  },
-  "262921": {
-    "instrument_token": 262921,
-    "trading_symbol": "NIFTY PSU BANK",
-    "ohlcv": {
-      "open": 0,
-      "high": 8326.5,
-      "low": 0,
-      "close": 8276.6,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 8309.5,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715359",
-    "tick_count": 1723
-  },
-  "263689": {
-    "instrument_token": 263689,
-    "trading_symbol": "NIFTY METAL",
-    "ohlcv": {
-      "open": 0,
-      "high": 10784.55,
-      "low": 0,
-      "close": 10747.95,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 10742.75,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715379",
-    "tick_count": 1723
-  },
-  "257801": {
-    "instrument_token": 257801,
-    "trading_symbol": "NIFTY FIN SERVICE",
-    "ohlcv": {
-      "open": 0,
-      "high": 27565.5,
-      "low": 0,
-      "close": 27487.0,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:21"
-    },
-    "prev_day_close": 27565.5,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:22.715399",
-    "tick_count": 1723
-  },
-  "281353": {
-    "instrument_token": 281353,
-    "trading_symbol": "NA",
-    "ohlcv": {
-      "open": 0,
-      "high": 436.57,
-      "low": 0,
-      "close": 435.24,
-      "volume": 0,
-      "timestamp": "2025-12-26T05:58:15"
-    },
-    "prev_day_close": 436.33,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:58:17.707283",
-    "tick_count": 1103
-  },
-  "281865": {
-    "instrument_token": 281865,
-    "trading_symbol": "NA",
-    "ohlcv": {
-      "open": 7823.38,
-      "high": 7844.17,
-      "low": 7796.76,
-      "close": 7827.5,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:01:00.209646"
-    },
-    "prev_day_close": 7793.87,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T03:31:04.384815",
-    "tick_count": 1
-  },
-  "263689": {
-    "instrument_token": 263689,
-    "trading_symbol": "NIFTY METAL",
-    "ohlcv": {
-      "open": 10780.8,
-      "high": 10835.0,
-      "low": 10741.8,
-      "close": 10791.0,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 10742.75,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282322",
-    "tick_count": 2396
+    "last_updated": "2025-12-26T09:24:34.282718",
+    "tick_count": 1538
   },
   "256265": {
     "instrument_token": 256265,
@@ -725,28 +153,6 @@
     "last_updated": "2025-12-26T09:24:34.282377",
     "tick_count": 2396
   },
-  "260873": {
-    "instrument_token": 260873,
-    "trading_symbol": "NIFTY MIDCAP 50",
-    "ohlcv": {
-      "open": 17245.2,
-      "high": 17327.5,
-      "low": 17164.85,
-      "close": 17171.45,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 17248.2,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282404",
-    "tick_count": 2396
-  },
   "259849": {
     "instrument_token": 259849,
     "trading_symbol": "NIFTY IT",
@@ -767,468 +173,6 @@
       "ask": []
     },
     "last_updated": "2025-12-26T09:24:34.282431",
-    "tick_count": 2396
-  },
-  "261897": {
-    "instrument_token": 261897,
-    "trading_symbol": "NIFTY FMCG",
-    "ohlcv": {
-      "open": 55083.85,
-      "high": 55232.45,
-      "low": 54957.25,
-      "close": 55117.85,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 55113.75,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282456",
-    "tick_count": 2396
-  },
-  "281353": {
-    "instrument_token": 281353,
-    "trading_symbol": "NA",
-    "ohlcv": {
-      "open": 435.67,
-      "high": 436.58,
-      "low": 434.18,
-      "close": 434.34,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:29"
-    },
-    "prev_day_close": 436.33,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282692",
-    "tick_count": 1537
-  },
-  "264969": {
-    "instrument_token": 264969,
-    "trading_symbol": "INDIA VIX",
-    "ohlcv": {
-      "open": 9.19,
-      "high": 9.4,
-      "low": 9.02,
-      "close": 9.14,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 9.19,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282645",
-    "tick_count": 2396
-  },
-  "261129": {
-    "instrument_token": 261129,
-    "trading_symbol": "NIFTY REALTY",
-    "ohlcv": {
-      "open": 883.45,
-      "high": 889.25,
-      "low": 880.05,
-      "close": 881.2,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 885.15,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282480",
-    "tick_count": 2396
-  },
-  "279305": {
-    "instrument_token": 279305,
-    "trading_symbol": "NA",
-    "ohlcv": {
-      "open": 4352.06,
-      "high": 4352.06,
-      "low": 4339.02,
-      "close": 4344.48,
-      "volume": 0,
-      "timestamp": "2025-12-26T11:29:29.649676"
-    },
-    "prev_day_close": 4328.7,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:59:34.128056",
-    "tick_count": 1
-  },
-  "261641": {
-    "instrument_token": 261641,
-    "trading_symbol": "NIFTY ENERGY",
-    "ohlcv": {
-      "open": 35101.35,
-      "high": 35295.95,
-      "low": 35009.1,
-      "close": 35036.25,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 35095.1,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282504",
-    "tick_count": 2396
-  },
-  "274441": {
-    "instrument_token": 274441,
-    "trading_symbol": "NA",
-    "ohlcv": {
-      "open": 65971.29,
-      "high": 66176.55,
-      "low": 65923.79,
-      "close": 65948.17,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 66147.57,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282528",
-    "tick_count": 2395
-  },
-  "263945": {
-    "instrument_token": 263945,
-    "trading_symbol": "NIFTY MEDIA",
-    "ohlcv": {
-      "open": 1423.6,
-      "high": 1425.95,
-      "low": 1409.6,
-      "close": 1410.85,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 1419.75,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282552",
-    "tick_count": 2396
-  },
-  "274185": {
-    "instrument_token": 274185,
-    "trading_symbol": "NA",
-    "ohlcv": {
-      "open": 61757.71,
-      "high": 62090.09,
-      "low": 61521.76,
-      "close": 61549.7,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:29"
-    },
-    "prev_day_close": 61946.76,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282718",
-    "tick_count": 1538
-  },
-  "257801": {
-    "instrument_token": 257801,
-    "trading_symbol": "NIFTY FIN SERVICE",
-    "ohlcv": {
-      "open": 27539.55,
-      "high": 27571.55,
-      "low": 27393.7,
-      "close": 27406.2,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 27565.5,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282018",
-    "tick_count": 2396
-  },
-  "263433": {
-    "instrument_token": 263433,
-    "trading_symbol": "NIFTY AUTO",
-    "ohlcv": {
-      "open": 27881.0,
-      "high": 27959.25,
-      "low": 27684.3,
-      "close": 27698.1,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 27885.65,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282062",
-    "tick_count": 2396
-  },
-  "278793": {
-    "instrument_token": 278793,
-    "trading_symbol": "NA",
-    "ohlcv": {
-      "open": 20194.83,
-      "high": 20356.1,
-      "low": 20185.59,
-      "close": 20250.02,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:29"
-    },
-    "prev_day_close": 20185.09,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282743",
-    "tick_count": 1538
-  },
-  "262921": {
-    "instrument_token": 262921,
-    "trading_symbol": "NIFTY PSU BANK",
-    "ohlcv": {
-      "open": 8304.4,
-      "high": 8327.5,
-      "low": 8269.95,
-      "close": 8283.75,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 8309.5,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282093",
-    "tick_count": 2396
-  },
-  "265": {
-    "instrument_token": 265,
-    "trading_symbol": "SENSEX",
-    "ohlcv": {
-      "open": 85225.28,
-      "high": 85378.51,
-      "low": 84940.27,
-      "close": 84970.06,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 85408.7,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282669",
-    "tick_count": 2396
-  },
-  "289545": {
-    "instrument_token": 289545,
-    "trading_symbol": "NIFTY LARGEMID250",
-    "ohlcv": {
-      "open": 16831.9,
-      "high": 16879.45,
-      "low": 16773.4,
-      "close": 16777.5,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 16839.05,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282123",
-    "tick_count": 2396
-  },
-  "281865": {
-    "instrument_token": 281865,
-    "trading_symbol": "NA",
-    "ohlcv": {
-      "open": 7823.38,
-      "high": 7844.17,
-      "low": 7796.76,
-      "close": 7827.5,
-      "volume": 0,
-      "timestamp": "2025-12-26T11:29:29.672371"
-    },
-    "prev_day_close": 7793.87,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T05:59:34.128368",
-    "tick_count": 1
-  },
-  "266249": {
-    "instrument_token": 266249,
-    "trading_symbol": "NIFTY MIDCAP 150",
-    "ohlcv": {
-      "open": 22241.6,
-      "high": 22340.35,
-      "low": 22173.35,
-      "close": 22177.55,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 22247.35,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282151",
-    "tick_count": 2396
-  },
-  "275977": {
-    "instrument_token": 275977,
-    "trading_symbol": "NA",
-    "ohlcv": {
-      "open": 37638.59,
-      "high": 37800.31,
-      "low": 37359.41,
-      "close": 37373.42,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:29"
-    },
-    "prev_day_close": 37756.95,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282767",
-    "tick_count": 1538
-  },
-  "257545": {
-    "instrument_token": 257545,
-    "trading_symbol": "NIFTY CONSUMPTION",
-    "ohlcv": {
-      "open": 12262.8,
-      "high": 12283.0,
-      "low": 12216.4,
-      "close": 12220.35,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 12272.3,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282576",
-    "tick_count": 2396
-  },
-  "260105": {
-    "instrument_token": 260105,
-    "trading_symbol": "NIFTY BANK",
-    "ohlcv": {
-      "open": 59092.85,
-      "high": 59180.65,
-      "low": 58947.05,
-      "close": 58976.4,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 59183.6,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282209",
-    "tick_count": 2396
-  },
-  "262409": {
-    "instrument_token": 262409,
-    "trading_symbol": "NIFTY PHARMA",
-    "ohlcv": {
-      "open": 22761.9,
-      "high": 22807.9,
-      "low": 22631.9,
-      "close": 22669.15,
-      "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
-    },
-    "prev_day_close": 22757.4,
-    "buy_quantity": 0,
-    "sell_quantity": 0,
-    "oi": 0,
-    "market_depth": {
-      "bid": [],
-      "ask": []
-    },
-    "last_updated": "2025-12-26T09:24:34.282238",
     "tick_count": 2396
   },
   "261385": {
@@ -1253,6 +197,204 @@
     "last_updated": "2025-12-26T09:24:34.282269",
     "tick_count": 2396
   },
+  "266249": {
+    "instrument_token": 266249,
+    "trading_symbol": "NIFTY MIDCAP 150",
+    "ohlcv": {
+      "open": 22241.6,
+      "high": 22340.35,
+      "low": 22173.35,
+      "close": 22177.55,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 22247.35,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282151",
+    "tick_count": 2396
+  },
+  "263177": {
+    "instrument_token": 263177,
+    "trading_symbol": "NIFTY SERV SECTOR",
+    "ohlcv": {
+      "open": 33872.9,
+      "high": 33904.65,
+      "low": 33678.0,
+      "close": 33691.55,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 33913.85,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282295",
+    "tick_count": 2396
+  },
+  "261641": {
+    "instrument_token": 261641,
+    "trading_symbol": "NIFTY ENERGY",
+    "ohlcv": {
+      "open": 35101.35,
+      "high": 35295.95,
+      "low": 35009.1,
+      "close": 35036.25,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 35095.1,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282504",
+    "tick_count": 2396
+  },
+  "275977": {
+    "instrument_token": 275977,
+    "trading_symbol": "NA",
+    "ohlcv": {
+      "open": 37638.59,
+      "high": 37800.31,
+      "low": 37359.41,
+      "close": 37373.42,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:29"
+    },
+    "prev_day_close": 37756.95,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282767",
+    "tick_count": 1538
+  },
+  "264969": {
+    "instrument_token": 264969,
+    "trading_symbol": "INDIA VIX",
+    "ohlcv": {
+      "open": 9.19,
+      "high": 9.4,
+      "low": 9.02,
+      "close": 9.14,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 9.19,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282645",
+    "tick_count": 2396
+  },
+  "261897": {
+    "instrument_token": 261897,
+    "trading_symbol": "NIFTY FMCG",
+    "ohlcv": {
+      "open": 55083.85,
+      "high": 55232.45,
+      "low": 54957.25,
+      "close": 55117.85,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 55113.75,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282456",
+    "tick_count": 2396
+  },
+  "279305": {
+    "instrument_token": 279305,
+    "trading_symbol": "NA",
+    "ohlcv": {
+      "open": 4352.06,
+      "high": 4352.06,
+      "low": 4339.02,
+      "close": 4344.48,
+      "volume": 0,
+      "timestamp": "2025-12-26T11:29:29.649676"
+    },
+    "prev_day_close": 4328.7,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T05:59:34.128056",
+    "tick_count": 1
+  },
+  "289545": {
+    "instrument_token": 289545,
+    "trading_symbol": "NIFTY LARGEMID250",
+    "ohlcv": {
+      "open": 16831.9,
+      "high": 16879.45,
+      "low": 16773.4,
+      "close": 16777.5,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 16839.05,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282123",
+    "tick_count": 2396
+  },
+  "263433": {
+    "instrument_token": 263433,
+    "trading_symbol": "NIFTY AUTO",
+    "ohlcv": {
+      "open": 27881.0,
+      "high": 27959.25,
+      "low": 27684.3,
+      "close": 27698.1,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 27885.65,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282062",
+    "tick_count": 2396
+  },
   "291593": {
     "instrument_token": 291593,
     "trading_symbol": "NIFTY100 ESG",
@@ -1273,6 +415,72 @@
       "ask": []
     },
     "last_updated": "2025-12-26T09:24:34.282599",
+    "tick_count": 2396
+  },
+  "261129": {
+    "instrument_token": 261129,
+    "trading_symbol": "NIFTY REALTY",
+    "ohlcv": {
+      "open": 883.45,
+      "high": 889.25,
+      "low": 880.05,
+      "close": 881.2,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 885.15,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282480",
+    "tick_count": 2396
+  },
+  "274441": {
+    "instrument_token": 274441,
+    "trading_symbol": "NA",
+    "ohlcv": {
+      "open": 65971.29,
+      "high": 66176.55,
+      "low": 65923.79,
+      "close": 65948.17,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 66147.57,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282528",
+    "tick_count": 2395
+  },
+  "257545": {
+    "instrument_token": 257545,
+    "trading_symbol": "NIFTY CONSUMPTION",
+    "ohlcv": {
+      "open": 12262.8,
+      "high": 12283.0,
+      "low": 12216.4,
+      "close": 12220.35,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 12272.3,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282576",
     "tick_count": 2396
   },
   "289801": {
@@ -1297,16 +505,522 @@
     "last_updated": "2025-12-26T09:24:34.282622",
     "tick_count": 2396
   },
+  "262409": {
+    "instrument_token": 262409,
+    "trading_symbol": "NIFTY PHARMA",
+    "ohlcv": {
+      "open": 22761.9,
+      "high": 22807.9,
+      "low": 22631.9,
+      "close": 22669.15,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 22757.4,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282238",
+    "tick_count": 2396
+  },
+  "263945": {
+    "instrument_token": 263945,
+    "trading_symbol": "NIFTY MEDIA",
+    "ohlcv": {
+      "open": 1423.6,
+      "high": 1425.95,
+      "low": 1409.6,
+      "close": 1410.85,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 1419.75,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282552",
+    "tick_count": 2396
+  },
+  "262921": {
+    "instrument_token": 262921,
+    "trading_symbol": "NIFTY PSU BANK",
+    "ohlcv": {
+      "open": 8304.4,
+      "high": 8327.5,
+      "low": 8269.95,
+      "close": 8283.75,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 8309.5,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282093",
+    "tick_count": 2396
+  },
+  "263689": {
+    "instrument_token": 263689,
+    "trading_symbol": "NIFTY METAL",
+    "ohlcv": {
+      "open": 10780.8,
+      "high": 10835.0,
+      "low": 10741.8,
+      "close": 10791.0,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 10742.75,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282322",
+    "tick_count": 2396
+  },
+  "257801": {
+    "instrument_token": 257801,
+    "trading_symbol": "NIFTY FIN SERVICE",
+    "ohlcv": {
+      "open": 27539.55,
+      "high": 27571.55,
+      "low": 27393.7,
+      "close": 27406.2,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:33"
+    },
+    "prev_day_close": 27565.5,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282018",
+    "tick_count": 2396
+  },
+  "281353": {
+    "instrument_token": 281353,
+    "trading_symbol": "NA",
+    "ohlcv": {
+      "open": 435.67,
+      "high": 436.58,
+      "low": 434.18,
+      "close": 434.34,
+      "volume": 0,
+      "timestamp": "2025-12-26T09:24:29"
+    },
+    "prev_day_close": 436.33,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:24:34.282692",
+    "tick_count": 1537
+  },
+  "281865": {
+    "instrument_token": 281865,
+    "trading_symbol": "NA",
+    "ohlcv": {
+      "open": 7823.38,
+      "high": 7844.17,
+      "low": 7796.76,
+      "close": 7827.5,
+      "volume": 0,
+      "timestamp": "2025-12-26T11:29:29.672371"
+    },
+    "prev_day_close": 7793.87,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T05:59:34.128368",
+    "tick_count": 1
+  },
+  "262409": {
+    "instrument_token": 262409,
+    "trading_symbol": "NIFTY PHARMA",
+    "ohlcv": {
+      "open": 22761.9,
+      "high": 22807.9,
+      "low": 22631.6,
+      "close": 22684.65,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 22757.4,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487015",
+    "tick_count": 1088
+  },
+  "275977": {
+    "instrument_token": 275977,
+    "trading_symbol": "NA",
+    "ohlcv": {
+      "open": 37638.59,
+      "high": 37800.31,
+      "low": 37359.21,
+      "close": 37420.39,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:57:52"
+    },
+    "prev_day_close": 37756.95,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:57:56.474928",
+    "tick_count": 691
+  },
+  "256265": {
+    "instrument_token": 256265,
+    "trading_symbol": "NIFTY 50",
+    "ohlcv": {
+      "open": 26121.25,
+      "high": 26144.2,
+      "low": 26008.6,
+      "close": 26042.3,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 26142.1,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487303",
+    "tick_count": 1088
+  },
+  "263433": {
+    "instrument_token": 263433,
+    "trading_symbol": "NIFTY AUTO",
+    "ohlcv": {
+      "open": 27881.0,
+      "high": 27959.25,
+      "low": 27683.3,
+      "close": 27739.85,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 27885.65,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487039",
+    "tick_count": 1088
+  },
+  "289801": {
+    "instrument_token": 289801,
+    "trading_symbol": "NIFTY100ESGSECLDR",
+    "ohlcv": {
+      "open": 4359.35,
+      "high": 4364.35,
+      "low": 4340.25,
+      "close": 4346.25,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 4363.95,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487062",
+    "tick_count": 1088
+  },
+  "278793": {
+    "instrument_token": 278793,
+    "trading_symbol": "NA",
+    "ohlcv": {
+      "open": 20194.83,
+      "high": 20356.74,
+      "low": 20185.59,
+      "close": 20264.91,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:57:52"
+    },
+    "prev_day_close": 20185.09,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:57:56.474949",
+    "tick_count": 691
+  },
+  "263945": {
+    "instrument_token": 263945,
+    "trading_symbol": "NIFTY MEDIA",
+    "ohlcv": {
+      "open": 1423.6,
+      "high": 1425.95,
+      "low": 1409.6,
+      "close": 1410.95,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 1419.75,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487083",
+    "tick_count": 1088
+  },
+  "264969": {
+    "instrument_token": 264969,
+    "trading_symbol": "INDIA VIX",
+    "ohlcv": {
+      "open": 9.19,
+      "high": 9.4,
+      "low": 9.02,
+      "close": 9.15,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 9.19,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487104",
+    "tick_count": 1088
+  },
+  "281865": {
+    "instrument_token": 281865,
+    "trading_symbol": "NA",
+    "ohlcv": {
+      "open": 7823.38,
+      "high": 7844.17,
+      "low": 7796.76,
+      "close": 7827.5,
+      "volume": 0,
+      "timestamp": "2025-12-26T14:55:44.578203"
+    },
+    "prev_day_close": 7793.87,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:25:49.033881",
+    "tick_count": 1
+  },
+  "261897": {
+    "instrument_token": 261897,
+    "trading_symbol": "NIFTY FMCG",
+    "ohlcv": {
+      "open": 55083.85,
+      "high": 55233.35,
+      "low": 54957.25,
+      "close": 55132.05,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 55113.75,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487124",
+    "tick_count": 1088
+  },
+  "262921": {
+    "instrument_token": 262921,
+    "trading_symbol": "NIFTY PSU BANK",
+    "ohlcv": {
+      "open": 8304.4,
+      "high": 8327.5,
+      "low": 8269.5,
+      "close": 8287.45,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 8309.5,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487144",
+    "tick_count": 1088
+  },
+  "260873": {
+    "instrument_token": 260873,
+    "trading_symbol": "NIFTY MIDCAP 50",
+    "ohlcv": {
+      "open": 17245.2,
+      "high": 17327.5,
+      "low": 17164.65,
+      "close": 17183.3,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 17248.2,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487164",
+    "tick_count": 1088
+  },
+  "256777": {
+    "instrument_token": 256777,
+    "trading_symbol": "NIFTY MIDCAP 100",
+    "ohlcv": {
+      "open": 60426.9,
+      "high": 60758.15,
+      "low": 60259.6,
+      "close": 60314.45,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 60451.35,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487183",
+    "tick_count": 1088
+  },
+  "274441": {
+    "instrument_token": 274441,
+    "trading_symbol": "NA",
+    "ohlcv": {
+      "open": 65971.29,
+      "high": 66176.55,
+      "low": 65922.92,
+      "close": 65990.69,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:57:59"
+    },
+    "prev_day_close": 66147.57,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487203",
+    "tick_count": 1088
+  },
+  "261129": {
+    "instrument_token": 261129,
+    "trading_symbol": "NIFTY REALTY",
+    "ohlcv": {
+      "open": 883.45,
+      "high": 889.3,
+      "low": 880.05,
+      "close": 883.15,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 885.15,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487224",
+    "tick_count": 1088
+  },
+  "266249": {
+    "instrument_token": 266249,
+    "trading_symbol": "NIFTY MIDCAP 150",
+    "ohlcv": {
+      "open": 22241.6,
+      "high": 22340.35,
+      "low": 22172.7,
+      "close": 22190.75,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 22247.35,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487245",
+    "tick_count": 1088
+  },
   "263177": {
     "instrument_token": 263177,
     "trading_symbol": "NIFTY SERV SECTOR",
     "ohlcv": {
       "open": 33872.9,
       "high": 33904.65,
-      "low": 33678.0,
-      "close": 33691.55,
+      "low": 33673.8,
+      "close": 33720.85,
       "volume": 0,
-      "timestamp": "2025-12-26T09:24:33"
+      "timestamp": "2025-12-26T10:58:00"
     },
     "prev_day_close": 33913.85,
     "buy_quantity": 0,
@@ -1316,7 +1030,293 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2025-12-26T09:24:34.282295",
-    "tick_count": 2396
+    "last_updated": "2025-12-26T10:58:01.487264",
+    "tick_count": 1088
+  },
+  "281353": {
+    "instrument_token": 281353,
+    "trading_symbol": "NA",
+    "ohlcv": {
+      "open": 435.67,
+      "high": 436.58,
+      "low": 434.18,
+      "close": 434.72,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:57:52"
+    },
+    "prev_day_close": 436.33,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:57:56.474886",
+    "tick_count": 691
+  },
+  "263689": {
+    "instrument_token": 263689,
+    "trading_symbol": "NIFTY METAL",
+    "ohlcv": {
+      "open": 10780.8,
+      "high": 10836.05,
+      "low": 10741.8,
+      "close": 10806.15,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 10742.75,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487284",
+    "tick_count": 1088
+  },
+  "289545": {
+    "instrument_token": 289545,
+    "trading_symbol": "NIFTY LARGEMID250",
+    "ohlcv": {
+      "open": 16831.9,
+      "high": 16879.45,
+      "low": 16772.4,
+      "close": 16790.8,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 16839.05,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487380",
+    "tick_count": 1088
+  },
+  "260105": {
+    "instrument_token": 260105,
+    "trading_symbol": "NIFTY BANK",
+    "ohlcv": {
+      "open": 59092.85,
+      "high": 59180.65,
+      "low": 58947.05,
+      "close": 59011.35,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 59183.6,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487398",
+    "tick_count": 1088
+  },
+  "261385": {
+    "instrument_token": 261385,
+    "trading_symbol": "NIFTY INFRA",
+    "ohlcv": {
+      "open": 9581.7,
+      "high": 9600.35,
+      "low": 9547.45,
+      "close": 9564.45,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 9587.45,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487418",
+    "tick_count": 1088
+  },
+  "279305": {
+    "instrument_token": 279305,
+    "trading_symbol": "NA",
+    "ohlcv": {
+      "open": 4352.06,
+      "high": 4352.06,
+      "low": 4339.02,
+      "close": 4344.48,
+      "volume": 0,
+      "timestamp": "2025-12-26T14:55:44.604446"
+    },
+    "prev_day_close": 4328.7,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T09:25:49.034230",
+    "tick_count": 1
+  },
+  "257801": {
+    "instrument_token": 257801,
+    "trading_symbol": "NIFTY FIN SERVICE",
+    "ohlcv": {
+      "open": 27539.55,
+      "high": 27571.55,
+      "low": 27391.85,
+      "close": 27430.75,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 27565.5,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487323",
+    "tick_count": 1088
+  },
+  "274185": {
+    "instrument_token": 274185,
+    "trading_symbol": "NA",
+    "ohlcv": {
+      "open": 61757.71,
+      "high": 62090.09,
+      "low": 61520.27,
+      "close": 61610.45,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:57:52"
+    },
+    "prev_day_close": 61946.76,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:57:56.474909",
+    "tick_count": 692
+  },
+  "265": {
+    "instrument_token": 265,
+    "trading_symbol": "SENSEX",
+    "ohlcv": {
+      "open": 85225.28,
+      "high": 85378.51,
+      "low": 84937.82,
+      "close": 85041.45,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:57:59"
+    },
+    "prev_day_close": 85408.7,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487440",
+    "tick_count": 1088
+  },
+  "259849": {
+    "instrument_token": 259849,
+    "trading_symbol": "NIFTY IT",
+    "ohlcv": {
+      "open": 38921.65,
+      "high": 39019.95,
+      "low": 38495.4,
+      "close": 38572.3,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 38974.8,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487342",
+    "tick_count": 1088
+  },
+  "261641": {
+    "instrument_token": 261641,
+    "trading_symbol": "NIFTY ENERGY",
+    "ohlcv": {
+      "open": 35101.35,
+      "high": 35296.25,
+      "low": 35007.9,
+      "close": 35058.8,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 35095.1,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.487361",
+    "tick_count": 1088
+  },
+  "257545": {
+    "instrument_token": 257545,
+    "trading_symbol": "NIFTY CONSUMPTION",
+    "ohlcv": {
+      "open": 12262.8,
+      "high": 12283.0,
+      "low": 12215.75,
+      "close": 12231.55,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 12272.3,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.486955",
+    "tick_count": 1088
+  },
+  "291593": {
+    "instrument_token": 291593,
+    "trading_symbol": "NIFTY100 ESG",
+    "ohlcv": {
+      "open": 5182.3,
+      "high": 5189.8,
+      "low": 5158.5,
+      "close": 5166.45,
+      "volume": 0,
+      "timestamp": "2025-12-26T10:58:00"
+    },
+    "prev_day_close": 5187.45,
+    "buy_quantity": 0,
+    "sell_quantity": 0,
+    "oi": 0,
+    "market_depth": {
+      "bid": [],
+      "ask": []
+    },
+    "last_updated": "2025-12-26T10:58:01.486990",
+    "tick_count": 1088
   }
 }
