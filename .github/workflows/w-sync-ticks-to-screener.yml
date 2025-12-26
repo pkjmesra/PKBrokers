@@ -1,7 +1,7 @@
 name: Sync Ticks to PKScreener
 
 # Phase 3: Cross-repository sync to ensure PKScreener has fresh tick data
-# Triggers the PKScreener data publisher to fetch latest ticks from PKBrokers
+# Fetches ticks from pktickbot and pushes to PKScreener's actions-data-download branch
 
 on:
   schedule:
@@ -14,6 +14,90 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Checkout PKBrokers
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          pip install requests pytz
+      
+      - name: Fetch ticks from local file or Telegram
+        env:
+          TBTOKEN: ${{ secrets.TBTOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          mkdir -p results/Data
+          
+          # Check if ticks.json exists locally (from running orchestrator)
+          TICKS_PATH="pkbrokers/kite/examples/ticks.json"
+          if [ -f "$TICKS_PATH" ] && [ -s "$TICKS_PATH" ]; then
+            echo "Found local ticks.json"
+            cp "$TICKS_PATH" results/Data/ticks.json
+            echo "Copied ticks.json ($(stat -f%z results/Data/ticks.json 2>/dev/null || stat -c%s results/Data/ticks.json) bytes)"
+          else
+            echo "No local ticks.json found, will try GitHub fallback"
+          fi
+      
+      - name: Push ticks to PKScreener
+        env:
+          GH_TOKEN: ${{ secrets.CI_PAT }}
+        run: |
+          # Clone PKScreener's actions-data-download branch
+          git clone --depth 1 --branch actions-data-download https://x-access-token:${GH_TOKEN}@github.com/pkjmesra/PKScreener.git pkscreener-data || {
+            echo "Creating actions-data-download branch..."
+            git clone --depth 1 https://x-access-token:${GH_TOKEN}@github.com/pkjmesra/PKScreener.git pkscreener-data
+            cd pkscreener-data
+            git checkout -b actions-data-download
+            cd ..
+          }
+          
+          # Copy ticks data if available
+          if [ -f "results/Data/ticks.json" ]; then
+            mkdir -p pkscreener-data/results/Data
+            cp results/Data/ticks.json pkscreener-data/results/Data/
+            
+            # Create metadata
+            cat > pkscreener-data/results/Data/sync_metadata.json << EOF
+          {
+            "source": "PKBrokers",
+            "synced_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "workflow": "w-sync-ticks-to-screener.yml"
+          }
+          EOF
+            
+            cd pkscreener-data
+            git config user.name "github-actions[bot]"
+            git config user.email "actions@github.com"
+            git add results/Data/
+            
+            if git diff --staged --quiet; then
+              echo "No changes to sync"
+            else
+              git commit -m "Sync ticks from PKBrokers $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              
+              # Retry logic for push
+              for i in 1 2 3; do
+                if git push origin actions-data-download; then
+                  echo "Ticks synced successfully"
+                  break
+                else
+                  echo "Push failed, attempt $i, pulling and retrying..."
+                  git pull --rebase origin actions-data-download || true
+                  sleep 2
+                fi
+              done
+            fi
+          else
+            echo "No ticks.json to sync"
+          fi
+      
       - name: Trigger PKScreener data publisher
         env:
           GH_TOKEN: ${{ secrets.CI_PAT }}
@@ -21,11 +105,3 @@ jobs:
           echo "Triggering PKScreener data publisher workflow..."
           gh workflow run w-data-publisher.yml -R pkjmesra/PKScreener || echo "Could not trigger workflow"
           echo "Sync trigger sent"
-      
-      - name: Also trigger data warmup
-        env:
-          GH_TOKEN: ${{ secrets.CI_PAT }}
-        run: |
-          echo "Triggering PKScreener data warmup workflow..."
-          gh workflow run w-data-warmup.yml -R pkjmesra/PKScreener || echo "Could not trigger warmup"
-          echo "Warmup trigger sent"
