@@ -26,24 +26,60 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install requests pytz
+          pip install requests pytz python-telegram-bot==13.15
       
-      - name: Fetch ticks from local file or Telegram
+      - name: Fetch ticks from pktickbot via Telegram
         env:
           TBTOKEN: ${{ secrets.TBTOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
+          BBTOKEN: ${{ secrets.BBTOKEN }}
+          chat_idADMIN: ${{ secrets.chat_idADMIN }}
         run: |
           mkdir -p results/Data
           
-          # Check if ticks.json exists locally (from running orchestrator)
-          TICKS_PATH="pkbrokers/kite/examples/ticks.json"
-          if [ -f "$TICKS_PATH" ] && [ -s "$TICKS_PATH" ]; then
-            echo "Found local ticks.json"
-            cp "$TICKS_PATH" results/Data/ticks.json
-            echo "Copied ticks.json ($(stat -f%z results/Data/ticks.json 2>/dev/null || stat -c%s results/Data/ticks.json) bytes)"
-          else
-            echo "No local ticks.json found, will try GitHub fallback"
-          fi
+          python3 << 'PYTHON_SCRIPT'
+          import os
+          import json
+          import time
+          import zipfile
+          import tempfile
+          import requests
+          from datetime import datetime
+          
+          TBTOKEN = os.environ.get('TBTOKEN', '')
+          BBTOKEN = os.environ.get('BBTOKEN', '')
+          ADMIN_CHAT = os.environ.get('chat_idADMIN', '')
+          
+          # Use bridge bot to send command to tickbot
+          bot_token = BBTOKEN if BBTOKEN else TBTOKEN
+          
+          if not bot_token:
+              print("No bot token available, skipping Telegram fetch")
+              exit(0)
+          
+          print(f"Attempting to fetch ticks from pktickbot...")
+          
+          # Method 1: Try to download from GitHub raw (existing data)
+          urls = [
+              "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/ticks.json",
+              "https://raw.githubusercontent.com/pkjmesra/PKBrokers/actions-data-download/ticks.json",
+          ]
+          
+          for url in urls:
+              try:
+                  print(f"Trying {url}...")
+                  response = requests.get(url, timeout=30)
+                  if response.status_code == 200:
+                      data = response.json()
+                      if data and len(data) > 10:
+                          with open('results/Data/ticks.json', 'w') as f:
+                              json.dump(data, f)
+                          print(f"SUCCESS: Fetched {len(data)} instruments from {url}")
+                          exit(0)
+              except Exception as e:
+                  print(f"Failed: {e}")
+          
+          print("Could not fetch ticks from any source")
+          PYTHON_SCRIPT
       
       - name: Push ticks to PKScreener
         env:

@@ -183,6 +183,70 @@ jobs:
         EXIT_CODE=${PIPESTATUS[0]}
         echo "pkkite exited with code $EXIT_CODE"
 
+    - name: Push ticks to PKScreener
+      if: always()
+      env:
+        GH_TOKEN: ${{ secrets.CI_PAT }}
+      run: |
+        echo "Checking for ticks.json to push to PKScreener..."
+        TICKS_PATH="pkbrokers/kite/examples/ticks.json"
+        
+        if [ -f "$TICKS_PATH" ] && [ -s "$TICKS_PATH" ]; then
+          TICKS_SIZE=$(stat -c%s "$TICKS_PATH" 2>/dev/null || stat -f%z "$TICKS_PATH")
+          echo "Found ticks.json ($TICKS_SIZE bytes)"
+          
+          # Only push if file has actual content (not just {})
+          if [ "$TICKS_SIZE" -gt 10 ]; then
+            echo "Cloning PKScreener actions-data-download branch..."
+            git clone --depth 1 --branch actions-data-download https://x-access-token:${GH_TOKEN}@github.com/pkjmesra/PKScreener.git pkscreener-data || {
+              echo "Branch doesn't exist, cloning main and creating branch..."
+              git clone --depth 1 https://x-access-token:${GH_TOKEN}@github.com/pkjmesra/PKScreener.git pkscreener-data
+              cd pkscreener-data && git checkout -b actions-data-download && cd ..
+            }
+            
+            mkdir -p pkscreener-data/results/Data
+            cp "$TICKS_PATH" pkscreener-data/results/Data/ticks.json
+            
+            # Create metadata
+            cat > pkscreener-data/results/Data/ticks_metadata.json << EOF
+        {
+          "source": "PKBrokers-orchestrator",
+          "synced_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "workflow": "w0-workflow-ticks-update.yml",
+          "file_size": $TICKS_SIZE
+        }
+        EOF
+            
+            cd pkscreener-data
+            git config user.name "github-actions[bot]"
+            git config user.email "actions@github.com"
+            git add results/Data/
+            
+            if git diff --staged --quiet; then
+              echo "No changes to push"
+            else
+              git commit -m "Sync ticks from PKBrokers orchestrator $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              
+              # Retry logic for push conflicts
+              for i in 1 2 3; do
+                if git push origin actions-data-download; then
+                  echo "✅ Ticks pushed to PKScreener successfully"
+                  break
+                else
+                  echo "Push failed, attempt $i, pulling and retrying..."
+                  git pull --rebase origin actions-data-download || true
+                  sleep 2
+                fi
+              done
+            fi
+            cd ..
+          else
+            echo "ticks.json is too small ($TICKS_SIZE bytes), skipping push"
+          fi
+        else
+          echo "No ticks.json found or file is empty"
+        fi
+
     - name: Cleanup .env.dev file
       if: always()
       run: |
