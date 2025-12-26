@@ -469,8 +469,13 @@ class KiteTokenWatcher:
                 # Fallback: Use cached instruments or fetch from Kite API directly
                 self.logger.warning(f"Could not get equities from DB, using fallback: {db_error}")
                 tokens = []
+            
+            # CRITICAL FIX: Fallback logic runs whenever tokens is empty (0)
+            # This handles BOTH exception case AND when DB returns empty list gracefully
+            if len(tokens) == 0:
+                self.logger.info("No tokens from DB, applying fallback strategies...")
                 
-                # CRITICAL FIX: First check if _kite_instruments was populated by sync_instruments
+                # Fallback 0: First check if _kite_instruments was populated by sync_instruments
                 # This happens when sync_instruments(force_fetch=True) fetches from Zerodha API
                 if self._kite_instruments and len(self._kite_instruments) > 0:
                     tokens = [int(token) for token in self._kite_instruments.keys()]
