@@ -684,13 +684,12 @@ class ZerodhaWebSocketClient:
         if len(self.token_batches) == 0:
             self._build_tokens()
 
-        # Determine optimal number of processes
-        max_processes = multiprocessing.cpu_count()
+        # Start one WebSocket process per batch (Zerodha requires separate connections)
         num_batches = len(self.token_batches)
-        num_processes = min(max_processes, num_batches)
+        total_instruments = sum(len(batch) for batch in self.token_batches)
 
         self.logger.info(
-            f"Starting {num_processes} WebSocket processes for {num_batches} token batches"
+            f"Starting {num_batches} WebSocket processes for {total_instruments} instruments"
         )
 
         # Start processing thread for database inserts first
@@ -699,10 +698,14 @@ class ZerodhaWebSocketClient:
         )
         self.processor_thread.start()
 
-        # Prepare arguments for each process
+        # Prepare arguments for each batch - one process per batch
+        # Each batch is already limited to OPTIMAL_TOKEN_BATCH_SIZE (500) instruments
+        # We need one WebSocket connection per batch (Zerodha limit)
         process_args = []
-        for i in range(num_processes):
-            token_batch = self.token_batches[i] if i < num_batches else []
+        for i in range(num_batches):
+            token_batch = self.token_batches[i]
+            self.logger.info(f"Batch {i} will handle {len(token_batch)} instruments")
+            
             args = (
                 self.enctoken,
                 self.user_id,
