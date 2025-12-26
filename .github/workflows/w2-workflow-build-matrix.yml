@@ -89,20 +89,63 @@ jobs:
     with:
       branch-name: main
     secrets: inherit
+
+  # Prepare version for PyPI publish - runs before Build
+  Prepare-Version:
+    name: Prepare Version for PyPI
+    needs: [check_should_run, Test-Source]
+    runs-on: ubuntu-latest
+    permissions: write-all
+    outputs:
+      version: ${{ steps.vars.outputs.THIS_VERSION }}
+      oldVersion: ${{ steps.vars.outputs.CURRENT_VERSION }}
+      devVersion: ${{ steps.vars.outputs.DEV_VERSION }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch-name }}
+
+      - name: Environment setup to get latest released version
+        shell: bash
+        id: releaseversiongetter
+        run: |
+          pip3 install requests
+          python3 .github/workflows/githubutilities.py -d
+          
+      - name: Declare env variables
+        id: vars
+        shell: bash
+        run: |
+          CURRENT_VERSION=${{ steps.releaseversiongetter.outputs.LAST_RELEASE_VERSION }}
+          DEV_VERSION=`grep -o "'.*'" pkbrokers/kite/__init__.py | sed "s/'//g"`
+          VERSION_ARR=(${DEV_VERSION//./ })
+          MAJOR_MINOR=${VERSION_ARR[0]}.${VERSION_ARR[1]}
+          TODAY=`date +%Y%m%d`
+          THIS_VERSION=${MAJOR_MINOR}.${TODAY}.${{github.run_number}}
+          echo "THIS_VERSION=${THIS_VERSION}" >> $GITHUB_OUTPUT
+          echo "CURRENT_VERSION=${CURRENT_VERSION}" >> $GITHUB_OUTPUT
+          echo "DEV_VERSION=${DEV_VERSION}" >> $GITHUB_OUTPUT
+
+  # PyPI Publish - runs BEFORE Build to ensure package is available
+  Call-python-publish-workflow:
+    uses: pkjmesra/pkbrokers/.github/workflows/w2-workflow-python-publish.yml@main
+    needs: [Prepare-Version]
+    with:
+      version: ${{ needs.Prepare-Version.outputs.version }}
+      targetPythonVersion: "3.12"
+    secrets: inherit
       
-  # Job for builing packages
+  # Job for builing packages - now depends on PyPI publish
   Build:
     name: Build Packages
-    needs: [check_should_run] #Test-Source
-    #needs: Create-Release
+    needs: [check_should_run, Prepare-Version, Call-python-publish-workflow]
     runs-on: ${{ matrix.os }}
     permissions: write-all
-      # actions: write
     outputs:
-        version: ${{ steps.vars.outputs.THIS_VERSION }}
-        oldVersion: ${{ steps.vars.outputs.CURRENT_VERSION }}
-        devVersion: ${{ steps.vars.outputs.DEV_VERSION }}
-        tag: refs/tags/${{ steps.vars.outputs.THIS_VERSION }}
+        version: ${{ needs.Prepare-Version.outputs.version }}
+        oldVersion: ${{ needs.Prepare-Version.outputs.oldVersion }}
+        devVersion: ${{ needs.Prepare-Version.outputs.devVersion }}
+        tag: refs/tags/${{ needs.Prepare-Version.outputs.version }}
         sendNotification: ${{ inputs.sendNotification }}
         buildDocker: ${{ inputs.buildDocker }}
         buildBase : ${{ inputs.buildBase }}
@@ -215,31 +258,22 @@ jobs:
           source venv/bin/activate
           echo PATH=$PATH >> $GITHUB_ENV
 
-      - name: Environment setup to get latest released version
-        shell: bash
-        id: releaseversiongetter
-        run: |
-          pip3 install requests
-          python3 .github/workflows/githubutilities.py -d
-          
       - name: Declare env variables
         id: vars
         shell: bash
         run: |
-          CURRENT_VERSION=${{ steps.releaseversiongetter.outputs.LAST_RELEASE_VERSION }}
+          # Use version from Prepare-Version job
+          THIS_VERSION="${{ needs.Prepare-Version.outputs.version }}"
+          CURRENT_VERSION="${{ needs.Prepare-Version.outputs.oldVersion }}"
+          DEV_VERSION="${{ needs.Prepare-Version.outputs.devVersion }}"
           GITHUB_REF=${GITHUB_REF#refs/tags/}
-          echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
-          echo "::set-output name=sha_short::$(git rev-parse --short HEAD)"
-          DEV_VERSION=`grep -o "'.*'" pkbrokers/kite/__init__.py | sed "s/'//g"`
-          VERSION_ARR=(${DEV_VERSION//./ })
-          MAJOR_MINOR=${VERSION_ARR[0]}.${VERSION_ARR[1]}
-          TODAY=`date +%Y%m%d`
-          THIS_VERSION=${MAJOR_MINOR}.${TODAY}.${{github.run_number}}
+          echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           rm -rf pkbrokers/kite/__init__.py
           echo VERSION=\'`echo ${THIS_VERSION}`\' >> pkbrokers/kite/__init__.py
-          echo "##[set-output name=THIS_VERSION;]$(echo ${THIS_VERSION})"
-          echo "##[set-output name=CURRENT_VERSION;]$(echo ${CURRENT_VERSION})"
-          echo "##[set-output name=DEV_VERSION;]$(echo ${DEV_VERSION})"
+          echo "THIS_VERSION=${THIS_VERSION}" >> $GITHUB_OUTPUT
+          echo "CURRENT_VERSION=${CURRENT_VERSION}" >> $GITHUB_OUTPUT
+          echo "DEV_VERSION=${DEV_VERSION}" >> $GITHUB_OUTPUT
 
       - name: Create Tag
         if: ${{ matrix.platform_id == 'manylinux_x86_64' }}
@@ -352,14 +386,6 @@ jobs:
             git commit -m "GitHub Action Workflow - Updating version to latest"
             git push -v
 
-  Call-python-publish-workflow:
-    uses: pkjmesra/pkbrokers/.github/workflows/w2-workflow-python-publish.yml@main
-    needs: [Build, README_Update]
-    with:
-      version: ${{ needs.Build.outputs.version }}
-      targetPythonVersion: "3.12"
-    secrets: inherit
-        
   # Call-Docker-workflow:
   #   uses: pkjmesra/pkbrokers/.github/workflows/w15-docker-image.yml@main
   #   needs: [Build, README_Update]
