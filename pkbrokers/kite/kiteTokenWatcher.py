@@ -470,43 +470,51 @@ class KiteTokenWatcher:
                 self.logger.warning(f"Could not get equities from DB, using fallback: {db_error}")
                 tokens = []
                 
+                # CRITICAL FIX: First check if _kite_instruments was populated by sync_instruments
+                # This happens when sync_instruments(force_fetch=True) fetches from Zerodha API
+                if self._kite_instruments and len(self._kite_instruments) > 0:
+                    tokens = [int(token) for token in self._kite_instruments.keys()]
+                    self.logger.info(f"Using {len(tokens)} tokens from already-loaded kite_instruments")
+                    # Instruments are already registered in candle store above, so skip fallbacks
+                
                 # Fallback 1: Fetch NSE equity symbols from PKScreener and map to Kite tokens
-                try:
-                    import pandas as pd
-                    import requests
-                    self.logger.info("Fetching NSE equity symbols from PKScreener GitHub...")
-                    equity_csv_url = "https://raw.githubusercontent.com/pkjmesra/PKScreener/main/results/Indices/EQUITY_L.csv"
-                    response = requests.get(equity_csv_url, timeout=30)
-                    if response.status_code == 200:
-                        from io import StringIO
-                        equity_df = pd.read_csv(StringIO(response.text))
-                        nse_symbols = equity_df['SYMBOL'].str.strip().tolist()
-                        self.logger.info(f"Fetched {len(nse_symbols)} NSE symbols from PKScreener")
-                        
-                        # Now fetch Kite instruments to map symbols to tokens
-                        kite_url = "https://api.kite.trade/instruments/NSE"
-                        kite_response = requests.get(kite_url, timeout=60)
-                        if kite_response.status_code == 200:
-                            kite_df = pd.read_csv(StringIO(kite_response.text))
-                            # Filter to only EQ segment and match with our NSE symbols
-                            eq_df = kite_df[
-                                (kite_df['segment'] == 'NSE') & 
-                                (kite_df['tradingsymbol'].isin(nse_symbols))
-                            ]
-                            tokens = eq_df['instrument_token'].tolist()
-                            self.logger.info(f"Mapped {len(tokens)} NSE symbols to Kite instrument tokens")
-                            # Register instruments with candle store
-                            for _, row in eq_df.iterrows():
-                                self._candle_store.register_instrument(
-                                    int(row['instrument_token']),
-                                    row.get('tradingsymbol', str(row['instrument_token']))
-                                )
+                if len(tokens) == 0:
+                    try:
+                        import pandas as pd
+                        import requests
+                        self.logger.info("Fetching NSE equity symbols from PKScreener GitHub...")
+                        equity_csv_url = "https://raw.githubusercontent.com/pkjmesra/PKScreener/main/results/Indices/EQUITY_L.csv"
+                        response = requests.get(equity_csv_url, timeout=30)
+                        if response.status_code == 200:
+                            from io import StringIO
+                            equity_df = pd.read_csv(StringIO(response.text))
+                            nse_symbols = equity_df['SYMBOL'].str.strip().tolist()
+                            self.logger.info(f"Fetched {len(nse_symbols)} NSE symbols from PKScreener")
+                            
+                            # Now fetch Kite instruments to map symbols to tokens
+                            kite_url = "https://api.kite.trade/instruments/NSE"
+                            kite_response = requests.get(kite_url, timeout=60)
+                            if kite_response.status_code == 200:
+                                kite_df = pd.read_csv(StringIO(kite_response.text))
+                                # Filter to only EQ segment and match with our NSE symbols
+                                eq_df = kite_df[
+                                    (kite_df['segment'] == 'NSE') & 
+                                    (kite_df['tradingsymbol'].isin(nse_symbols))
+                                ]
+                                tokens = eq_df['instrument_token'].tolist()
+                                self.logger.info(f"Mapped {len(tokens)} NSE symbols to Kite instrument tokens")
+                                # Register instruments with candle store
+                                for _, row in eq_df.iterrows():
+                                    self._candle_store.register_instrument(
+                                        int(row['instrument_token']),
+                                        row.get('tradingsymbol', str(row['instrument_token']))
+                                    )
+                            else:
+                                self.logger.warning(f"Kite instruments fetch failed: {kite_response.status_code}")
                         else:
-                            self.logger.warning(f"Kite instruments fetch failed: {kite_response.status_code}")
-                    else:
-                        self.logger.warning(f"PKScreener equity CSV fetch failed: {response.status_code}")
-                except Exception as pkscreener_error:
-                    self.logger.warning(f"PKScreener fallback failed: {pkscreener_error}")
+                            self.logger.warning(f"PKScreener equity CSV fetch failed: {response.status_code}")
+                    except Exception as pkscreener_error:
+                        self.logger.warning(f"PKScreener fallback failed: {pkscreener_error}")
                 
                 # Fallback 2: Try InstrumentHistory API if PKScreener failed
                 if len(tokens) == 0:
