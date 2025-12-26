@@ -151,7 +151,14 @@ class Candle:
     is_complete: bool = False
     
     def update_with_tick(self, price: float, volume: int = 0, oi: int = 0):
-        """Update candle with a new tick."""
+        """
+        Update candle with a new tick (incremental volume mode).
+        
+        Args:
+            price: Tick price
+            volume: Incremental volume since last tick (will be added)
+            oi: Open interest
+        """
         if self.tick_count == 0:
             self.open = price
             self.high = price
@@ -161,7 +168,32 @@ class Candle:
             self.low = min(self.low, price)
         
         self.close = price
-        self.volume += volume
+        self.volume += volume  # Add incremental volume
+        self.oi = oi  # OI is typically the latest value
+        self.tick_count += 1
+    
+    def update_with_tick_daily(self, price: float, day_volume: int = 0, oi: int = 0):
+        """
+        Update candle with a new tick (cumulative volume mode for daily candles).
+        
+        For daily candles, day_volume from Zerodha is cumulative total for the day,
+        so we overwrite the volume instead of adding.
+        
+        Args:
+            price: Tick price
+            day_volume: Cumulative volume for the day (will overwrite)
+            oi: Open interest
+        """
+        if self.tick_count == 0:
+            self.open = price
+            self.high = price
+            self.low = price
+        else:
+            self.high = max(self.high, price)
+            self.low = min(self.low, price)
+        
+        self.close = price
+        self.volume = day_volume  # Overwrite with cumulative day volume
         self.oi = oi  # OI is typically the latest value
         self.tick_count += 1
     
@@ -210,6 +242,8 @@ class InstrumentCandles:
     candles: Dict[str, Deque[Candle]] = field(default_factory=dict)
     current_candle: Dict[str, Optional[Candle]] = field(default_factory=dict)
     last_update: float = 0.0
+    # Track cumulative day_volume for calculating incremental volume per tick
+    last_day_volume: int = 0
     
     def __post_init__(self):
         """Initialize candle deques for all intervals."""
@@ -360,7 +394,7 @@ class InMemoryCandleStore:
         try:
             instrument_token = tick_data.get('instrument_token')
             price = tick_data.get('last_price', 0)
-            volume = tick_data.get('day_volume', 0)
+            day_volume = tick_data.get('day_volume', 0)  # Cumulative volume for the day
             oi = tick_data.get('oi', 0)
             timestamp = tick_data.get('exchange_timestamp')
             trading_symbol = tick_data.get('trading_symbol', '')
@@ -378,9 +412,31 @@ class InMemoryCandleStore:
                 instrument = self._get_or_create_instrument(instrument_token, trading_symbol)
                 instrument.last_update = time.time()
                 
+                # Calculate INCREMENTAL volume from cumulative day_volume
+                # day_volume from Zerodha is cumulative total for the day
+                # We need the increment since last tick for intraday candles
+                incremental_volume = 0
+                if day_volume > 0:
+                    if instrument.last_day_volume > 0:
+                        # Calculate increment (handle day reset if new day_volume < last)
+                        if day_volume >= instrument.last_day_volume:
+                            incremental_volume = day_volume - instrument.last_day_volume
+                        else:
+                            # New trading day or data reset - use full day_volume
+                            incremental_volume = day_volume
+                    else:
+                        # First tick for this instrument - use full day_volume
+                        incremental_volume = day_volume
+                    instrument.last_day_volume = day_volume
+                
                 # Update candles for all intervals
                 for interval in SUPPORTED_INTERVALS.keys():
-                    self._update_candle(instrument, interval, timestamp, price, volume, oi)
+                    # For daily candles, use cumulative day_volume directly
+                    # For intraday candles, use incremental volume
+                    if interval in ('day', '1d'):
+                        self._update_candle(instrument, interval, timestamp, price, day_volume, oi, is_daily=True)
+                    else:
+                        self._update_candle(instrument, interval, timestamp, price, incremental_volume, oi, is_daily=False)
                 
                 self.stats['ticks_processed'] += 1
                 self.stats['last_tick_time'] = timestamp
@@ -419,8 +475,22 @@ class InMemoryCandleStore:
         price: float,
         volume: int,
         oi: int,
+        is_daily: bool = False,
     ):
-        """Update or create candle for a specific interval."""
+        """
+        Update or create candle for a specific interval.
+        
+        Args:
+            instrument: InstrumentCandles object
+            interval: Candle interval ('1m', '5m', 'day', etc.)
+            timestamp: Tick timestamp
+            price: Tick price
+            volume: For daily candles, this is cumulative day_volume.
+                    For intraday candles, this is incremental volume.
+            oi: Open interest
+            is_daily: If True, volume is cumulative day_volume (overwrite mode).
+                      If False, volume is incremental (additive mode).
+        """
         candle_start = self._get_candle_start_time(timestamp, interval)
         current = instrument.current_candle.get(interval)
         
@@ -438,7 +508,12 @@ class InMemoryCandleStore:
             self.stats['candles_created'] += 1
         
         # Update current candle with tick
-        current.update_with_tick(price, volume, oi)
+        if is_daily:
+            # For daily candles, volume is cumulative - overwrite
+            current.update_with_tick_daily(price, volume, oi)
+        else:
+            # For intraday candles, volume is incremental - add
+            current.update_with_tick(price, volume, oi)
     
     def get_candles(
         self,
