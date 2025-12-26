@@ -395,7 +395,12 @@ class InstrumentDataManager:
 
     def _download_ticks_from_github(self) -> Optional[Dict]:
         """
-        Download fresh ticks.json.zip from GitHub (uploaded by PKTickBot workflow).
+        Download fresh ticks from GitHub (uploaded by PKTickBot workflow).
+        
+        Tries multiple sources in order:
+        1. ticks.json.zip from PKScreener actions-data-download branch
+        2. ticks.json (uncompressed) from PKScreener actions-data-download branch
+        3. ticks.json from PKBrokers main branch (direct from pktickbot)
         
         ticks.json format:
         {
@@ -414,41 +419,61 @@ class InstrumentDataManager:
         import io
         import json
         
-        try:
-            ticks_zip_url = "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/ticks.json.zip"
-            
-            self.logger.info("Attempting to download fresh ticks from GitHub...")
-            response = requests.get(ticks_zip_url, timeout=60)
-            
-            if response.status_code != 200:
-                self.logger.debug(f"ticks.json.zip not available: HTTP {response.status_code}")
-                return None
-            
-            # Extract and parse ticks.json from the zip
-            with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
-                if 'ticks.json' in zf.namelist():
-                    with zf.open('ticks.json') as f:
-                        ticks_data = json.load(f)
+        ticks_data = None
+        
+        # Try multiple sources in order of preference
+        sources = [
+            ("https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/ticks.json.zip", "zip"),
+            ("https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/ticks.json", "json"),
+            ("https://raw.githubusercontent.com/pkjmesra/PKBrokers/main/pkbrokers/kite/examples/results/Data/ticks.json", "json"),
+        ]
+        
+        for url, file_type in sources:
+            try:
+                self.logger.debug(f"Trying to download ticks from: {url}")
+                response = requests.get(url, timeout=60)
+                
+                if response.status_code != 200:
+                    self.logger.debug(f"Not available: HTTP {response.status_code}")
+                    continue
+                
+                if file_type == "zip":
+                    # Extract and parse ticks.json from the zip
+                    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+                        if 'ticks.json' in zf.namelist():
+                            with zf.open('ticks.json') as f:
+                                ticks_data = json.load(f)
+                        else:
+                            self.logger.debug("ticks.json not found in zip file")
+                            continue
                 else:
-                    self.logger.debug("ticks.json not found in zip file")
-                    return None
-            
-            if not ticks_data:
-                return None
-            
-            # Save locally for caching
+                    # Parse JSON directly
+                    ticks_data = response.json()
+                
+                if ticks_data and len(ticks_data) > 0:
+                    self.logger.info(f"Downloaded {len(ticks_data)} instruments from {url}")
+                    break
+                else:
+                    ticks_data = None
+                    
+            except Exception as e:
+                self.logger.debug(f"Failed to download from {url}: {e}")
+                continue
+        
+        if not ticks_data:
+            self.logger.debug("Failed to download ticks from any source")
+            return None
+        
+        # Save locally for caching
+        try:
             self.ticks_json_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.ticks_json_path, 'w') as f:
                 json.dump(ticks_data, f)
-            
-            self.logger.info(f"Downloaded {len(ticks_data)} instruments from ticks.json.zip")
-            
-            # Convert ticks directly to symbol-indexed format
-            return self._convert_ticks_to_symbol_format(ticks_data)
-            
         except Exception as e:
-            self.logger.debug(f"Failed to download ticks from GitHub: {e}")
-            return None
+            self.logger.debug(f"Failed to save ticks locally: {e}")
+        
+        # Convert ticks directly to symbol-indexed format
+        return self._convert_ticks_to_symbol_format(ticks_data)
     
     def _convert_ticks_to_symbol_format(self, ticks_data: Dict) -> Optional[Dict]:
         """
