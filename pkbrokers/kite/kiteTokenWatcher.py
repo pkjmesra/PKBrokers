@@ -464,28 +464,91 @@ class KiteTokenWatcher:
             try:
                 equities = kite.get_equities(column_names="instrument_token")
                 tokens = kite.get_instrument_tokens(equities=equities)
+                self.logger.info(f"Got {len(tokens)} tokens from Turso DB")
             except Exception as db_error:
                 # Fallback: Use cached instruments or fetch from Kite API directly
                 self.logger.warning(f"Could not get equities from DB, using fallback: {db_error}")
+                tokens = []
+                
+                # Fallback 1: Fetch NSE equity symbols from PKScreener and map to Kite tokens
                 try:
-                    # Try to get instruments directly from Kite API
-                    from pkbrokers.kite.instrumentHistory import InstrumentHistory
-                    hist = InstrumentHistory(access_token=ACCESS_TOKEN)
-                    instruments_df = hist.get_instruments(exchange="NSE")
-                    if instruments_df is not None and len(instruments_df) > 0:
-                        tokens = instruments_df[instruments_df['segment'] == 'NSE']['instrument_token'].tolist()
-                        self.logger.info(f"Fetched {len(tokens)} tokens from Kite API directly")
-                        # Also register these instruments
-                        for _, row in instruments_df[instruments_df['segment'] == 'NSE'].iterrows():
-                            self._candle_store.register_instrument(
-                                int(row['instrument_token']), 
-                                row.get('tradingsymbol', str(row['instrument_token']))
-                            )
+                    import pandas as pd
+                    import requests
+                    self.logger.info("Fetching NSE equity symbols from PKScreener GitHub...")
+                    equity_csv_url = "https://raw.githubusercontent.com/pkjmesra/PKScreener/main/results/Indices/EQUITY_L.csv"
+                    response = requests.get(equity_csv_url, timeout=30)
+                    if response.status_code == 200:
+                        from io import StringIO
+                        equity_df = pd.read_csv(StringIO(response.text))
+                        nse_symbols = equity_df['SYMBOL'].str.strip().tolist()
+                        self.logger.info(f"Fetched {len(nse_symbols)} NSE symbols from PKScreener")
+                        
+                        # Now fetch Kite instruments to map symbols to tokens
+                        kite_url = "https://api.kite.trade/instruments/NSE"
+                        kite_response = requests.get(kite_url, timeout=60)
+                        if kite_response.status_code == 200:
+                            kite_df = pd.read_csv(StringIO(kite_response.text))
+                            # Filter to only EQ segment and match with our NSE symbols
+                            eq_df = kite_df[
+                                (kite_df['segment'] == 'NSE') & 
+                                (kite_df['tradingsymbol'].isin(nse_symbols))
+                            ]
+                            tokens = eq_df['instrument_token'].tolist()
+                            self.logger.info(f"Mapped {len(tokens)} NSE symbols to Kite instrument tokens")
+                            # Register instruments with candle store
+                            for _, row in eq_df.iterrows():
+                                self._candle_store.register_instrument(
+                                    int(row['instrument_token']),
+                                    row.get('tradingsymbol', str(row['instrument_token']))
+                                )
+                        else:
+                            self.logger.warning(f"Kite instruments fetch failed: {kite_response.status_code}")
                     else:
-                        tokens = []
-                except Exception as api_error:
-                    self.logger.error(f"Could not fetch instruments from Kite API: {api_error}")
-                    tokens = []
+                        self.logger.warning(f"PKScreener equity CSV fetch failed: {response.status_code}")
+                except Exception as pkscreener_error:
+                    self.logger.warning(f"PKScreener fallback failed: {pkscreener_error}")
+                
+                # Fallback 2: Try InstrumentHistory API if PKScreener failed
+                if len(tokens) == 0:
+                    try:
+                        from pkbrokers.kite.instrumentHistory import InstrumentHistory
+                        hist = InstrumentHistory(access_token=ACCESS_TOKEN)
+                        instruments_df = hist.get_instruments(exchange="NSE")
+                        if instruments_df is not None and len(instruments_df) > 0:
+                            tokens = instruments_df[instruments_df['segment'] == 'NSE']['instrument_token'].tolist()
+                            self.logger.info(f"Fetched {len(tokens)} tokens from InstrumentHistory API")
+                            for _, row in instruments_df[instruments_df['segment'] == 'NSE'].iterrows():
+                                self._candle_store.register_instrument(
+                                    int(row['instrument_token']), 
+                                    row.get('tradingsymbol', str(row['instrument_token']))
+                                )
+                    except Exception as api_error:
+                        self.logger.warning(f"InstrumentHistory failed: {api_error}")
+                
+                # Fallback 3: Fetch all instruments directly from Zerodha as last resort
+                if len(tokens) == 0:
+                    try:
+                        import pandas as pd
+                        import requests
+                        self.logger.info("Fetching ALL instruments directly from Zerodha CSV...")
+                        nse_url = "https://api.kite.trade/instruments/NSE"
+                        response = requests.get(nse_url, timeout=60)
+                        if response.status_code == 200:
+                            from io import StringIO
+                            df = pd.read_csv(StringIO(response.text))
+                            # Filter for EQ (equity) segment only
+                            eq_df = df[df['segment'] == 'NSE']
+                            tokens = eq_df['instrument_token'].tolist()
+                            self.logger.info(f"Fetched {len(tokens)} NSE tokens from Zerodha CSV")
+                            for _, row in eq_df.iterrows():
+                                self._candle_store.register_instrument(
+                                    int(row['instrument_token']),
+                                    row.get('tradingsymbol', str(row['instrument_token']))
+                                )
+                        else:
+                            self.logger.warning(f"Zerodha CSV fetch failed with status {response.status_code}")
+                    except Exception as csv_error:
+                        self.logger.error(f"Could not fetch instruments from Zerodha CSV: {csv_error}")
             
             # Always include indices even if database is unavailable
             tokens = list(set(NIFTY_50 + BSE_SENSEX + OTHER_INDICES + tokens))
