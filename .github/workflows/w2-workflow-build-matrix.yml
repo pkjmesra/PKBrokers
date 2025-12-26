@@ -117,7 +117,8 @@ jobs:
         shell: bash
         run: |
           CURRENT_VERSION=${{ steps.releaseversiongetter.outputs.LAST_RELEASE_VERSION }}
-          DEV_VERSION=`grep -o "'.*'" pkbrokers/kite/__init__.py | sed "s/'//g"`
+          # Extract only the VERSION value from __init__.py (e.g., VERSION = '0.1.20250914.18')
+          DEV_VERSION=$(grep "^VERSION" pkbrokers/kite/__init__.py | grep -o "'[0-9.]*'" | sed "s/'//g" | head -1)
           VERSION_ARR=(${DEV_VERSION//./ })
           MAJOR_MINOR=${VERSION_ARR[0]}.${VERSION_ARR[1]}
           TODAY=`date +%Y%m%d`

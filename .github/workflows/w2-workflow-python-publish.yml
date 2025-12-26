@@ -228,7 +228,8 @@ jobs:
           GITHUB_REF=${GITHUB_REF#refs/tags/}
           echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
           echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-          CURRENT_VERSION=`grep -o "'.*'" pkbrokers/kite/__init__.py | sed "s/'//g"`
+          # Extract only the VERSION value from __init__.py (e.g., VERSION = '0.1.20250914.18')
+          CURRENT_VERSION=$(grep "^VERSION" pkbrokers/kite/__init__.py | grep -o "'[0-9.]*'" | sed "s/'//g" | head -1)
           VERSION_ARR=(${CURRENT_VERSION//./ })
           MAJOR_MINOR=${VERSION_ARR[0]}.${VERSION_ARR[1]}
           TODAY=`date +%Y%m%d`
