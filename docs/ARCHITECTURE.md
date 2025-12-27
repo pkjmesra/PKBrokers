@@ -19,47 +19,47 @@ PKBrokers is designed as a layered system with clear separation between data acq
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Data Consumers                                  │
-│                    (PKScreener, Custom Applications)                         │
+│                              Data Consumers                                 │
+│                    (PKScreener, Custom Applications)                        │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
+│                                                                             │
 │  ┌────────────────────────────────────────────────────────────────────┐     │
-│  │                    High-Level Data Providers                        │     │
+│  │                    High-Level Data Providers                       │     │
 │  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  │     │
 │  │  │HighPerformance   │  │InstrumentData    │  │LocalCandle       │  │     │
 │  │  │DataProvider      │  │Manager           │  │Database          │  │     │
 │  │  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘  │     │
 │  └───────────┼─────────────────────┼─────────────────────┼────────────┘     │
-│              │                     │                     │                   │
+│              │                     │                     │                  │
 │  ┌───────────▼─────────────────────▼─────────────────────▼────────────┐     │
 │  │                      InMemoryCandleStore                           │     │
 │  │                   (Central Data Repository)                        │     │
 │  └────────────────────────────────┬───────────────────────────────────┘     │
-│                                   │                                          │
+│                                   │                                         │
 │  ┌────────────────────────────────▼───────────────────────────────────┐     │
-│  │                      Processing Layer                               │     │
+│  │                      Processing Layer                              │     │
 │  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  │     │
-│  │  │CandleAggregator  │  │TickProcessor    │  │JSONWriter        │  │     │
-│  │  │(Tick → Candle)   │  │(Parse/Validate) │  │(Persistence)     │  │     │
+│  │  │CandleAggregator  │  │TickProcessor    │  │JSONWriter         │  │     │
+│  │  │(Tick → Candle)   │  │(Parse/Validate) │  │(Persistence)      │  │     │
 │  │  └──────────────────┘  └──────────────────┘  └──────────────────┘  │     │
 │  └────────────────────────────────┬───────────────────────────────────┘     │
-│                                   │                                          │
+│                                   │                                         │
 │  ┌────────────────────────────────▼───────────────────────────────────┐     │
-│  │                      WebSocket Layer                                │     │
+│  │                      WebSocket Layer                               │     │
 │  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  │     │
 │  │  │KiteTokenWatcher  │  │ZerodhaWebSocket  │  │WebSocketParser   │  │     │
 │  │  │(Orchestrator)    │  │Client            │  │(Binary → Dict)   │  │     │
 │  │  └──────────────────┘  └──────────────────┘  └──────────────────┘  │     │
 │  └────────────────────────────────┬───────────────────────────────────┘     │
-│                                   │                                          │
+│                                   │                                         │
 │  ┌────────────────────────────────▼───────────────────────────────────┐     │
-│  │                      Infrastructure                                 │     │
+│  │                      Infrastructure                                │     │
 │  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  │     │
 │  │  │KiteInstruments   │  │Authenticator     │  │PKTickBot         │  │     │
 │  │  │(Symbols/Tokens)  │  │(TOTP Login)      │  │(Telegram)        │  │     │
 │  │  └──────────────────┘  └──────────────────┘  └──────────────────┘  │     │
 │  └────────────────────────────────────────────────────────────────────┘     │
-│                                                                              │
+│                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -110,30 +110,30 @@ Tick arrives at 09:16:45 (price=100, volume=500)
 ┌─────────────────────────────────────────────────┐
 │         Determine candle boundaries             │
 │                                                 │
-│  1m candle: 09:16:00 - 09:16:59                │
-│  5m candle: 09:15:00 - 09:19:59                │
-│  15m candle: 09:15:00 - 09:29:59               │
+│  1m candle: 09:16:00 - 09:16:59                 │
+│  5m candle: 09:15:00 - 09:19:59                 │
+│  15m candle: 09:15:00 - 09:29:59                │
 │  ...                                            │
 └─────────────────────────────────────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────────────────┐
-│         Update candle for each interval          │
+│         Update candle for each interval         │
 │                                                 │
-│  current_candle.high = max(high, price)        │
-│  current_candle.low = min(low, price)          │
-│  current_candle.close = price                  │
-│  current_candle.volume += volume               │
-│  current_candle.tick_count += 1                │
+│  current_candle.high = max(high, price)         │
+│  current_candle.low = min(low, price)           │
+│  current_candle.close = price                   │
+│  current_candle.volume += volume                │
+│  current_candle.tick_count += 1                 │
 └─────────────────────────────────────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────────────────┐
 │    If candle complete (time boundary crossed)   │
 │                                                 │
-│  1. Move current → completed deque             │
-│  2. Create new current candle                  │
-│  3. Trim deque if > max_candles                │
+│  1. Move current → completed deque              │
+│  2. Create new current candle                   │
+│  3. Trim deque if > max_candles                 │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -474,21 +474,3 @@ def stop(self):
 ---
 
 For more details, see the source code or open an issue on [GitHub](https://github.com/pkjmesra/pkbrokers).
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -134,50 +134,50 @@ token = PKEnvironment().KTOKEN
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                            PKBrokers Architecture                            │
+│                            PKBrokers Architecture                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
+│                                                                             │
 │  ┌────────────────────────────────────────────────────────────────┐         │
 │  │                     Application Layer                          │         │
 │  │            PKScreener | Custom Applications                    │         │
 │  └─────────────────────────────┬──────────────────────────────────┘         │
-│                                │                                             │
+│                                │                                            │
 │  ┌─────────────────────────────▼──────────────────────────────────┐         │
 │  │                      Data Provider API                         │         │
 │  │   HighPerformanceDataProvider | InstrumentDataManager          │         │
 │  └─────────────────────────────┬──────────────────────────────────┘         │
-│                                │                                             │
+│                                │                                            │
 │       ┌────────────────────────┼────────────────────────┐                   │
 │       │                        │                        │                   │
-│  ┌────▼────┐           ┌───────▼───────┐        ┌───────▼───────┐          │
-│  │InMemory │           │  Local SQLite │        │ Remote Data   │          │
-│  │Candle   │           │  Database     │        │ (GitHub/Turso)│          │
-│  │Store    │           │               │        │               │          │
-│  └────┬────┘           └───────────────┘        └───────────────┘          │
-│       │                                                                      │
-│  ┌────▼──────────────────────────────────────────────────────────┐         │
+│  ┌────▼────┐           ┌───────▼───────┐        ┌───────▼───────┐           │
+│  │InMemory │           │  Local SQLite │        │ Remote Data   │           │
+│  │Candle   │           │  Database     │        │ (GitHub/Turso)│           │
+│  │Store    │           │               │        │               │           │
+│  └────┬────┘           └───────────────┘        └───────────────┘           │
+│       │                                                                     │
+│  ┌────▼──────────────────────────────────────────────────────────-┐         │
 │  │                    Tick Processing Layer                       │         │
 │  │   KiteTokenWatcher | CandleAggregator | TickProcessor          │         │
 │  └────────────────────────────┬───────────────────────────────────┘         │
-│                               │                                              │
+│                               │                                             │
 │  ┌────────────────────────────▼───────────────────────────────────┐         │
-│  │                     WebSocket Layer                             │         │
-│  │          ZerodhaWebSocketClient | KiteTicker                    │         │
+│  │                     WebSocket Layer                            │         │
+│  │          ZerodhaWebSocketClient | KiteTicker                   │         │
 │  └────────────────────────────┬───────────────────────────────────┘         │
-│                               │                                              │
+│                               │                                             │
 │  ┌────────────────────────────▼───────────────────────────────────┐         │
-│  │                  Kite Connect API / Authentication              │         │
-│  │            Authenticator | KiteInstruments                      │         │
+│  │                  Kite Connect API / Authentication             │         │
+│  │            Authenticator | KiteInstruments                     │         │
 │  └────────────────────────────────────────────────────────────────┘         │
-│                                                                              │
+│                                                                             │
 │  ┌────────────────────────────────────────────────────────────────┐         │
-│  │                      Bot Layer (Telegram)                       │         │
-│  │         PKTickBot | Orchestrator | Consumer                     │         │
+│  │                      Bot Layer (Telegram)                      │         │
+│  │         PKTickBot | Orchestrator | Consumer                    │         │
 │  └────────────────────────────────────────────────────────────────┘         │
-│                                                                              │
+│                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
-
+See more details on [Architecture](https://github.com/pkjmesra/PKBrokers/blob/main/docs/ARCHITECTURE.md)
 ---
 
 ## Core Modules
