@@ -35,6 +35,7 @@ from typing import Dict, List, Union
 import libsql
 import requests
 from PKDevTools.classes.Environment import PKEnvironment
+from PKDevTools.classes import Archiver
 from PKDevTools.classes.log import default_logger
 from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
@@ -248,14 +249,18 @@ class KiteTickerHistory:
         )
 
     def table_exists(self, cursor, table_name):
-        cursor.execute(
-            """
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name=?
-        """,
-            (table_name,),
-        )
-        return cursor.fetchone() is not None
+        try:
+            cursor.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name=?
+            """,
+                (table_name,),
+            )
+            return cursor.fetchone() is not None
+        except Exception as e:
+            self.logger.error(f"Error checking table existence: {e}")
+            return False
 
     def _initialize_database(self):
         """

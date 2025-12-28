@@ -87,68 +87,76 @@ class LocalCandleDatabase:
         
     def _init_daily_db(self):
         """Initialize the daily candle database schema."""
-        conn = self._get_daily_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS daily_candles (
-                symbol TEXT NOT NULL,
-                date TEXT NOT NULL,
-                open REAL,
-                high REAL,
-                low REAL,
-                close REAL,
-                volume INTEGER,
-                updated_at TEXT,
-                PRIMARY KEY (symbol, date)
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_daily_symbol ON daily_candles(symbol)
-        ''')
-        
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_daily_date ON daily_candles(date)
-        ''')
-        
-        conn.commit()
-        self.logger.debug(f"Initialized daily database: {self.daily_db_path}")
+        try:
+            conn = self._get_daily_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS daily_candles (
+                    symbol TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    open REAL,
+                    high REAL,
+                    low REAL,
+                    close REAL,
+                    volume INTEGER,
+                    updated_at TEXT,
+                    PRIMARY KEY (symbol, date)
+                )
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_daily_symbol ON daily_candles(symbol)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_daily_date ON daily_candles(date)
+            ''')
+            
+            conn.commit()
+            self.logger.debug(f"Initialized daily database: {self.daily_db_path}")
+        except Exception as e:
+            self.logger.error(f"Error initializing daily database: {e}")
+            raise
         
     def _init_intraday_db(self):
         """Initialize the intraday candle database schema."""
-        conn = self._get_intraday_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS intraday_candles (
-                symbol TEXT NOT NULL,
-                timestamp TEXT NOT NULL,
-                interval TEXT NOT NULL,
-                open REAL,
-                high REAL,
-                low REAL,
-                close REAL,
-                volume INTEGER,
-                updated_at TEXT,
-                PRIMARY KEY (symbol, timestamp, interval)
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_intraday_symbol ON intraday_candles(symbol)
-        ''')
-        
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_intraday_timestamp ON intraday_candles(timestamp)
-        ''')
-        
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_intraday_interval ON intraday_candles(interval)
-        ''')
-        
-        conn.commit()
-        self.logger.debug(f"Initialized intraday database: {self.intraday_db_path}")
+        try:
+            conn = self._get_intraday_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS intraday_candles (
+                    symbol TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    interval TEXT NOT NULL,
+                    open REAL,
+                    high REAL,
+                    low REAL,
+                    close REAL,
+                    volume INTEGER,
+                    updated_at TEXT,
+                    PRIMARY KEY (symbol, timestamp, interval)
+                )
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_intraday_symbol ON intraday_candles(symbol)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_intraday_timestamp ON intraday_candles(timestamp)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_intraday_interval ON intraday_candles(interval)
+            ''')
+            
+            conn.commit()
+            self.logger.debug(f"Initialized intraday database: {self.intraday_db_path}")
+        except Exception as e:
+            self.logger.error(f"Error initializing intraday database: {e}")
+            raise
         
     def _get_daily_connection(self) -> sqlite3.Connection:
         """Get or create daily database connection."""
@@ -411,17 +419,20 @@ class LocalCandleDatabase:
             close: Close price
             volume: Trading volume
         """
-        conn = self._get_daily_connection()
-        cursor = conn.cursor()
-        now = datetime.now(self.timezone).isoformat()
-        
-        cursor.execute('''
-            INSERT OR REPLACE INTO daily_candles 
-            (symbol, date, open, high, low, close, volume, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (symbol, date_str, open_price, high, low, close, volume, now))
-        
-        conn.commit()
+        try:
+            conn = self._get_daily_connection()
+            cursor = conn.cursor()
+            now = datetime.now(self.timezone).isoformat()
+            
+            cursor.execute('''
+                INSERT OR REPLACE INTO daily_candles 
+                (symbol, date, open, high, low, close, volume, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (symbol, date_str, open_price, high, low, close, volume, now))
+            
+            conn.commit()
+        except Exception as e:
+            self.logger.error(f"Error updating daily candle for {symbol} on {date_str}: {e}")
         
     def update_intraday_candle(self, symbol: str, timestamp: str, interval: str,
                                open_price: float, high: float, low: float,
@@ -442,14 +453,16 @@ class LocalCandleDatabase:
         conn = self._get_intraday_connection()
         cursor = conn.cursor()
         now = datetime.now(self.timezone).isoformat()
-        
-        cursor.execute('''
-            INSERT OR REPLACE INTO intraday_candles 
-            (symbol, timestamp, interval, open, high, low, close, volume, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (symbol, timestamp, interval, open_price, high, low, close, volume, now))
-        
-        conn.commit()
+        try:
+            cursor.execute('''
+                INSERT OR REPLACE INTO intraday_candles 
+                (symbol, timestamp, interval, open, high, low, close, volume, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (symbol, timestamp, interval, open_price, high, low, close, volume, now))
+            
+            conn.commit()
+        except Exception as e:
+            self.logger.error(f"Error updating intraday candle for {symbol} at {timestamp}: {e}")
         
     def get_daily_candles(self, symbol: Optional[str] = None, 
                          start_date: Optional[str] = None,
@@ -597,32 +610,36 @@ class LocalCandleDatabase:
         
     def get_stats(self) -> Dict[str, Any]:
         """Get database statistics."""
-        daily_conn = self._get_daily_connection()
-        intraday_conn = self._get_intraday_connection()
-        
-        daily_cursor = daily_conn.cursor()
-        intraday_cursor = intraday_conn.cursor()
-        
-        daily_cursor.execute("SELECT COUNT(DISTINCT symbol), COUNT(*) FROM daily_candles")
-        daily_stats = daily_cursor.fetchone()
-        
-        intraday_cursor.execute("SELECT COUNT(DISTINCT symbol), COUNT(*) FROM intraday_candles")
-        intraday_stats = intraday_cursor.fetchone()
-        
-        return {
-            'daily': {
-                'symbols': daily_stats[0],
-                'records': daily_stats[1],
-                'db_path': str(self.daily_db_path),
-                'db_size_mb': os.path.getsize(self.daily_db_path) / (1024 * 1024) if self.daily_db_path.exists() else 0
-            },
-            'intraday': {
-                'symbols': intraday_stats[0],
-                'records': intraday_stats[1],
-                'db_path': str(self.intraday_db_path),
-                'db_size_mb': os.path.getsize(self.intraday_db_path) / (1024 * 1024) if self.intraday_db_path.exists() else 0
+        try:
+            daily_conn = self._get_daily_connection()
+            intraday_conn = self._get_intraday_connection()
+            
+            daily_cursor = daily_conn.cursor()
+            intraday_cursor = intraday_conn.cursor()
+            
+            daily_cursor.execute("SELECT COUNT(DISTINCT symbol), COUNT(*) FROM daily_candles")
+            daily_stats = daily_cursor.fetchone()
+            
+            intraday_cursor.execute("SELECT COUNT(DISTINCT symbol), COUNT(*) FROM intraday_candles")
+            intraday_stats = intraday_cursor.fetchone()
+            
+            return {
+                'daily': {
+                    'symbols': daily_stats[0],
+                    'records': daily_stats[1],
+                    'db_path': str(self.daily_db_path),
+                    'db_size_mb': os.path.getsize(self.daily_db_path) / (1024 * 1024) if self.daily_db_path.exists() else 0
+                },
+                'intraday': {
+                    'symbols': intraday_stats[0],
+                    'records': intraday_stats[1],
+                    'db_path': str(self.intraday_db_path),
+                    'db_size_mb': os.path.getsize(self.intraday_db_path) / (1024 * 1024) if self.intraday_db_path.exists() else 0
+                }
             }
-        }
+        except Exception as e:
+            self.logger.error(f"Error getting database stats: {e}")
+            return {}
 
 
 def sync_and_export():

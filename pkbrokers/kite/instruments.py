@@ -216,7 +216,10 @@ class KiteInstruments:
         }
         self._nse_trading_symbols: Optional[list[str]] = None
         self._filtered_trading_symbols: Optional[list[str]] = []
-        self._init_db(drop_table=recreate_schema)
+        try:
+            self._init_db(drop_table=recreate_schema)
+        except Exception as e:
+            self.logger.warning(f"Initial DB setup failed: {e}")
 
     def _is_after_8_30_am_ist(self, last_updated_str: str) -> bool:
         """
@@ -337,35 +340,44 @@ class KiteInstruments:
             
             if needs_drop:
                 self.logger.debug("Dropping table instruments.")
-                cursor.execute("DROP TABLE IF EXISTS instruments")
+                try:
+                    cursor.execute("DROP TABLE IF EXISTS instruments")
+                except Exception as e:
+                    self.logger.debug(f"Table drop error (may not exist): {e}")
 
             if self.local:
                 self.logger.debug("Running in local database mode.")
-                # Enable WAL mode for better concurrency
-                cursor.execute("PRAGMA journal_mode=WAL")
-                cursor.execute("PRAGMA synchronous=NORMAL")
+                try:
+                    # Enable WAL mode for better concurrency
+                    cursor.execute("PRAGMA journal_mode=WAL")
+                    cursor.execute("PRAGMA synchronous=NORMAL")
+                except Exception as e:
+                    self.logger.debug(f"PRAGMA setting error: {e}")
 
             # Use CREATE TABLE IF NOT EXISTS to handle both local and remote cases
             # This is more reliable than table_exists() which can fail on blocked Turso
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS instruments (
-                    instrument_token INTEGER,
-                    exchange_token TEXT,
-                    tradingsymbol TEXT,
-                    name TEXT,
-                    last_price REAL,
-                    expiry TEXT,
-                    strike REAL,
-                    tick_size REAL,
-                    lot_size INTEGER,
-                    instrument_type TEXT,
-                    segment TEXT,
-                    exchange TEXT,
-                    last_updated TEXT DEFAULT (datetime('now')),
-                    nse_stock INTEGER DEFAULT 0,
-                    PRIMARY KEY (exchange, tradingsymbol, instrument_type)
-                )
-            """)
+            try:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS instruments (
+                        instrument_token INTEGER,
+                        exchange_token TEXT,
+                        tradingsymbol TEXT,
+                        name TEXT,
+                        last_price REAL,
+                        expiry TEXT,
+                        strike REAL,
+                        tick_size REAL,
+                        lot_size INTEGER,
+                        instrument_type TEXT,
+                        segment TEXT,
+                        exchange TEXT,
+                        last_updated TEXT DEFAULT (datetime('now')),
+                        nse_stock INTEGER DEFAULT 0,
+                        PRIMARY KEY (exchange, tradingsymbol, instrument_type)
+                    )
+                """)
+            except Exception as e:
+                self.logger.debug(f"Table creation error (may already exist): {e}")
             
             # Create indexes if they don't exist (use CREATE INDEX IF NOT EXISTS)
             try:
@@ -693,60 +705,64 @@ class KiteInstruments:
         #     f"Filtered out but present in NSE_symbols:{set(self._nse_trading_symbols) - set(instruments)}"
         # )
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            try:
+                cursor = conn.cursor()
 
-            # Prepare batch data including nse_stock column (as INTEGER)
-            data = [
-                (
-                    i.instrument_token,
-                    i.exchange_token,
-                    i.tradingsymbol,
-                    i.name,
-                    i.last_price,
-                    i.expiry,
-                    i.strike,
-                    i.tick_size,
-                    i.lot_size,
-                    i.instrument_type,
-                    i.segment,
-                    i.exchange,
-                    datetime.now().isoformat(),
-                    1 if i.nse_stock else 0,  # nse_stock column as INTEGER
-                )
-                for i in instruments
-            ]
+                # Prepare batch data including nse_stock column (as INTEGER)
+                data = [
+                    (
+                        i.instrument_token,
+                        i.exchange_token,
+                        i.tradingsymbol,
+                        i.name,
+                        i.last_price,
+                        i.expiry,
+                        i.strike,
+                        i.tick_size,
+                        i.lot_size,
+                        i.instrument_type,
+                        i.segment,
+                        i.exchange,
+                        datetime.now().isoformat(),
+                        1 if i.nse_stock else 0,  # nse_stock column as INTEGER
+                    )
+                    for i in instruments
+                ]
 
-            if self.recreate_schema:
-                cursor.executemany(
-                    """
-                    INSERT or IGNORE INTO instruments
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                    data,
-                )
-            else:
-                # Efficient bulk upsert including nse_stock column
-                cursor.executemany(
-                    """
-                    INSERT INTO instruments
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(exchange, tradingsymbol, instrument_type)
-                    DO UPDATE SET
-                        instrument_token = excluded.instrument_token,
-                        exchange_token = excluded.exchange_token,
-                        name = excluded.name,
-                        last_price = excluded.last_price,
-                        tick_size = excluded.tick_size,
-                        lot_size = excluded.lot_size,
-                        segment = excluded.segment,
-                        last_updated = datetime('now'),
-                        nse_stock = excluded.nse_stock
-                """,
-                    data,
-                )
+                if self.recreate_schema:
+                    cursor.executemany(
+                        """
+                        INSERT or IGNORE INTO instruments
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        data,
+                    )
+                else:
+                    # Efficient bulk upsert including nse_stock column
+                    cursor.executemany(
+                        """
+                        INSERT INTO instruments
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(exchange, tradingsymbol, instrument_type)
+                        DO UPDATE SET
+                            instrument_token = excluded.instrument_token,
+                            exchange_token = excluded.exchange_token,
+                            name = excluded.name,
+                            last_price = excluded.last_price,
+                            tick_size = excluded.tick_size,
+                            lot_size = excluded.lot_size,
+                            segment = excluded.segment,
+                            last_updated = datetime('now'),
+                            nse_stock = excluded.nse_stock
+                    """,
+                        data,
+                    )
 
-            conn.commit()
-            self.logger.info(f"Stored/updated {len(data)} instruments")
+                conn.commit()
+                self.logger.info(f"Stored/updated {len(data)} instruments")
+            except Exception as e:
+                self.logger.error(f"Error storing instruments: {str(e)}")
+                raise
 
     def sync_instruments(
         self, instruments: List[Instrument] = [], force_fetch: bool = True
@@ -963,37 +979,41 @@ class KiteInstruments:
             Returns all columns including nse_stock as boolean for easier use.
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT * FROM instruments
-                WHERE instrument_token = ?
-            """,
-                (instrument_token,),
-            )
-            row = cursor.fetchone()
-            if row:
-                columns = [
-                    "instrument_token",
-                    "exchange_token",
-                    "tradingsymbol",
-                    "name",
-                    "last_price",
-                    "expiry",
-                    "strike",
-                    "tick_size",
-                    "lot_size",
-                    "instrument_type",
-                    "segment",
-                    "exchange",
-                    "last_updated",
-                    "nse_stock",
-                ]
-                result = dict(zip(columns, row))
-                # Convert nse_stock to boolean for easier use
-                result["nse_stock"] = bool(result["nse_stock"])
-                return result
-            return None
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT * FROM instruments
+                    WHERE instrument_token = ?
+                """,
+                    (instrument_token,),
+                )
+                row = cursor.fetchone()
+                if row:
+                    columns = [
+                        "instrument_token",
+                        "exchange_token",
+                        "tradingsymbol",
+                        "name",
+                        "last_price",
+                        "expiry",
+                        "strike",
+                        "tick_size",
+                        "lot_size",
+                        "instrument_type",
+                        "segment",
+                        "exchange",
+                        "last_updated",
+                        "nse_stock",
+                    ]
+                    result = dict(zip(columns, row))
+                    # Convert nse_stock to boolean for easier use
+                    result["nse_stock"] = bool(result["nse_stock"])
+                    return result
+                return None
+            except Exception as e:
+                self.logger.error(f"Error getting instrument: {e}")
+                return None
 
     def get_nse_stocks(self) -> List[Dict]:
         """

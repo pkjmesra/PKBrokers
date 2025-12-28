@@ -516,14 +516,18 @@ class ThreadSafeDatabase:
             self._start_turso_writers()
 
     def table_exists(self, cursor, table_name):
-        cursor.execute(
-            """
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name=?
-        """,
-            (table_name,),
-        )
-        return cursor.fetchone() is not None
+        try:
+            cursor.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name=?
+            """,
+                (table_name,),
+            )
+            return cursor.fetchone() is not None
+        except Exception as e:
+            self.logger.error(f"Error checking table existence for {table_name}: {e}")
+            return False
 
     def _initialize_db(self, force_drop: bool = False):
         """Initialize database schema - optimized for batch inserts"""
@@ -533,70 +537,85 @@ class ThreadSafeDatabase:
 
             if force_drop and self.db_type == "local":
                 has_commit = True
-                cursor.execute("DROP TABLE IF EXISTS market_depth")
-                cursor.execute("DROP TABLE IF EXISTS ticks")
+                try:
+                    cursor.execute("DROP TABLE IF EXISTS market_depth")
+                    cursor.execute("DROP TABLE IF EXISTS ticks")
+                except Exception as e:
+                    self.logger.error(f"Error dropping tables: {e}")
 
             # Only create if it doesn't exist
             if not self.table_exists(cursor, "ticks"):
                 has_commit = True
-                # Main ticks table - optimized structure
-                cursor.execute("""
-                    CREATE TABLE ticks (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        instrument_token INTEGER,
-                        timestamp INTEGER,
-                        last_price REAL,
-                        day_volume INTEGER,
-                        oi INTEGER,
-                        buy_quantity INTEGER,
-                        sell_quantity INTEGER,
-                        high_price REAL,
-                        low_price REAL,
-                        open_price REAL,
-                        prev_day_close REAL,
-                        created_at INTEGER DEFAULT (strftime('%s', 'now')),
-                        UNIQUE(instrument_token, timestamp)  -- Prevent duplicates
-                    )
-                """)
-                # Optimized indexes for batch inserts
-                cursor.execute("""
-                    CREATE INDEX idx_ticks_main
-                    ON ticks(instrument_token, timestamp)
-                """)
+                try:
+                    # Main ticks table - optimized structure
+                    cursor.execute("""
+                        CREATE TABLE ticks (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            instrument_token INTEGER,
+                            timestamp INTEGER,
+                            last_price REAL,
+                            day_volume INTEGER,
+                            oi INTEGER,
+                            buy_quantity INTEGER,
+                            sell_quantity INTEGER,
+                            high_price REAL,
+                            low_price REAL,
+                            open_price REAL,
+                            prev_day_close REAL,
+                            created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                            UNIQUE(instrument_token, timestamp)  -- Prevent duplicates
+                        )
+                    """)
+                except Exception as e:
+                    self.logger.error(f"Error creating ticks table: {e}")
+                try:
+                    # Optimized indexes for batch inserts
+                    cursor.execute("""
+                        CREATE INDEX idx_ticks_main
+                        ON ticks(instrument_token, timestamp)
+                    """)
+                except Exception as e:
+                    self.logger.error(f"Error creating ticks index: {e}")
 
             if not self.table_exists(cursor, "market_depth"):
                 has_commit = True
-                # Market depth table
-                cursor.execute("""
-                    CREATE TABLE market_depth (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        instrument_token INTEGER,
-                        timestamp INTEGER,
-                        depth_type TEXT, -- CHECK(depth_type IN ('bid', 'ask')),
-                        position INTEGER, -- CHECK(position BETWEEN 1 AND 5),
-                        price REAL,
-                        quantity INTEGER,
-                        orders INTEGER,
-                        created_at INTEGER DEFAULT (strftime('%s', 'now')),
-                        UNIQUE(instrument_token, timestamp, depth_type, position)
-                    ) STRICT
-                """)
+                try:
+                    # Market depth table
+                    cursor.execute("""
+                        CREATE TABLE market_depth (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            instrument_token INTEGER,
+                            timestamp INTEGER,
+                            depth_type TEXT, -- CHECK(depth_type IN ('bid', 'ask')),
+                            position INTEGER, -- CHECK(position BETWEEN 1 AND 5),
+                            price REAL,
+                            quantity INTEGER,
+                            orders INTEGER,
+                            created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                            UNIQUE(instrument_token, timestamp, depth_type, position)
+                        ) STRICT
+                    """)
 
-                cursor.execute("""
-                    CREATE INDEX idx_depth_main
-                    ON market_depth(instrument_token, timestamp, depth_type)
-                """)
+                    cursor.execute("""
+                        CREATE INDEX idx_depth_main
+                        ON market_depth(instrument_token, timestamp, depth_type)
+                    """)
+                except Exception as e:
+                    self.logger.error(f"Error creating market_depth table/index: {e}")
 
-            # Local database optimizations
-            if self.db_type == "local":
-                has_commit = True
-                cursor.execute("PRAGMA journal_mode=WAL")
-                cursor.execute("PRAGMA synchronous = NORMAL")
-                cursor.execute("PRAGMA cache_size = -100000")  # 100MB cache
-                cursor.execute("PRAGMA temp_store = MEMORY")
-                cursor.execute("PRAGMA mmap_size = 30000000000")  # 30GB mmap
-            if has_commit:
-                conn.commit()
+            try:
+                # Local database optimizations
+                if self.db_type == "local":
+                    has_commit = True
+                    cursor.execute("PRAGMA journal_mode=WAL")
+                    cursor.execute("PRAGMA synchronous = NORMAL")
+                    cursor.execute("PRAGMA cache_size = -100000")  # 100MB cache
+                    cursor.execute("PRAGMA temp_store = MEMORY")
+                    cursor.execute("PRAGMA mmap_size = 30000000000")  # 30GB mmap
+                if has_commit:
+                    conn.commit()
+            except Exception as e:
+                self.logger.error(f"Error setting PRAGMA: {e}")
 
     def _get_local_connection(self):
         """Get optimized local SQLite connection"""
@@ -1312,23 +1331,41 @@ class ThreadSafeDatabase:
     def query(self, sql: str, params: tuple = ()) -> List[tuple]:
         """Execute a query and return results"""
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(sql, params)
-            return cursor.fetchall()
+            try:
+                cursor = conn.cursor()
+                cursor.execute(sql, params)
+                return cursor.fetchall()
+            except Exception as e:
+                self.logger.error(f"Query error: {e}")
+                return []
 
     def execute(self, sql: str, params: tuple = ()) -> None:
         """Execute a SQL statement without returning results"""
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(sql, params)
-            conn.commit()
+            try:
+                cursor = conn.cursor()
+                cursor.execute(sql, params)
+                conn.commit()
+            except Exception as e:
+                self.logger.error(f"Execute error: {e}")
+                try:
+                    conn.rollback()
+                except BaseException:
+                    pass
 
     def batch_execute(self, sql: str, params_list: List[tuple]) -> None:
         """Execute multiple SQL statements with different parameters"""
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.executemany(sql, params_list)
-            conn.commit()
+            try:
+                cursor = conn.cursor()
+                cursor.executemany(sql, params_list)
+                conn.commit()
+            except Exception as e:
+                self.logger.error(f"Batch execute error: {e}")
+                try:
+                    conn.rollback()
+                except BaseException:
+                    pass
 
     def get_instrument_data(
         self, instrument_token: int, limit: int = 100
