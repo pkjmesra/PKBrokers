@@ -109,6 +109,7 @@ class ZerodhaWebSocketParser:
     @staticmethod
     def _parse_index_packet(packet: bytes) -> IndexTick | None:
         """Parse index tick packet"""
+        timestamp = None
         try:
             fields = struct.unpack(">iiiiiii", packet[:28])
             timestamp = struct.unpack(">i", packet[28:32])[0]
