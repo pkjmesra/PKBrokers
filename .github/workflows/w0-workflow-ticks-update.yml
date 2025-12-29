@@ -285,7 +285,8 @@ jobs:
           cd pkscreener-data
           git config user.name "github-actions[bot]"
           git config user.email "actions@github.com"
-          git add results/Data/ actions-data-download/
+          # Use -f to force add files that may be in .gitignore
+          git add -f results/Data/ actions-data-download/ 2>/dev/null || true
           
           if git diff --staged --quiet; then
             echo "No changes to push"
