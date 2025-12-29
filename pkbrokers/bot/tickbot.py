@@ -659,8 +659,9 @@ class PKTickBot:
     def request_data(self, update: Update, context: CallbackContext) -> None:
         """Request all available data (pkl files, db) from this instance.
         
-        When this command is received, it means a new instance is starting up.
-        After sending data, this instance should shut down to allow the new one to take over.
+        This only sends data - NO shutdown is triggered here.
+        Shutdown only happens when a Telegram conflict (409 error) is detected,
+        indicating both old and new instances are polling simultaneously.
         """
         if self._shouldAvoidResponse(update):
             if update is not None:
@@ -668,7 +669,7 @@ class PKTickBot:
             return
         
         try:
-            update.message.reply_text("📤 Sending available data files to new instance...")
+            update.message.reply_text("📤 Sending available data files...")
             
             # Send daily pkl
             self.send_daily_pkl(update, context)
@@ -679,39 +680,8 @@ class PKTickBot:
             # Send db file
             self.send_zipped_db(update, context)
             
-            update.message.reply_text("✅ Data transfer complete! This instance will shut down to allow new instance to take over.")
-            
-            # Mark that we should shut down - a new instance is taking over
-            self.logger.info("New instance requested data - initiating graceful shutdown...")
-            
-            # Export and commit current data before shutdown
-            try:
-                from pkbrokers.bot.dataSharingManager import DataSharingManager
-                from pkbrokers.kite.inMemoryCandleStore import get_candle_store
-                
-                results_dir = os.path.join(os.getcwd(), "results", "Data")
-                os.makedirs(results_dir, exist_ok=True)
-                data_mgr = DataSharingManager(data_dir=results_dir)
-                candle_store = get_candle_store()
-                
-                self.logger.info("Exporting pkl files before handoff...")
-                data_mgr.export_daily_candles_to_pkl(candle_store, merge_with_historical=True)
-                data_mgr.export_intraday_candles_to_pkl(candle_store)
-                data_mgr.commit_pkl_files()
-                self.logger.info("Data exported and committed before handoff")
-            except Exception as export_e:
-                self.logger.error(f"Error exporting data before handoff: {export_e}")
-            
-            # Schedule shutdown after a short delay to allow response to be sent
-            import threading
-            def delayed_shutdown():
-                import time
-                time.sleep(5)  # Wait 5 seconds for response to be sent
-                self.logger.warn("Shutting down to allow new instance to take over...")
-                os.kill(os.getpid(), signal.SIGINT)
-            
-            shutdown_thread = threading.Thread(target=delayed_shutdown, daemon=True)
-            shutdown_thread.start()
+            update.message.reply_text("✅ Data transfer complete!")
+            self.logger.info("Data sent to requesting instance")
             
         except Exception as e:
             self.logger.error(f"Error in request_data: {e}")
