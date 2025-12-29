@@ -492,6 +492,48 @@ access_token = auth.authenticate()
 
 ---
 
+### 8. PKL Generator Script
+
+Reliable script for generating pkl files from ticks.json with historical data merge.
+
+```python
+# Command line usage
+python pkbrokers/scripts/generate_pkl_from_ticks.py --data-dir results/Data --verbose
+
+# Programmatic usage
+from pkbrokers.scripts.generate_pkl_from_ticks import (
+    download_historical_pkl,
+    download_ticks_json,
+    convert_ticks_to_candles,
+    merge_candles,
+    save_pkl_files
+)
+
+# Download and merge data
+historical = download_historical_pkl()  # ~37MB from GitHub
+ticks = download_ticks_json()           # Today's ticks
+candles = convert_ticks_to_candles(ticks)
+merged = merge_candles(historical, candles)
+save_pkl_files(merged, "results/Data")
+```
+
+**What it does**:
+1. Downloads ticks.json (local or from GitHub)
+2. Downloads historical pkl (~37MB) from GitHub
+3. Converts ticks to candle format
+4. Merges today's data with historical
+5. Saves both intraday and daily pkl files
+
+**Output Files**:
+| File | Description |
+|------|-------------|
+| `stock_data_DDMMYYYY.pkl` | Daily candles merged with historical |
+| `daily_candles.pkl` | Same as above (generic name) |
+| `intraday_stock_data_DDMMYYYY.pkl` | Today's intraday data only |
+| `intraday_1m_candles.pkl` | Same as above (generic name) |
+
+---
+
 ## API Reference
 
 ### Main Exports
