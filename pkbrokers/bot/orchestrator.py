@@ -452,13 +452,15 @@ class PKTickOrchestrator:
                         self.test_mode = False
                         test_mode_counter = 0
                     last_market_check = current_time
-                    # Check if we should commit pkl files (market close detection)
+                    # Check if we should commit pkl files (market close detection or periodic during trading)
                     try:
                         from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
                         from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+                        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
                         
                         data_mgr = get_data_sharing_manager()
                         
+                        # Check for market close commit
                         if data_mgr.should_commit():
                             logger.info("Market close detected - committing pkl files")
                             candle_store = get_candle_store()
@@ -471,6 +473,24 @@ class PKTickOrchestrator:
                             
                             # Commit to GitHub
                             data_mgr.commit_pkl_files()
+                        
+                        # Periodic commit during trading hours (every 30 minutes)
+                        elif PKDateUtilities.isTradingTime():
+                            cur_ist = PKDateUtilities.currentDateTime()
+                            # Commit at minute 0 and 30 of each hour during trading
+                            if cur_ist.minute in [0, 30] and cur_ist.second < 35:
+                                last_commit = getattr(data_mgr, 'last_periodic_commit', None)
+                                if last_commit is None or (cur_ist - last_commit).total_seconds() > 1500:  # 25 min gap
+                                    logger.info(f"Periodic commit during trading hours ({cur_ist.hour}:{cur_ist.minute:02d})")
+                                    candle_store = get_candle_store()
+                                    
+                                    # Export pkl files with current aggregated data
+                                    data_mgr.export_daily_candles_to_pkl(candle_store, merge_with_historical=True)
+                                    data_mgr.export_intraday_candles_to_pkl(candle_store)
+                                    
+                                    # Commit to GitHub
+                                    data_mgr.commit_pkl_files()
+                                    data_mgr.last_periodic_commit = cur_ist
                             
                     except Exception as commit_e:
                         logger.debug(f"Pkl commit check: {commit_e}")
@@ -573,6 +593,22 @@ def orchestrate():
         if response.get("success"):
             logger.info("Successfully received data from running instance")
             data_mgr.data_received_from_instance = True
+            
+            # Commit the received data immediately during market hours
+            try:
+                from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+                if PKDateUtilities.isTradingTime():
+                    logger.info("Market is trading - committing received pkl files...")
+                    from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+                    candle_store = get_candle_store()
+                    
+                    # Export and commit pkl files
+                    data_mgr.export_daily_candles_to_pkl(candle_store, merge_with_historical=True)
+                    data_mgr.export_intraday_candles_to_pkl(candle_store)
+                    data_mgr.commit_pkl_files()
+                    logger.info("Successfully committed received data to GitHub")
+            except Exception as commit_e:
+                logger.debug(f"Error committing received data: {commit_e}")
         else:
             logger.info("No running instance or no data received, will try GitHub fallback")
             
