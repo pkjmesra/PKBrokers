@@ -832,8 +832,23 @@ class DataSharingManager:
             if os.path.exists(intraday_pkl):
                 files_to_commit.append(intraday_pkl)
             
+            # Check for ticks.json
+            ticks_json = os.path.join(self.data_dir, "ticks.json")
+            if os.path.exists(ticks_json):
+                files_to_commit.append(ticks_json)
+            
+            # Also check for date-suffixed pkl files
+            today_suffix = datetime.now(KOLKATA_TZ).strftime('%d%m%Y')
+            dated_daily = os.path.join(self.data_dir, f"stock_data_{today_suffix}.pkl")
+            if os.path.exists(dated_daily) and dated_daily not in files_to_commit:
+                files_to_commit.append(dated_daily)
+            
+            dated_intraday = os.path.join(self.data_dir, f"intraday_stock_data_{today_suffix}.pkl")
+            if os.path.exists(dated_intraday) and dated_intraday not in files_to_commit:
+                files_to_commit.append(dated_intraday)
+            
             if not files_to_commit:
-                self.logger.warning("No pkl files to commit")
+                self.logger.warning("No pkl/json files to commit")
                 return False
             
             for file_path in files_to_commit:

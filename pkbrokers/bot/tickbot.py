@@ -502,6 +502,26 @@ class PKTickBot:
                 context.bot.send_message(
                     chat_id=int(f"-{Channel_Id}"), text=warn_msg, parse_mode="HTML"
                 )
+                
+                # Before shutting down, export and commit pkl files
+                try:
+                    from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
+                    from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+                    
+                    data_mgr = get_data_sharing_manager()
+                    candle_store = get_candle_store()
+                    
+                    # Export pkl files with current data
+                    logger.info("Exporting pkl files before shutdown...")
+                    data_mgr.export_daily_candles_to_pkl(candle_store)
+                    data_mgr.export_intraday_candles_to_pkl(candle_store)
+                    
+                    # Commit to GitHub
+                    data_mgr.commit_pkl_files()
+                    logger.info("Data exported and committed before shutdown")
+                except Exception as export_e:
+                    logger.error(f"Error exporting data before shutdown: {export_e}")
+                
                 try:
                     # Signal the main process to shutdown
                     os.kill(os.getpid(), signal.SIGINT)
