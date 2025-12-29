@@ -295,11 +295,15 @@ class DataSharingManager:
             # Try last 10 days (to handle weekends/holidays)
             for days_ago in range(0, 10):
                 check_date = today - timedelta(days=days_ago)
-                date_str_full = check_date.strftime('%d%m%Y')  # e.g., 23122025
-                date_str_short = check_date.strftime('%-d%m%y')  # e.g., 171225 (no leading zero on day)
+                date_str_full = check_date.strftime('%d%m%Y')  # e.g., 29122025
+                # Short format without leading zero - compatible across platforms
+                day_no_zero = str(int(check_date.strftime('%d')))
+                date_str_short = f"{day_no_zero}{check_date.strftime('%m%y')}"  # e.g., 171225
+                # Also try YYMMDD format (used by localCandleDatabase)
+                date_str_yymmdd = check_date.strftime('%y%m%d')  # e.g., 251229
                 
-                # Try both date formats in both locations
-                for date_str in [date_str_full, date_str_short]:
+                # Try all date formats in both locations
+                for date_str in [date_str_full, date_str_short, date_str_yymmdd]:
                     date_file = f"{file_prefix}_{date_str}.pkl"
                     
                     # Location 1: actions-data-download/actions-data-download/
@@ -527,10 +531,13 @@ class DataSharingManager:
             # First, try to load existing historical data from GitHub
             if merge_with_historical:
                 try:
+                    self.logger.info("Attempting to download historical pkl from GitHub for merge...")
                     success, historical_path = self.download_from_github(file_type="daily", validate_freshness=False)
                     if success and historical_path and os.path.exists(historical_path):
                         with open(historical_path, 'rb') as f:
                             historical_data = pickle.load(f)
+                        
+                        self.logger.info(f"Downloaded historical pkl with {len(historical_data)} instruments")
                         
                         # Convert historical data to proper format
                         for symbol, df_or_dict in historical_data.items():
@@ -549,9 +556,11 @@ class DataSharingManager:
                             elif hasattr(df_or_dict, 'index'):
                                 data[symbol] = df_or_dict
                         
-                        self.logger.info(f"Loaded {len(data)} instruments from historical pkl")
+                        self.logger.info(f"Loaded {len(data)} instruments from historical pkl into merge buffer")
+                    else:
+                        self.logger.warning("Could not download historical pkl from GitHub - will export only today's candle data")
                 except Exception as he:
-                    self.logger.debug(f"Could not load historical data: {he}")
+                    self.logger.warning(f"Could not load historical data: {he}")
             
             # Now add today's candles from the candle store
             today_count = 0
@@ -905,5 +914,6 @@ def get_data_sharing_manager() -> DataSharingManager:
     if _data_sharing_manager is None:
         _data_sharing_manager = DataSharingManager()
     return _data_sharing_manager
+
 
 
