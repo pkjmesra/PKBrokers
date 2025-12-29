@@ -24,6 +24,8 @@
   - [Local Candle Database](#5-local-candle-database)
   - [Telegram Bots](#6-telegram-bots)
   - [Authentication](#7-authentication)
+  - [GitHub Actions Workflows](#8-github-actions-workflows)
+  - [PKL Generator Script](#9-pkl-generator-script)
 - [API Reference](#api-reference)
 - [Environment Variables](#environment-variables)
 - [Contributing](#contributing)
@@ -492,7 +494,50 @@ access_token = auth.authenticate()
 
 ---
 
-### 8. PKL Generator Script
+### 8. GitHub Actions Workflows
+
+PKBrokers includes automated GitHub Actions workflows for OHLCV data collection.
+
+#### History Data Workflow
+
+The `w1-workflow-history-data-child.yml` workflow fetches historical data from Kite API and saves to PKScreener.
+
+**Triggering with `--history=day`**:
+```bash
+# Via pkkite CLI
+pkkite --history=day --pastoffset=0 --verbose
+```
+
+**What happens**:
+1. Fetches all NSE instrument tokens (~2000 stocks)
+2. Calls Kite Historical API for each instrument (rate-limited: 3 req/sec)
+3. Saves to local SQLite database (`instrument_history.db`)
+4. Exports to pkl files (`stock_data_DDMMYYYY.pkl`)
+5. Commits to [PKScreener actions-data-download branch](https://github.com/pkjmesra/PKScreener/tree/actions-data-download/actions-data-download)
+
+**Data Flow**:
+```
+Kite API → SQLite DB → PKL Export → Git Commit → PKScreener Branch
+```
+
+**PKL Files Saved to PKScreener**:
+- `actions-data-download/stock_data_DDMMYYYY.pkl` - Daily candles
+- `actions-data-download/daily_candles.pkl` - Latest daily data
+- `results/Data/` - Secondary storage location
+
+**Programmatic Trigger**:
+```python
+from pkbrokers.bot.dataSharingManager import DataSharingManager
+
+manager = DataSharingManager()
+manager.trigger_history_download_workflow(past_offset=5)  # Fetch last 5 days
+```
+
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md#github-actions-workflows) for detailed workflow documentation.
+
+---
+
+### 9. PKL Generator Script
 
 Reliable script for generating pkl files from ticks.json with historical data merge.
 
