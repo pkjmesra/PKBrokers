@@ -98,9 +98,11 @@ class EnvUpdater:
 
     def _format_value(self, value: str, quote: bool) -> str:
         """Format value according to .env.dev standards"""
-        if quote and any(c in value for c in (" ", "#", "'", '"', "$")):
+        if value is None:
+            return ""
+        if quote and any(c in str(value) for c in (" ", "#", "'", '"', "$")):
             return f'"{value}"'
-        return value
+        return str(value)
 
     def _read_current_content(self) -> str:
         """Read existing content with proper encoding"""

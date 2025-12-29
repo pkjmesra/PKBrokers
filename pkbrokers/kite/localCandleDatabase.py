@@ -67,7 +67,7 @@ class LocalCandleDatabase:
         
         # Get current date for file naming
         self.current_date = datetime.now(self.timezone).date()
-        self.date_suffix = self.current_date.strftime('%y%m%d')
+        self.date_suffix = self.current_date.strftime('%d%m%Y')
         
         # Database file paths
         self.daily_db_path = self.base_path / f"candles_daily_{self.date_suffix}.db"
