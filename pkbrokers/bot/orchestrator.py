@@ -564,11 +564,27 @@ def orchestrate():
             logger.info("No running instance or no data received, will try GitHub fallback")
             
             # Try GitHub fallback
-            success_daily, _ = data_mgr.download_from_github(file_type="daily")
-            success_intraday, _ = data_mgr.download_from_github(file_type="intraday")
+            success_daily, daily_path = data_mgr.download_from_github(file_type="daily")
+            success_intraday, intraday_path = data_mgr.download_from_github(file_type="intraday")
             
             if success_daily or success_intraday:
                 logger.info("Downloaded data from GitHub actions-data-download branch")
+                
+                # Load the downloaded pkl data into the candle store
+                try:
+                    from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+                    candle_store = get_candle_store()
+                    
+                    if success_daily and daily_path:
+                        loaded = data_mgr.load_pkl_into_candle_store(daily_path, candle_store, interval='day')
+                        logger.info(f"Loaded {loaded} instruments from daily pkl into candle store")
+                    
+                    if success_intraday and intraday_path:
+                        loaded = data_mgr.load_pkl_into_candle_store(intraday_path, candle_store, interval='1m')
+                        logger.info(f"Loaded {loaded} instruments from intraday pkl into candle store")
+                        
+                except Exception as load_err:
+                    logger.warning(f"Error loading pkl into candle store: {load_err}")
             else:
                 logger.info("No fallback data available, starting fresh")
                 

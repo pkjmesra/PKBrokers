@@ -266,6 +266,11 @@ class DataSharingManager:
         """
         Download pkl file from GitHub actions-data-download branch.
         
+        Searches for pkl files in multiple locations and date formats:
+        - actions-data-download/stock_data_DDMMYYYY.pkl
+        - results/Data/stock_data_DDMMYYYY.pkl
+        - Also tries recent dates going back up to 10 days
+        
         Args:
             file_type: "daily" or "intraday"
             validate_freshness: If True, check if data is fresh and trigger history download if stale
@@ -274,50 +279,78 @@ class DataSharingManager:
             Tuple of (success, file_path)
         """
         try:
+            from datetime import timedelta
             today = datetime.now(KOLKATA_TZ)
             
-            # Try date-specific file first, then generic
             if file_type == "daily":
-                date_file = f"stock_data_{today.strftime('%d%m%Y')}.pkl"
-                generic_file = "stock_data_*.pkl"
                 output_path = self.get_daily_pkl_path()
+                file_prefix = "stock_data"
             else:
-                date_file = f"intraday_stock_data_{today.strftime('%d%m%Y')}.pkl"
-                generic_file = "intraday_stock_data_*.pkl"
                 output_path = self.get_intraday_pkl_path()
+                file_prefix = "intraday_stock_data"
             
-            # URLs to try
-            urls_to_try = [
-                f"{PKSCREENER_RAW_BASE}/{ACTIONS_DATA_BRANCH}/actions-data-download/{date_file}",
-                f"{PKSCREENER_RAW_BASE}/{ACTIONS_DATA_BRANCH}/{date_file}",
-            ]
+            # Build list of URLs to try - multiple dates and locations
+            urls_to_try = []
+            
+            # Try last 10 days (to handle weekends/holidays)
+            for days_ago in range(0, 10):
+                check_date = today - timedelta(days=days_ago)
+                date_str_full = check_date.strftime('%d%m%Y')  # e.g., 23122025
+                date_str_short = check_date.strftime('%-d%m%y')  # e.g., 171225 (no leading zero on day)
+                
+                # Try both date formats in both locations
+                for date_str in [date_str_full, date_str_short]:
+                    date_file = f"{file_prefix}_{date_str}.pkl"
+                    
+                    # Location 1: actions-data-download/actions-data-download/
+                    urls_to_try.append(
+                        f"{PKSCREENER_RAW_BASE}/{ACTIONS_DATA_BRANCH}/actions-data-download/{date_file}"
+                    )
+                    # Location 2: actions-data-download/results/Data/
+                    urls_to_try.append(
+                        f"{PKSCREENER_RAW_BASE}/{ACTIONS_DATA_BRANCH}/results/Data/{date_file}"
+                    )
+            
+            # Also try generic names without date
+            for generic_name in [f"{file_prefix}.pkl", "daily_candles.pkl", "intraday_1m_candles.pkl"]:
+                urls_to_try.append(f"{PKSCREENER_RAW_BASE}/{ACTIONS_DATA_BRANCH}/actions-data-download/{generic_name}")
+                urls_to_try.append(f"{PKSCREENER_RAW_BASE}/{ACTIONS_DATA_BRANCH}/results/Data/{generic_name}")
             
             # Try each URL
             for url in urls_to_try:
                 try:
-                    self.logger.info(f"Trying to download from: {url}")
+                    self.logger.debug(f"Trying to download from: {url}")
                     response = requests.get(url, timeout=60)
                     
-                    if response.status_code == 200:
+                    if response.status_code == 200 and len(response.content) > 1000:
+                        # Ensure we got actual pkl content, not an error page
                         with open(output_path, 'wb') as f:
                             f.write(response.content)
                         
-                        self.logger.info(f"Downloaded {file_type} pkl from GitHub: {output_path}")
-                        
-                        # Validate freshness and trigger history download if stale
-                        if validate_freshness and file_type == "daily":
-                            is_fresh, data_date, missing_days = self.validate_pkl_freshness(output_path)
-                            if not is_fresh and missing_days > 0:
-                                self.logger.warning(f"Downloaded pkl is stale by {missing_days} trading days. Triggering history download...")
-                                self.trigger_history_download_workflow(missing_days)
-                        
-                        return True, output_path
+                        # Verify it's a valid pkl file
+                        try:
+                            with open(output_path, 'rb') as f:
+                                data = pickle.load(f)
+                            if data and len(data) > 0:
+                                self.logger.info(f"Downloaded {file_type} pkl from GitHub: {url} ({len(data)} instruments)")
+                                
+                                # Validate freshness and trigger history download if stale
+                                if validate_freshness and file_type == "daily":
+                                    is_fresh, data_date, missing_days = self.validate_pkl_freshness(output_path)
+                                    if not is_fresh and missing_days > 0:
+                                        self.logger.warning(f"Downloaded pkl is stale by {missing_days} trading days. Triggering history download...")
+                                        self.trigger_history_download_workflow(missing_days)
+                                
+                                return True, output_path
+                        except (pickle.UnpicklingError, EOFError) as e:
+                            self.logger.debug(f"Invalid pkl file from {url}: {e}")
+                            continue
                         
                 except requests.RequestException as e:
                     self.logger.debug(f"Failed to download from {url}: {e}")
                     continue
             
-            self.logger.warning(f"Could not download {file_type} pkl from GitHub")
+            self.logger.warning(f"Could not download {file_type} pkl from GitHub after trying {len(urls_to_try)} URLs")
             return False, None
             
         except Exception as e:
@@ -599,6 +632,10 @@ class DataSharingManager:
         """
         Load pkl file data into InMemoryCandleStore.
         
+        This method loads historical candle data from pkl files and populates
+        the candle store so that ticks can be properly aggregated on top of
+        existing historical data.
+        
         Args:
             pkl_path: Path to pkl file
             candle_store: InMemoryCandleStore instance
@@ -615,26 +652,84 @@ class DataSharingManager:
             with open(pkl_path, 'rb') as f:
                 data = pickle.load(f)
             
-            loaded = 0
-            for symbol, df in data.items():
-                if hasattr(df, 'iterrows'):
-                    # It's a DataFrame
-                    for idx, row in df.iterrows():
-                        tick_data = {
-                            'trading_symbol': symbol,
-                            'last_price': row.get('Close', 0),
-                            'day_volume': row.get('Volume', 0),
-                            'exchange_timestamp': idx.timestamp() if hasattr(idx, 'timestamp') else datetime.now().timestamp(),
-                        }
-                        # Note: This will register the symbol but won't fully reconstruct historical candles
-                        # It's primarily for initialization and symbol registration
-                        candle_store.register_instrument(
-                            candle_store.symbol_to_token.get(symbol, hash(symbol) % (10 ** 9)),
-                            symbol
-                        )
-                    loaded += 1
+            if not data:
+                self.logger.warning(f"Empty pkl file: {pkl_path}")
+                return 0
             
-            self.logger.info(f"Loaded {loaded} instruments from {pkl_path}")
+            loaded = 0
+            total_candles = 0
+            
+            for symbol, df_or_dict in data.items():
+                try:
+                    # Convert dict to DataFrame if needed
+                    if isinstance(df_or_dict, dict):
+                        import pandas as pd
+                        if 'data' in df_or_dict and 'columns' in df_or_dict:
+                            df = pd.DataFrame(df_or_dict['data'], columns=df_or_dict['columns'])
+                            if 'index' in df_or_dict:
+                                df.index = df_or_dict['index']
+                        else:
+                            continue
+                    else:
+                        df = df_or_dict
+                    
+                    if not hasattr(df, 'iterrows') or len(df) == 0:
+                        continue
+                    
+                    # Generate a token for this symbol (use hash if not in lookup)
+                    token = candle_store.symbol_to_token.get(symbol, hash(symbol) % (10 ** 9))
+                    
+                    # Register the instrument
+                    candle_store.register_instrument(token, symbol)
+                    
+                    # Process each row as a simulated tick to build candles
+                    for idx, row in df.iterrows():
+                        try:
+                            # Get price and volume
+                            close_price = float(row.get('Close', row.get('close', 0)))
+                            volume = int(row.get('Volume', row.get('volume', 0)))
+                            
+                            if close_price <= 0:
+                                continue
+                            
+                            # Get timestamp
+                            if hasattr(idx, 'timestamp'):
+                                timestamp = idx.timestamp()
+                            elif hasattr(idx, 'to_pydatetime'):
+                                timestamp = idx.to_pydatetime().timestamp()
+                            else:
+                                timestamp = datetime.now(KOLKATA_TZ).timestamp()
+                            
+                            # Create a tick-like data structure and process it
+                            tick_data = {
+                                'instrument_token': token,
+                                'trading_symbol': symbol,
+                                'last_price': close_price,
+                                'volume': volume,
+                                'exchange_timestamp': timestamp,
+                                'ohlc': {
+                                    'open': float(row.get('Open', row.get('open', close_price))),
+                                    'high': float(row.get('High', row.get('high', close_price))),
+                                    'low': float(row.get('Low', row.get('low', close_price))),
+                                    'close': close_price,
+                                }
+                            }
+                            
+                            # Process the tick to build candles
+                            candle_store.process_tick(tick_data)
+                            total_candles += 1
+                            
+                        except Exception as row_err:
+                            self.logger.debug(f"Error processing row for {symbol}: {row_err}")
+                            continue
+                    
+                    loaded += 1
+                    
+                except Exception as sym_err:
+                    self.logger.debug(f"Error loading symbol {symbol}: {sym_err}")
+                    continue
+            
+            self.logger.info(f"Loaded {loaded} instruments ({total_candles} candles) from {pkl_path}")
             return loaded
             
         except Exception as e:
