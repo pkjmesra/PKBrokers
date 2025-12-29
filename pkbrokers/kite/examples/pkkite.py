@@ -358,6 +358,10 @@ def remote_bot_auth_token():
 
     try:
         access_token = orchestrate_consumer(command="/token")
+        # If token is None or empty, try refresh_token to generate a new one
+        if not access_token or access_token == "None" or len(str(access_token).strip()) < 10:
+            default_logger().info("Token is None or invalid, requesting /refresh_token...")
+            access_token = orchestrate_consumer(command="/refresh_token")
         _save_update_environment(access_token=access_token)
     except Exception as e:
         default_logger().error(f"Error while fetching remote auth token from bot: {e}")

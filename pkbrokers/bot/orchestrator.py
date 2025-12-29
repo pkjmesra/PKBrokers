@@ -186,6 +186,19 @@ class PKTickOrchestrator:
             # Initialize environment and logger in this process
             self._initialize_environment()
             logger = self._get_logger()
+            
+            # Ensure we have a valid token before starting kite_ticks
+            from PKDevTools.classes.Environment import PKEnvironment
+            token = PKEnvironment().KTOKEN
+            if not token or token == "None" or len(str(token).strip()) < 10:
+                logger.info("No valid KTOKEN found, authenticating with Kite...")
+                try:
+                    from pkbrokers.kite.examples.externals import kite_auth
+                    kite_auth()
+                    logger.info("Kite authentication successful")
+                except Exception as auth_e:
+                    logger.error(f"Kite authentication failed: {auth_e}")
+                    logger.warning("Proceeding without valid token - WebSocket will fail")
 
             from pkbrokers.kite.examples.pkkite import kite_ticks
 
