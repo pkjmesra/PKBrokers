@@ -112,8 +112,17 @@ def download_ticks_json(verbose: bool = True) -> Optional[Dict]:
     return None
 
 
-def load_local_ticks_json(data_dir: str, verbose: bool = True) -> Optional[Dict]:
-    """Load ticks.json from local path."""
+def load_local_ticks_json(data_dir: str, verbose: bool = True, min_instruments: int = 10) -> Optional[Dict]:
+    """Load ticks.json from local path.
+    
+    Args:
+        data_dir: Directory to search for ticks.json
+        verbose: Whether to log progress
+        min_instruments: Minimum number of instruments required (default 10)
+    
+    Returns:
+        Dict of ticks data or None if not found/too small
+    """
     
     paths = [
         os.path.join(data_dir, "ticks.json"),
@@ -125,12 +134,20 @@ def load_local_ticks_json(data_dir: str, verbose: bool = True) -> Optional[Dict]
     for path in paths:
         if os.path.exists(path):
             try:
+                file_size = os.path.getsize(path)
+                if file_size < 100:  # Skip tiny files (empty or nearly empty)
+                    log(f"⚠️ Skipping tiny ticks.json: {path} ({file_size} bytes)", verbose)
+                    continue
+                    
                 with open(path, 'r') as f:
                     data = json.load(f)
-                if isinstance(data, dict) and len(data) > 0:
+                if isinstance(data, dict) and len(data) >= min_instruments:
                     log(f"✅ Loaded local ticks.json: {path} ({len(data)} instruments)", verbose)
                     return data
+                else:
+                    log(f"⚠️ ticks.json has too few instruments: {len(data) if isinstance(data, dict) else 0}", verbose)
             except Exception as e:
+                log(f"⚠️ Error loading {path}: {e}", verbose)
                 continue
     
     return None
@@ -391,6 +408,18 @@ def main():
     
     new_candles = {}
     
+    # Step 1: Always download historical pkl first (this is our base)
+    log("\n[Step 1] Downloading historical pkl from GitHub...", verbose)
+    historical_data = download_historical_pkl(verbose)
+    
+    if historical_data:
+        log(f"Historical data: {len(historical_data)} instruments", verbose)
+    else:
+        log("⚠️ No historical pkl found on GitHub", verbose)
+    
+    # Step 2: Load new data based on mode
+    log("\n[Step 2] Loading new data...", verbose)
+    
     if args.from_db:
         # Load from SQLite database
         db_path = args.db_path if args.db_path else find_sqlite_database(verbose)
@@ -410,28 +439,31 @@ def main():
         
         if ticks_data:
             new_candles = convert_ticks_to_candles(ticks_data, verbose)
-            # Save intraday pkl (just today's ticks)
-            if new_candles:
+            # Save intraday pkl (just today's ticks) - only if we have meaningful data
+            if new_candles and len(new_candles) >= 10:
                 save_intraday_pkl(new_candles, data_dir, verbose)
+            else:
+                log("⚠️ Not enough new data for intraday pkl", verbose)
     
-    if not new_candles:
-        log("⚠️ No new data available, downloading historical pkl only...", verbose)
-    
-    # Download historical pkl from GitHub
-    historical_data = download_historical_pkl(verbose)
+    # Step 3: Determine what to save
+    log("\n[Step 3] Preparing final data...", verbose)
     
     if not historical_data and not new_candles:
         log("❌ FAILED: No data available (neither historical nor new)", verbose)
         sys.exit(1)
     
-    # Merge today's candles with historical
-    if new_candles:
+    # Merge or use what we have
+    if new_candles and len(new_candles) >= 10:
         merged_data = merge_candles(historical_data, new_candles, verbose)
-    else:
+    elif historical_data:
         merged_data = historical_data
         log("Using historical data only (no new data to merge)", verbose)
+    else:
+        merged_data = new_candles
+        log("Using new data only (no historical data found)", verbose)
     
-    # Save merged daily pkl
+    # Step 4: Save merged daily pkl
+    log("\n[Step 4] Saving pkl files...", verbose)
     save_pkl_files(merged_data, data_dir, verbose)
     
     log("=" * 60, verbose)
