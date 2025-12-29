@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """
-Simple, reliable script to generate pkl files from ticks.json.
+Unified PKL generator for PKBrokers - handles both ticks.json and SQLite sources.
 
 This script:
-1. Downloads existing historical pkl from GitHub (if available)
-2. Loads ticks.json (local or from GitHub)
-3. Converts ticks to candle format
+1. Downloads existing historical pkl from GitHub (~37MB)
+2. Loads new data from ticks.json OR SQLite database
+3. Converts to candle format
 4. Merges with historical data
-5. Saves as dated pkl files
+5. Saves as dated pkl files (~37MB+)
 
 Usage:
+    # From ticks.json (default)
     python generate_pkl_from_ticks.py [--data-dir PATH] [--verbose]
+    
+    # From SQLite database (for history workflow)
+    python generate_pkl_from_ticks.py --from-db [--db-path PATH] [--data-dir PATH] [--verbose]
 """
 
 import argparse
@@ -18,9 +22,10 @@ import io
 import json
 import os
 import pickle
+import sqlite3
 import sys
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple
 
 import pandas as pd
@@ -129,6 +134,110 @@ def load_local_ticks_json(data_dir: str, verbose: bool = True) -> Optional[Dict]
                 continue
     
     return None
+
+
+def find_sqlite_database(verbose: bool = True) -> Optional[str]:
+    """Find SQLite history database in common locations."""
+    
+    search_paths = [
+        os.path.expanduser('~/.PKDevTools_userdata'),
+        os.path.expanduser('~/.pkbrokers'),
+        '.',
+        'results/Data',
+    ]
+    
+    db_names = ['instrument_history.db', 'kite_history.db', 'history.db']
+    
+    for search_dir in search_paths:
+        if not os.path.exists(search_dir):
+            continue
+        for db_name in db_names:
+            db_path = os.path.join(search_dir, db_name)
+            if os.path.exists(db_path):
+                log(f"✅ Found database: {db_path}", verbose)
+                return db_path
+        # Also search for any .db files with 'history' in name
+        try:
+            for f in os.listdir(search_dir):
+                if f.endswith('.db') and 'history' in f.lower():
+                    db_path = os.path.join(search_dir, f)
+                    log(f"✅ Found database: {db_path}", verbose)
+                    return db_path
+        except:
+            continue
+    
+    log("❌ No SQLite database found", verbose)
+    return None
+
+
+def load_from_sqlite(db_path: str, verbose: bool = True) -> Dict:
+    """Load daily candles from SQLite database."""
+    
+    candles = {}
+    
+    if not db_path or not os.path.exists(db_path):
+        log(f"Database not found: {db_path}", verbose)
+        return candles
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        
+        # Check available tables
+        tables_df = pd.read_sql_query("SELECT name FROM sqlite_master WHERE type='table'", conn)
+        log(f"Tables in database: {tables_df['name'].tolist()}", verbose)
+        
+        # Try different table names
+        df = pd.DataFrame()
+        for table_name in ['instrument_history', 'history', 'candles', 'daily_candles']:
+            try:
+                query = f"""
+                SELECT instrument_token, timestamp, open, high, low, close, volume
+                FROM {table_name}
+                WHERE interval = 'day' OR interval IS NULL
+                ORDER BY instrument_token, timestamp
+                """
+                df = pd.read_sql_query(query, conn)
+                if len(df) > 0:
+                    log(f"Loaded {len(df)} rows from {table_name}", verbose)
+                    break
+            except Exception as e:
+                continue
+        
+        if len(df) == 0:
+            log("No data found in database tables", verbose)
+            conn.close()
+            return candles
+        
+        # Load symbol mapping
+        token_to_symbol = {}
+        try:
+            # Try to get symbol mapping from PKBrokers
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            from pkbrokers.kite.instruments import KiteInstruments
+            instruments = KiteInstruments()
+            for inst in instruments.get_or_fetch_instrument_tokens(all_columns=True):
+                if isinstance(inst, dict):
+                    token_to_symbol[inst.get('instrument_token')] = inst.get('tradingsymbol', str(inst.get('instrument_token')))
+            log(f"Loaded {len(token_to_symbol)} symbol mappings", verbose)
+        except Exception as e:
+            log(f"Could not load symbol mapping: {e}", verbose)
+        
+        # Convert to pkl format
+        for token, group in df.groupby('instrument_token'):
+            symbol = token_to_symbol.get(token, str(token))
+            group_df = group[['timestamp', 'open', 'high', 'low', 'close', 'volume']].copy()
+            group_df['timestamp'] = pd.to_datetime(group_df['timestamp'])
+            group_df.set_index('timestamp', inplace=True)
+            group_df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+            candles[symbol] = group_df
+        
+        conn.close()
+        log(f"Converted {len(candles)} instruments from database", verbose)
+        
+    except Exception as e:
+        log(f"Error loading from database: {e}", verbose)
+    
+    return candles
 
 
 def convert_ticks_to_candles(ticks_data: Dict, verbose: bool = True) -> Dict:
@@ -265,8 +374,10 @@ def save_intraday_pkl(ticks_candles: Dict, data_dir: str, verbose: bool = True) 
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate pkl files from ticks.json")
+    parser = argparse.ArgumentParser(description="Generate pkl files from ticks.json or SQLite database")
     parser.add_argument("--data-dir", default="results/Data", help="Output directory for pkl files")
+    parser.add_argument("--from-db", action="store_true", help="Load data from SQLite database instead of ticks.json")
+    parser.add_argument("--db-path", default=None, help="Path to SQLite database (auto-detected if not specified)")
     parser.add_argument("--verbose", "-v", action="store_true", default=True, help="Verbose output")
     args = parser.parse_args()
     
@@ -274,35 +385,53 @@ def main():
     data_dir = args.data_dir
     
     log("=" * 60, verbose)
-    log("PKL Generator: Converting ticks to pkl files", verbose)
+    log("PKL Generator: Unified pkl file generation", verbose)
+    log(f"Mode: {'SQLite Database' if args.from_db else 'Ticks JSON'}", verbose)
     log("=" * 60, verbose)
     
-    # Step 1: Load ticks.json (local first, then GitHub)
-    ticks_data = load_local_ticks_json(data_dir, verbose)
-    if not ticks_data:
-        ticks_data = download_ticks_json(verbose)
+    new_candles = {}
     
-    if not ticks_data:
-        log("❌ FAILED: No ticks.json available", verbose)
-        sys.exit(1)
+    if args.from_db:
+        # Load from SQLite database
+        db_path = args.db_path if args.db_path else find_sqlite_database(verbose)
+        if db_path:
+            new_candles = load_from_sqlite(db_path, verbose)
+        
+        if not new_candles:
+            log("⚠️ No data from database, trying ticks.json as fallback...", verbose)
+            ticks_data = load_local_ticks_json(data_dir, verbose)
+            if ticks_data:
+                new_candles = convert_ticks_to_candles(ticks_data, verbose)
+    else:
+        # Load from ticks.json
+        ticks_data = load_local_ticks_json(data_dir, verbose)
+        if not ticks_data:
+            ticks_data = download_ticks_json(verbose)
+        
+        if ticks_data:
+            new_candles = convert_ticks_to_candles(ticks_data, verbose)
+            # Save intraday pkl (just today's ticks)
+            if new_candles:
+                save_intraday_pkl(new_candles, data_dir, verbose)
     
-    # Step 2: Convert ticks to candle format
-    ticks_candles = convert_ticks_to_candles(ticks_data, verbose)
+    if not new_candles:
+        log("⚠️ No new data available, downloading historical pkl only...", verbose)
     
-    if not ticks_candles:
-        log("❌ FAILED: Could not convert ticks to candles", verbose)
-        sys.exit(1)
-    
-    # Step 3: Save intraday pkl (just today's ticks)
-    save_intraday_pkl(ticks_candles, data_dir, verbose)
-    
-    # Step 4: Download historical pkl from GitHub
+    # Download historical pkl from GitHub
     historical_data = download_historical_pkl(verbose)
     
-    # Step 5: Merge today's candles with historical
-    merged_data = merge_candles(historical_data, ticks_candles, verbose)
+    if not historical_data and not new_candles:
+        log("❌ FAILED: No data available (neither historical nor new)", verbose)
+        sys.exit(1)
     
-    # Step 6: Save merged daily pkl
+    # Merge today's candles with historical
+    if new_candles:
+        merged_data = merge_candles(historical_data, new_candles, verbose)
+    else:
+        merged_data = historical_data
+        log("Using historical data only (no new data to merge)", verbose)
+    
+    # Save merged daily pkl
     save_pkl_files(merged_data, data_dir, verbose)
     
     log("=" * 60, verbose)

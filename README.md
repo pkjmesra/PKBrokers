@@ -539,35 +539,48 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md#github-actions-workflows) for detaile
 
 ### 9. PKL Generator Script
 
-Reliable script for generating pkl files from ticks.json with historical data merge.
+Unified script for generating pkl files from **ticks.json** OR **SQLite database** with historical data merge.
 
-```python
-# Command line usage
+```bash
+# From ticks.json (default - used by Ticks Runner)
 python pkbrokers/scripts/generate_pkl_from_ticks.py --data-dir results/Data --verbose
 
+# From SQLite database (used by History Data Child workflow)
+python pkbrokers/scripts/generate_pkl_from_ticks.py --from-db --data-dir results/Data --verbose
+```
+
+```python
 # Programmatic usage
 from pkbrokers.scripts.generate_pkl_from_ticks import (
     download_historical_pkl,
     download_ticks_json,
+    load_from_sqlite,
+    find_sqlite_database,
     convert_ticks_to_candles,
     merge_candles,
     save_pkl_files
 )
 
-# Download and merge data
+# From ticks.json
 historical = download_historical_pkl()  # ~37MB from GitHub
 ticks = download_ticks_json()           # Today's ticks
 candles = convert_ticks_to_candles(ticks)
 merged = merge_candles(historical, candles)
 save_pkl_files(merged, "results/Data")
+
+# From SQLite database
+db_path = find_sqlite_database()
+db_candles = load_from_sqlite(db_path)
+merged = merge_candles(historical, db_candles)
+save_pkl_files(merged, "results/Data")
 ```
 
 **What it does**:
-1. Downloads ticks.json (local or from GitHub)
-2. Downloads historical pkl (~37MB) from GitHub
-3. Converts ticks to candle format
-4. Merges today's data with historical
-5. Saves both intraday and daily pkl files
+1. Loads new data from ticks.json OR SQLite database
+2. Downloads historical pkl (~37MB) from [PKScreener actions-data-download](https://github.com/pkjmesra/PKScreener/tree/actions-data-download/actions-data-download)
+3. Converts data to candle format
+4. Merges today's data with historical (~2000 stocks × 2+ years)
+5. Saves both intraday and daily pkl files (~37MB+)
 
 **Output Files**:
 | File | Description |
