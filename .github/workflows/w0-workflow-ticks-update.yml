@@ -190,10 +190,31 @@ jobs:
       run: |
         echo "Checking for files to push to PKScreener..."
         
-        # Define paths
-        TICKS_PATH="pkbrokers/kite/examples/ticks.json"
-        DATA_DIR="pkbrokers/kite/examples"
+        # Define paths - check multiple locations
+        # The kiteTokenWatcher saves to results/Data relative to cwd (pkbrokers/kite/examples/)
+        # So files end up in pkbrokers/kite/examples/results/Data/
+        TICKS_PATH_1="pkbrokers/kite/examples/results/Data/ticks.json"
+        TICKS_PATH_2="pkbrokers/kite/examples/ticks.json"
+        DATA_DIR_1="pkbrokers/kite/examples/results/Data"
+        DATA_DIR_2="pkbrokers/kite/examples"
         DATE_SUFFIX=$(date +%d%m%Y)
+        
+        # Find ticks.json
+        if [ -f "$TICKS_PATH_1" ] && [ -s "$TICKS_PATH_1" ]; then
+          TICKS_PATH="$TICKS_PATH_1"
+        else
+          TICKS_PATH="$TICKS_PATH_2"
+        fi
+        
+        # Find DATA_DIR with pkl files
+        if [ -d "$DATA_DIR_1" ]; then
+          DATA_DIR="$DATA_DIR_1"
+        else
+          DATA_DIR="$DATA_DIR_2"
+        fi
+        
+        echo "Using TICKS_PATH: $TICKS_PATH"
+        echo "Using DATA_DIR: $DATA_DIR"
         
         # Clone PKScreener
         echo "Cloning PKScreener actions-data-download branch..."
