@@ -257,7 +257,6 @@ jobs:
         ls -la results/Data/*.pkl 2>/dev/null || echo "No pkl files found"
 
     - name: Commit updated pkl file to PKScreener actions-data-download
-      if: inputs.period == 'day'
       env:
         CI_PAT: ${{ secrets.CI_PAT }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -268,76 +267,144 @@ jobs:
         
         # Get today's date in DDMMYYYY format
         TODAY=$(date +%d%m%Y)
+        PERIOD="${{ inputs.period }}"
         
-        echo "Looking for pkl files to copy..."
+        echo "Period: $PERIOD"
         echo "Today's suffix: $TODAY"
+        
+        # Determine pkl filename based on period
+        # day -> stock_data_DDMMYYYY.pkl
+        # minute (1-min) -> intraday_stock_data_DDMMYYYY.pkl
+        # 5minute -> intraday_stock_data_DDMMYYYY_5min.pkl
+        # 10minute -> intraday_stock_data_DDMMYYYY_10min.pkl
+        # 30minute -> intraday_stock_data_DDMMYYYY_30min.pkl
+        # 60minute -> intraday_stock_data_DDMMYYYY_60min.pkl
+        
+        case "$PERIOD" in
+            "day")
+                TARGET_FILE="stock_data_${TODAY}.pkl"
+                GENERIC_FILE="daily_candles.pkl"
+                MIN_SIZE=1000000  # 1 MB minimum for daily
+                ;;
+            "minute")
+                TARGET_FILE="intraday_stock_data_${TODAY}.pkl"
+                GENERIC_FILE="intraday_1m_candles.pkl"
+                MIN_SIZE=10000  # 10 KB minimum for intraday
+                ;;
+            "5minute")
+                TARGET_FILE="intraday_stock_data_${TODAY}_5min.pkl"
+                GENERIC_FILE="intraday_5m_candles.pkl"
+                MIN_SIZE=10000
+                ;;
+            "10minute")
+                TARGET_FILE="intraday_stock_data_${TODAY}_10min.pkl"
+                GENERIC_FILE="intraday_10m_candles.pkl"
+                MIN_SIZE=10000
+                ;;
+            "30minute")
+                TARGET_FILE="intraday_stock_data_${TODAY}_30min.pkl"
+                GENERIC_FILE="intraday_30m_candles.pkl"
+                MIN_SIZE=10000
+                ;;
+            "60minute")
+                TARGET_FILE="intraday_stock_data_${TODAY}_60min.pkl"
+                GENERIC_FILE="intraday_60m_candles.pkl"
+                MIN_SIZE=10000
+                ;;
+            *)
+                echo "Unknown period: $PERIOD, skipping pkl commit"
+                exit 0
+                ;;
+        esac
+        
+        echo "Target file: $TARGET_FILE"
+        echo "Generic file: $GENERIC_FILE"
         
         # List available files
         echo "Files in ../pkbrokers/kite/examples/results/Data/:"
         ls -la ../pkbrokers/kite/examples/results/Data/ 2>/dev/null || echo "Directory not found"
         
-        # Copy pkl files - try both date-suffixed and generic names
         FILES_COPIED=0
         
-        # Daily pkl files
-        for PKL_FILE in ../pkbrokers/kite/examples/results/Data/stock_data_*.pkl ../pkbrokers/kite/examples/results/Data/daily_candles.pkl; do
-          if [ -f "$PKL_FILE" ]; then
-            PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
-            if [ "$PKL_SIZE" -gt 1000000 ]; then
-              echo "✅ Found: $PKL_FILE ($PKL_SIZE bytes)"
-              cp "$PKL_FILE" actions-data-download/stock_data_${TODAY}.pkl
-              cp "$PKL_FILE" actions-data-download/daily_candles.pkl
-              FILES_COPIED=$((FILES_COPIED + 1))
-              break
-            else
-              echo "⚠️ File too small: $PKL_FILE ($PKL_SIZE bytes)"
-            fi
-          fi
-        done
-        
-        # Intraday pkl files - try to generate from ticks.json if not present
-        INTRADAY_FOUND=0
-        for PKL_FILE in ../pkbrokers/kite/examples/results/Data/intraday_stock_data_*.pkl ../pkbrokers/kite/examples/results/Data/intraday_1m_candles.pkl; do
-          if [ -f "$PKL_FILE" ]; then
-            PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
-            if [ "$PKL_SIZE" -gt 10000 ]; then
-              echo "✅ Found intraday: $PKL_FILE ($PKL_SIZE bytes)"
-              cp "$PKL_FILE" actions-data-download/intraday_stock_data_${TODAY}.pkl
-              cp "$PKL_FILE" actions-data-download/intraday_1m_candles.pkl
-              FILES_COPIED=$((FILES_COPIED + 1))
-              INTRADAY_FOUND=1
-              break
-            fi
-          fi
-        done
-        
-        # If no intraday pkl, try to generate from ticks.json
-        if [ "$INTRADAY_FOUND" -eq 0 ]; then
-          echo "No intraday pkl found, trying to generate from ticks.json..."
-          cd ../pkbrokers/kite/examples/
-          python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py --data-dir results/Data --verbose 2>/dev/null || true
-          cd -
-          
-          # Check again for intraday pkl
-          for PKL_FILE in ../pkbrokers/kite/examples/results/Data/intraday_stock_data_*.pkl ../pkbrokers/kite/examples/results/Data/intraday_1m_candles.pkl; do
-            if [ -f "$PKL_FILE" ]; then
-              PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
-              if [ "$PKL_SIZE" -gt 10000 ]; then
-                echo "✅ Generated intraday: $PKL_FILE ($PKL_SIZE bytes)"
-                cp "$PKL_FILE" actions-data-download/intraday_stock_data_${TODAY}.pkl
-                cp "$PKL_FILE" actions-data-download/intraday_1m_candles.pkl
-                FILES_COPIED=$((FILES_COPIED + 1))
-                break
+        if [ "$PERIOD" = "day" ]; then
+            # Daily pkl files
+            for PKL_FILE in ../pkbrokers/kite/examples/results/Data/stock_data_*.pkl ../pkbrokers/kite/examples/results/Data/daily_candles.pkl; do
+              if [ -f "$PKL_FILE" ]; then
+                PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
+                if [ "$PKL_SIZE" -gt "$MIN_SIZE" ]; then
+                  echo "✅ Found: $PKL_FILE ($PKL_SIZE bytes)"
+                  cp "$PKL_FILE" actions-data-download/$TARGET_FILE
+                  cp "$PKL_FILE" actions-data-download/$GENERIC_FILE
+                  FILES_COPIED=$((FILES_COPIED + 1))
+                  break
+                else
+                  echo "⚠️ File too small: $PKL_FILE ($PKL_SIZE bytes)"
+                fi
               fi
+            done
+            
+            # Also try to commit intraday from ticks.json for day period
+            INTRADAY_FOUND=0
+            for PKL_FILE in ../pkbrokers/kite/examples/results/Data/intraday_stock_data_*.pkl ../pkbrokers/kite/examples/results/Data/intraday_1m_candles.pkl; do
+              if [ -f "$PKL_FILE" ]; then
+                PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
+                if [ "$PKL_SIZE" -gt 10000 ]; then
+                  echo "✅ Found intraday: $PKL_FILE ($PKL_SIZE bytes)"
+                  cp "$PKL_FILE" actions-data-download/intraday_stock_data_${TODAY}.pkl
+                  cp "$PKL_FILE" actions-data-download/intraday_1m_candles.pkl
+                  FILES_COPIED=$((FILES_COPIED + 1))
+                  INTRADAY_FOUND=1
+                  break
+                fi
+              fi
+            done
+            
+            # If no intraday pkl, try to generate from ticks.json
+            if [ "$INTRADAY_FOUND" -eq 0 ]; then
+              echo "No intraday pkl found, trying to generate from ticks.json..."
+              cd ../pkbrokers/kite/examples/
+              python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py --data-dir results/Data --verbose 2>/dev/null || true
+              cd -
+              
+              for PKL_FILE in ../pkbrokers/kite/examples/results/Data/intraday_stock_data_*.pkl; do
+                if [ -f "$PKL_FILE" ]; then
+                  PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
+                  if [ "$PKL_SIZE" -gt 10000 ]; then
+                    echo "✅ Generated intraday: $PKL_FILE ($PKL_SIZE bytes)"
+                    cp "$PKL_FILE" actions-data-download/intraday_stock_data_${TODAY}.pkl
+                    cp "$PKL_FILE" actions-data-download/intraday_1m_candles.pkl
+                    FILES_COPIED=$((FILES_COPIED + 1))
+                    break
+                  fi
+                fi
+              done
             fi
-          done
+        else
+            # Intraday periods (minute, 5minute, 10minute, etc.)
+            # Look for the history database file generated by pkkite
+            for PKL_FILE in ../pkbrokers/kite/examples/results/Data/*.pkl; do
+              if [ -f "$PKL_FILE" ]; then
+                PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
+                if [ "$PKL_SIZE" -gt "$MIN_SIZE" ]; then
+                  echo "✅ Found: $PKL_FILE ($PKL_SIZE bytes)"
+                  cp "$PKL_FILE" actions-data-download/$TARGET_FILE
+                  cp "$PKL_FILE" actions-data-download/$GENERIC_FILE
+                  FILES_COPIED=$((FILES_COPIED + 1))
+                  break
+                fi
+              fi
+            done
         fi
         
         # DO NOT copy .db files - they are too large for GitHub (>100MB limit)
-        # The database is only used locally for generating pkl files
         echo "Note: SQLite .db files are not committed (too large for GitHub)"
         
         echo "Total files copied: $FILES_COPIED"
+        
+        if [ "$FILES_COPIED" -eq 0 ]; then
+          echo "⚠️ No pkl files found to commit for period: $PERIOD"
+          exit 0
+        fi
         
         # Commit and push
         git config user.name "github-actions[bot]"
@@ -355,7 +422,7 @@ jobs:
         git diff --staged --name-only
         
         if ! git diff --staged --quiet; then
-          git commit -m "Update pkl files from history download - $TODAY [period: ${{ inputs.period }}]"
+          git commit -m "Update $TARGET_FILE from history download - $TODAY [period: $PERIOD]"
           
           # Retry push with rebase if needed
           for i in 1 2 3; do
