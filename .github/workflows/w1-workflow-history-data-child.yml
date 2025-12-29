@@ -148,7 +148,47 @@ jobs:
       run: |
         cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
-        python pkkite.py --history=${{ inputs.period }} --pastoffset=${{ inputs.period || 0}} --verbose
+        python pkkite.py --history=${{ inputs.period }} --pastoffset=${{ inputs.pastoffset || 0}} --verbose
+
+    - name: Commit updated pkl file to PKScreener actions-data-download
+      if: inputs.period == 'day'
+      env:
+        CI_PAT: ${{ secrets.CI_PAT }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Clone PKScreener actions-data-download branch
+        git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
+        cd pkscreener-data
+        
+        # Get today's date in DDMMYYYY format
+        TODAY=$(date +%d%m%Y)
+        
+        # Find and copy pkl files from PKBrokers results
+        if [ -f "../pkbrokers/kite/examples/results/Data/daily_candles.pkl" ]; then
+          cp ../pkbrokers/kite/examples/results/Data/daily_candles.pkl actions-data-download/stock_data_${TODAY}.pkl || true
+          cp ../pkbrokers/kite/examples/results/Data/daily_candles.pkl actions-data-download/daily_candles.pkl || true
+        fi
+        
+        if [ -f "../pkbrokers/kite/examples/results/Data/intraday_1m_candles.pkl" ]; then
+          cp ../pkbrokers/kite/examples/results/Data/intraday_1m_candles.pkl actions-data-download/intraday_stock_data_${TODAY}.pkl || true
+          cp ../pkbrokers/kite/examples/results/Data/intraday_1m_candles.pkl actions-data-download/intraday_1m_candles.pkl || true
+        fi
+        
+        # Copy any database files
+        cp ../pkbrokers/kite/examples/results/Data/*.db actions-data-download/ 2>/dev/null || true
+        
+        # Commit and push
+        git config user.name "github-actions[bot]"
+        git config user.email "actions@github.com"
+        git add -A actions-data-download/
+        
+        if ! git diff --staged --quiet; then
+          git commit -m "Update pkl files from history download - $TODAY [period: ${{ inputs.period }}]"
+          git push
+          echo "✅ Successfully committed updated pkl files to PKScreener actions-data-download"
+        else
+          echo "No changes to commit"
+        fi
 
     - name: Send notification about the completion
       shell: bash

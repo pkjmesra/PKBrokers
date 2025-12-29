@@ -262,12 +262,13 @@ class DataSharingManager:
         
         return 0 <= time_to_close <= minutes_before
     
-    def download_from_github(self, file_type: str = "daily") -> Tuple[bool, Optional[str]]:
+    def download_from_github(self, file_type: str = "daily", validate_freshness: bool = True) -> Tuple[bool, Optional[str]]:
         """
         Download pkl file from GitHub actions-data-download branch.
         
         Args:
             file_type: "daily" or "intraday"
+            validate_freshness: If True, check if data is fresh and trigger history download if stale
             
         Returns:
             Tuple of (success, file_path)
@@ -302,6 +303,14 @@ class DataSharingManager:
                             f.write(response.content)
                         
                         self.logger.info(f"Downloaded {file_type} pkl from GitHub: {output_path}")
+                        
+                        # Validate freshness and trigger history download if stale
+                        if validate_freshness and file_type == "daily":
+                            is_fresh, data_date, missing_days = self.validate_pkl_freshness(output_path)
+                            if not is_fresh and missing_days > 0:
+                                self.logger.warning(f"Downloaded pkl is stale by {missing_days} trading days. Triggering history download...")
+                                self.trigger_history_download_workflow(missing_days)
+                        
                         return True, output_path
                         
                 except requests.RequestException as e:
@@ -314,6 +323,155 @@ class DataSharingManager:
         except Exception as e:
             self.logger.error(f"Error downloading from GitHub: {e}")
             return False, None
+    
+    def validate_pkl_freshness(self, pkl_path: str) -> Tuple[bool, Optional[datetime], int]:
+        """
+        Validate if pkl file data is fresh (has data up to last trading date).
+        
+        Args:
+            pkl_path: Path to pkl file
+            
+        Returns:
+            Tuple of (is_fresh, latest_data_date, missing_trading_days)
+        """
+        try:
+            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+            
+            if not os.path.exists(pkl_path):
+                return False, None, 0
+            
+            with open(pkl_path, 'rb') as f:
+                data = pickle.load(f)
+            
+            if not data:
+                return False, None, 0
+            
+            # Find the latest date across all stocks
+            latest_date = None
+            for symbol, df in data.items():
+                if hasattr(df, 'index') and len(df.index) > 0:
+                    stock_last_date = df.index[-1]
+                    if hasattr(stock_last_date, 'date'):
+                        stock_last_date = stock_last_date.date()
+                    elif hasattr(stock_last_date, 'to_pydatetime'):
+                        stock_last_date = stock_last_date.to_pydatetime().date()
+                    
+                    if latest_date is None or stock_last_date > latest_date:
+                        latest_date = stock_last_date
+            
+            if latest_date is None:
+                return False, None, 0
+            
+            # Get the last trading date using PKDateUtilities
+            last_trading_date = PKDateUtilities.tradingDate()
+            if hasattr(last_trading_date, 'date'):
+                last_trading_date = last_trading_date.date()
+            
+            # Check if data is fresh
+            if latest_date >= last_trading_date:
+                self.logger.info(f"Pkl data is fresh. Latest date: {latest_date}, Last trading date: {last_trading_date}")
+                return True, latest_date, 0
+            
+            # Calculate missing trading days
+            missing_days = PKDateUtilities.trading_days_between(latest_date, last_trading_date)
+            
+            self.logger.warning(f"Pkl data is stale. Latest date: {latest_date}, Last trading date: {last_trading_date}, Missing {missing_days} trading days")
+            return False, latest_date, missing_days
+            
+        except Exception as e:
+            self.logger.error(f"Error validating pkl freshness: {e}")
+            return False, None, 0
+    
+    def trigger_history_download_workflow(self, past_offset: int = 1) -> bool:
+        """
+        Trigger the w1-workflow-history-data-child.yml workflow to download missing OHLCV data.
+        
+        Args:
+            past_offset: Number of days of historical data to fetch
+            
+        Returns:
+            True if workflow was triggered successfully
+        """
+        try:
+            import os
+            
+            github_token = os.environ.get('GITHUB_TOKEN') or os.environ.get('CI_PAT')
+            if not github_token:
+                self.logger.error("GITHUB_TOKEN or CI_PAT not found. Cannot trigger workflow.")
+                return False
+            
+            # Trigger PKBrokers history workflow
+            url = "https://api.github.com/repos/pkjmesra/PKBrokers/actions/workflows/w1-workflow-history-data-child.yml/dispatches"
+            
+            headers = {
+                "Authorization": f"token {github_token}",
+                "Accept": "application/vnd.github.v3+json"
+            }
+            
+            payload = {
+                "ref": "main",
+                "inputs": {
+                    "period": "day",
+                    "pastoffset": str(past_offset),
+                    "logLevel": "20"
+                }
+            }
+            
+            self.logger.info(f"Triggering history download workflow with past_offset={past_offset}")
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 204:
+                self.logger.info("Successfully triggered history download workflow")
+                return True
+            else:
+                self.logger.error(f"Failed to trigger workflow: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error triggering history download workflow: {e}")
+            return False
+    
+    def ensure_data_freshness_and_commit(self, pkl_path: str = None) -> bool:
+        """
+        Ensure pkl data is fresh. If stale, trigger history download and commit updated data.
+        
+        This is the main entry point for the freshness check workflow.
+        
+        Args:
+            pkl_path: Path to pkl file (defaults to daily pkl)
+            
+        Returns:
+            True if data is fresh or was successfully updated
+        """
+        try:
+            if pkl_path is None:
+                pkl_path = self.get_daily_pkl_path()
+            
+            is_fresh, data_date, missing_days = self.validate_pkl_freshness(pkl_path)
+            
+            if is_fresh:
+                self.logger.info("Data is already fresh")
+                return True
+            
+            if missing_days > 0:
+                self.logger.info(f"Data is stale by {missing_days} trading days. Triggering history download...")
+                
+                # Trigger history download workflow
+                triggered = self.trigger_history_download_workflow(missing_days)
+                
+                if triggered:
+                    self.logger.info("History download workflow triggered. Fresh data will be available after workflow completes.")
+                    # Note: The workflow will handle committing the updated pkl file
+                    return True
+                else:
+                    self.logger.warning("Failed to trigger history download workflow")
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error ensuring data freshness: {e}")
+            return False
     
     def export_daily_candles_to_pkl(self, candle_store) -> Tuple[bool, Optional[str]]:
         """
