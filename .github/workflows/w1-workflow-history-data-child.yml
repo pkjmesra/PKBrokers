@@ -150,7 +150,7 @@ jobs:
         cd pkbrokers/kite/examples/
         python pkkite.py --history=${{ inputs.period }} --pastoffset=${{ inputs.pastoffset || 0}} --verbose
 
-    - name: Export database to pkl files
+    - name: Export database to pkl files with historical merge
       if: inputs.period == 'day'
       run: |
         cd pkbrokers/kite/examples/
@@ -160,55 +160,87 @@ jobs:
         import os
         import pickle
         import sqlite3
-        from datetime import datetime
+        import io
+        import requests
+        from datetime import datetime, timedelta
         import pandas as pd
-        import glob
         
-        # Find the history database - search multiple locations
+        print("=" * 60)
+        print("PKL Export: Database to PKL with Historical Merge")
+        print("=" * 60)
+        
+        # Step 1: Download existing historical pkl from GitHub
+        print("\n[Step 1] Downloading historical pkl from GitHub...")
+        historical_data = {}
+        
+        base_urls = [
+            "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/",
+            "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/",
+        ]
+        
+        today = datetime.now()
+        for days_back in range(10):
+            check_date = today - timedelta(days=days_back)
+            date_formats = [
+                check_date.strftime('%d%m%Y'),
+                check_date.strftime('%d%m%y'),
+            ]
+            
+            for base_url in base_urls:
+                for date_str in date_formats:
+                    url = f"{base_url}stock_data_{date_str}.pkl"
+                    try:
+                        response = requests.get(url, timeout=60)
+                        if response.status_code == 200 and len(response.content) > 1000000:
+                            historical_data = pickle.loads(response.content)
+                            if isinstance(historical_data, dict) and len(historical_data) > 100:
+                                print(f"✅ Downloaded: {url}")
+                                print(f"   {len(historical_data)} instruments, {len(response.content)/1024/1024:.1f} MB")
+                                break
+                    except Exception as e:
+                        continue
+                if historical_data:
+                    break
+            if historical_data:
+                break
+        
+        if not historical_data:
+            print("⚠️ Could not download historical pkl from GitHub")
+        
+        # Step 2: Find and load the history database
+        print("\n[Step 2] Finding history database...")
         db_path = None
+        
+        # Search paths including PKDevTools user data dir
         search_paths = [
+            os.path.expanduser('~/.PKDevTools_userdata'),
             '.',
             'results/Data',
-            os.path.expanduser('~/.pkbrokers'),
-            os.path.expanduser('~/.PKDevTools_userdata'),
         ]
         
         for search_dir in search_paths:
             if not os.path.exists(search_dir):
                 continue
+            print(f"  Searching: {search_dir}")
             for f in os.listdir(search_dir):
                 if f.endswith('.db') and ('history' in f.lower() or 'instrument' in f.lower()):
                     candidate = os.path.join(search_dir, f)
-                    print(f"Found database candidate: {candidate}")
+                    print(f"  Found: {candidate}")
                     db_path = candidate
                     break
             if db_path:
                 break
         
-        # Try specific known paths
-        if not db_path:
-            known_paths = [
-                'instrument_history.db',
-                'kite_history.db',
-                'results/Data/instrument_history.db',
-            ]
-            for p in known_paths:
-                if os.path.exists(p):
-                    db_path = p
-                    break
-        
-        print(f"Using database: {db_path}")
-        
+        new_data = {}
         if db_path and os.path.exists(db_path):
-            print(f"Found database: {db_path}")
+            print(f"✅ Using database: {db_path}")
             conn = sqlite3.connect(db_path)
             
-            # Check what tables exist
             tables = pd.read_sql_query("SELECT name FROM sqlite_master WHERE type='table'", conn)
-            print(f"Tables in database: {tables['name'].tolist()}")
+            print(f"   Tables: {tables['name'].tolist()}")
             
-            # Get all daily candles - try different table/column names
-            for table_name in ['instrument_history', 'history', 'candles', 'daily_candles']:
+            # Query daily candles
+            for table_name in ['instrument_history', 'history', 'candles']:
                 try:
                     query = f"""
                     SELECT instrument_token, timestamp, open, high, low, close, volume
@@ -218,60 +250,88 @@ jobs:
                     """
                     df = pd.read_sql_query(query, conn)
                     if len(df) > 0:
-                        print(f"Loaded {len(df)} rows from {table_name}")
+                        print(f"   Loaded {len(df)} rows from {table_name}")
                         break
-                except Exception as e:
-                    print(f"Table {table_name} not found or error: {e}")
+                except:
                     continue
             else:
                 df = pd.DataFrame()
             
             if len(df) > 0:
                 # Get symbol mapping
+                token_to_symbol = {}
                 try:
                     from pkbrokers.kite.instruments import KiteInstruments
                     instruments = KiteInstruments()
-                    token_to_symbol = {}
                     for inst in instruments.get_or_fetch_instrument_tokens(all_columns=True):
                         if isinstance(inst, dict):
                             token_to_symbol[inst.get('instrument_token')] = inst.get('tradingsymbol', str(inst.get('instrument_token')))
+                    print(f"   Loaded {len(token_to_symbol)} symbol mappings")
                 except Exception as e:
-                    print(f"Could not load instrument mapping: {e}")
-                    token_to_symbol = {}
+                    print(f"   Symbol mapping error: {e}")
                 
-                # Group by instrument and create pkl format
-                stock_data = {}
+                # Convert to pkl format
                 for token, group in df.groupby('instrument_token'):
                     symbol = token_to_symbol.get(token, str(token))
                     group_df = group[['timestamp', 'open', 'high', 'low', 'close', 'volume']].copy()
                     group_df['timestamp'] = pd.to_datetime(group_df['timestamp'])
                     group_df.set_index('timestamp', inplace=True)
                     group_df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-                    stock_data[symbol] = group_df
+                    new_data[symbol] = group_df
                 
-                # Save to pkl
-                today = datetime.now().strftime('%d%m%Y')
-                pkl_path = f"results/Data/stock_data_{today}.pkl"
-                with open(pkl_path, 'wb') as f:
-                    pickle.dump(stock_data, f, protocol=pickle.HIGHEST_PROTOCOL)
-                
-                size_mb = os.path.getsize(pkl_path) / (1024 * 1024)
-                print(f"Saved {len(stock_data)} instruments to {pkl_path} ({size_mb:.2f} MB)")
-                
-                # Also save as daily_candles.pkl
-                with open("results/Data/daily_candles.pkl", 'wb') as f:
-                    pickle.dump(stock_data, f, protocol=pickle.HIGHEST_PROTOCOL)
-                print("Also saved as daily_candles.pkl")
-            else:
-                print("No data found in database")
-            
+                print(f"   Converted {len(new_data)} instruments from database")
             conn.close()
         else:
-            print(f"No database found")
-            # List all files to help debug
-            print("Files in current directory:")
-            for f in os.listdir('.'):
-                print(f"  {f}")
+            print("⚠️ No history database found")
+            print("   Files in ~/.PKDevTools_userdata:")
+            user_dir = os.path.expanduser('~/.PKDevTools_userdata')
+            if os.path.exists(user_dir):
+                for f in os.listdir(user_dir):
+                    print(f"     {f}")
+        
+        # Step 3: Merge new data with historical
+        print("\n[Step 3] Merging data...")
+        merged_data = historical_data.copy() if historical_data else {}
+        
+        updated = 0
+        added = 0
+        for symbol, new_df in new_data.items():
+            if symbol in merged_data:
+                existing = merged_data[symbol]
+                if hasattr(existing, 'index'):
+                    combined = pd.concat([existing, new_df])
+                    combined = combined[~combined.index.duplicated(keep='last')]
+                    combined = combined.sort_index()
+                    merged_data[symbol] = combined
+                    updated += 1
+                else:
+                    merged_data[symbol] = new_df
+                    added += 1
+            else:
+                merged_data[symbol] = new_df
+                added += 1
+        
+        print(f"   Updated: {updated}, Added: {added}, Total: {len(merged_data)}")
+        
+        # Step 4: Save pkl files
+        print("\n[Step 4] Saving pkl files...")
+        if merged_data:
+            today_str = datetime.now().strftime('%d%m%Y')
+            
+            pkl_path = f"results/Data/stock_data_{today_str}.pkl"
+            with open(pkl_path, 'wb') as f:
+                pickle.dump(merged_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            
+            size_mb = os.path.getsize(pkl_path) / (1024 * 1024)
+            print(f"✅ Saved: {pkl_path} ({size_mb:.2f} MB, {len(merged_data)} instruments)")
+            
+            with open("results/Data/daily_candles.pkl", 'wb') as f:
+                pickle.dump(merged_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            print(f"✅ Saved: results/Data/daily_candles.pkl")
+        else:
+            print("❌ No data to save!")
+        
+        print("\n" + "=" * 60)
         EXPORT_SCRIPT
 
     - name: Commit updated pkl file to PKScreener actions-data-download
@@ -287,19 +347,50 @@ jobs:
         # Get today's date in DDMMYYYY format
         TODAY=$(date +%d%m%Y)
         
-        # Find and copy pkl files from PKBrokers results
-        if [ -f "../pkbrokers/kite/examples/results/Data/daily_candles.pkl" ]; then
-          cp ../pkbrokers/kite/examples/results/Data/daily_candles.pkl actions-data-download/stock_data_${TODAY}.pkl || true
-          cp ../pkbrokers/kite/examples/results/Data/daily_candles.pkl actions-data-download/daily_candles.pkl || true
-        fi
+        echo "Looking for pkl files to copy..."
+        echo "Today's suffix: $TODAY"
         
-        if [ -f "../pkbrokers/kite/examples/results/Data/intraday_1m_candles.pkl" ]; then
-          cp ../pkbrokers/kite/examples/results/Data/intraday_1m_candles.pkl actions-data-download/intraday_stock_data_${TODAY}.pkl || true
-          cp ../pkbrokers/kite/examples/results/Data/intraday_1m_candles.pkl actions-data-download/intraday_1m_candles.pkl || true
-        fi
+        # List available files
+        echo "Files in ../pkbrokers/kite/examples/results/Data/:"
+        ls -la ../pkbrokers/kite/examples/results/Data/ 2>/dev/null || echo "Directory not found"
+        
+        # Copy pkl files - try both date-suffixed and generic names
+        FILES_COPIED=0
+        
+        # Daily pkl files
+        for PKL_FILE in ../pkbrokers/kite/examples/results/Data/stock_data_*.pkl ../pkbrokers/kite/examples/results/Data/daily_candles.pkl; do
+          if [ -f "$PKL_FILE" ]; then
+            PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
+            if [ "$PKL_SIZE" -gt 1000000 ]; then
+              echo "✅ Found: $PKL_FILE ($PKL_SIZE bytes)"
+              cp "$PKL_FILE" actions-data-download/stock_data_${TODAY}.pkl
+              cp "$PKL_FILE" actions-data-download/daily_candles.pkl
+              FILES_COPIED=$((FILES_COPIED + 1))
+              break
+            else
+              echo "⚠️ File too small: $PKL_FILE ($PKL_SIZE bytes)"
+            fi
+          fi
+        done
+        
+        # Intraday pkl files
+        for PKL_FILE in ../pkbrokers/kite/examples/results/Data/intraday_stock_data_*.pkl ../pkbrokers/kite/examples/results/Data/intraday_1m_candles.pkl; do
+          if [ -f "$PKL_FILE" ]; then
+            PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
+            if [ "$PKL_SIZE" -gt 1000 ]; then
+              echo "✅ Found: $PKL_FILE ($PKL_SIZE bytes)"
+              cp "$PKL_FILE" actions-data-download/intraday_stock_data_${TODAY}.pkl
+              cp "$PKL_FILE" actions-data-download/intraday_1m_candles.pkl
+              FILES_COPIED=$((FILES_COPIED + 1))
+              break
+            fi
+          fi
+        done
         
         # Copy any database files
         cp ../pkbrokers/kite/examples/results/Data/*.db actions-data-download/ 2>/dev/null || true
+        
+        echo "Total files copied: $FILES_COPIED"
         
         # Commit and push
         git config user.name "github-actions[bot]"
