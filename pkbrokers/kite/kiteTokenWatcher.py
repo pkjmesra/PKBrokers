@@ -1068,37 +1068,49 @@ class KiteTokenWatcher:
         
         # Export pkl files with candle data
         try:
-            from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
+            from pkbrokers.bot.dataSharingManager import DataSharingManager
             from datetime import datetime
             import os
             import shutil
             
-            data_mgr = get_data_sharing_manager()
+            # Use results/Data directory relative to cwd for workflow compatibility
+            results_dir = os.path.join(os.getcwd(), "results", "Data")
+            os.makedirs(results_dir, exist_ok=True)
             
-            # Export daily candles to pkl
-            success_daily, daily_path = data_mgr.export_daily_candles_to_pkl(self._candle_store)
+            # Create data manager with the correct directory
+            data_mgr = DataSharingManager(data_dir=results_dir)
+            
+            # Export daily candles to pkl (with historical merge)
+            self.logger.info("Starting daily pkl export with historical merge...")
+            success_daily, daily_path = data_mgr.export_daily_candles_to_pkl(self._candle_store, merge_with_historical=True)
+            today_suffix = datetime.now().strftime('%d%m%Y')
+            
             if success_daily and daily_path:
-                self.logger.info(f"Exported daily candles to: {daily_path}")
+                file_size = os.path.getsize(daily_path) / (1024 * 1024)
+                self.logger.info(f"Exported daily candles to: {daily_path} ({file_size:.2f} MB)")
                 
-                # Also copy to results/Data with date suffix
-                results_dir = os.path.join(os.getcwd(), "results", "Data")
-                os.makedirs(results_dir, exist_ok=True)
-                today_suffix = datetime.now().strftime('%d%m%Y')
+                # Also create date-suffixed copy
                 dest_daily = os.path.join(results_dir, f"stock_data_{today_suffix}.pkl")
-                shutil.copy(daily_path, dest_daily)
-                shutil.copy(daily_path, os.path.join(results_dir, "daily_candles.pkl"))
-                self.logger.info(f"Copied daily pkl to results/Data/stock_data_{today_suffix}.pkl")
+                if daily_path != dest_daily:
+                    shutil.copy(daily_path, dest_daily)
+                    self.logger.info(f"Created date-suffixed copy: stock_data_{today_suffix}.pkl")
+            else:
+                self.logger.warning("Daily pkl export failed or no data")
             
             # Export intraday candles to pkl
+            self.logger.info("Starting intraday pkl export...")
             success_intraday, intraday_path = data_mgr.export_intraday_candles_to_pkl(self._candle_store)
             if success_intraday and intraday_path:
-                self.logger.info(f"Exported intraday candles to: {intraday_path}")
+                file_size = os.path.getsize(intraday_path) / (1024 * 1024)
+                self.logger.info(f"Exported intraday candles to: {intraday_path} ({file_size:.2f} MB)")
                 
-                results_dir = os.path.join(os.getcwd(), "results", "Data")
+                # Also create date-suffixed copy
                 dest_intraday = os.path.join(results_dir, f"intraday_stock_data_{today_suffix}.pkl")
-                shutil.copy(intraday_path, dest_intraday)
-                shutil.copy(intraday_path, os.path.join(results_dir, "intraday_1m_candles.pkl"))
-                self.logger.info(f"Copied intraday pkl to results/Data/intraday_stock_data_{today_suffix}.pkl")
+                if intraday_path != dest_intraday:
+                    shutil.copy(intraday_path, dest_intraday)
+                    self.logger.info(f"Created date-suffixed copy: intraday_stock_data_{today_suffix}.pkl")
+            else:
+                self.logger.warning("Intraday pkl export failed or no data")
                 
         except Exception as e:
             self.logger.error(f"Error exporting pkl files: {e}")
