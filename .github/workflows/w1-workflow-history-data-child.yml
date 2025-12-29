@@ -180,7 +180,8 @@ jobs:
         # Commit and push
         git config user.name "github-actions[bot]"
         git config user.email "actions@github.com"
-        git add -A actions-data-download/
+        # Use -f to force add files that may be in .gitignore
+        git add -f actions-data-download/ 2>/dev/null || true
         
         if ! git diff --staged --quiet; then
           git commit -m "Update pkl files from history download - $TODAY [period: ${{ inputs.period }}]"

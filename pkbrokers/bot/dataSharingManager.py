@@ -506,12 +506,14 @@ class DataSharingManager:
             self.logger.error(f"Error ensuring data freshness: {e}")
             return False
     
-    def export_daily_candles_to_pkl(self, candle_store) -> Tuple[bool, Optional[str]]:
+    def export_daily_candles_to_pkl(self, candle_store, merge_with_historical: bool = True) -> Tuple[bool, Optional[str]]:
         """
         Export daily candles from InMemoryCandleStore to pkl file.
+        Merges with historical data from GitHub to create complete ~35MB+ pkl files.
         
         Args:
             candle_store: InMemoryCandleStore instance
+            merge_with_historical: Whether to merge with historical pkl from GitHub
             
         Returns:
             Tuple of (success, file_path)
@@ -522,6 +524,37 @@ class DataSharingManager:
             output_path = self.get_daily_pkl_path()
             data = {}
             
+            # First, try to load existing historical data from GitHub
+            if merge_with_historical:
+                try:
+                    success, historical_path = self.download_from_github(file_type="daily", validate_freshness=False)
+                    if success and historical_path and os.path.exists(historical_path):
+                        with open(historical_path, 'rb') as f:
+                            historical_data = pickle.load(f)
+                        
+                        # Convert historical data to proper format
+                        for symbol, df_or_dict in historical_data.items():
+                            if isinstance(df_or_dict, dict):
+                                # Convert split dict format to DataFrame
+                                if 'data' in df_or_dict and 'columns' in df_or_dict and 'index' in df_or_dict:
+                                    df = pd.DataFrame(
+                                        df_or_dict['data'],
+                                        columns=df_or_dict['columns'],
+                                        index=pd.to_datetime(df_or_dict['index'])
+                                    )
+                                    # Rename columns to standard format
+                                    col_map = {'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}
+                                    df.rename(columns=col_map, inplace=True)
+                                    data[symbol] = df
+                            elif hasattr(df_or_dict, 'index'):
+                                data[symbol] = df_or_dict
+                        
+                        self.logger.info(f"Loaded {len(data)} instruments from historical pkl")
+                except Exception as he:
+                    self.logger.debug(f"Could not load historical data: {he}")
+            
+            # Now add today's candles from the candle store
+            today_count = 0
             with candle_store.lock:
                 for token, instrument in candle_store.instruments.items():
                     symbol = candle_store.instrument_symbols.get(token, str(token))
@@ -549,15 +582,27 @@ class DataSharingManager:
                         })
                     
                     if rows:
-                        df = pd.DataFrame(rows)
-                        df.set_index('Date', inplace=True)
-                        data[symbol] = df
+                        new_df = pd.DataFrame(rows)
+                        new_df.set_index('Date', inplace=True)
+                        
+                        # Merge with historical data if exists
+                        if symbol in data:
+                            existing_df = data[symbol]
+                            # Combine and remove duplicates (keep latest)
+                            combined = pd.concat([existing_df, new_df])
+                            combined = combined[~combined.index.duplicated(keep='last')]
+                            combined.sort_index(inplace=True)
+                            data[symbol] = combined
+                        else:
+                            data[symbol] = new_df
+                        today_count += 1
             
             if data:
                 with open(output_path, 'wb') as f:
                     pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
                 
-                self.logger.info(f"Exported {len(data)} instruments to {output_path}")
+                file_size = os.path.getsize(output_path) / (1024 * 1024)  # MB
+                self.logger.info(f"Exported {len(data)} instruments ({today_count} with today's data) to {output_path} ({file_size:.2f} MB)")
                 return True, output_path
             else:
                 self.logger.warning("No daily candle data to export")
@@ -618,7 +663,8 @@ class DataSharingManager:
                 with open(output_path, 'wb') as f:
                     pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
                 
-                self.logger.info(f"Exported {len(data)} instruments to {output_path}")
+                file_size = os.path.getsize(output_path) / (1024 * 1024)  # MB
+                self.logger.info(f"Exported {len(data)} intraday instruments to {output_path} ({file_size:.2f} MB)")
                 return True, output_path
             else:
                 self.logger.warning("No intraday candle data to export")
