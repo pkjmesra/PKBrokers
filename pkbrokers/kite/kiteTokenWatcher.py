@@ -1065,6 +1065,43 @@ class KiteTokenWatcher:
             self.logger.info("Saved candle store to ticks.json")
         except Exception as e:
             self.logger.error(f"Error saving candle store: {e}")
+        
+        # Export pkl files with candle data
+        try:
+            from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
+            from datetime import datetime
+            import os
+            import shutil
+            
+            data_mgr = get_data_sharing_manager()
+            
+            # Export daily candles to pkl
+            success_daily, daily_path = data_mgr.export_daily_candles_to_pkl(self._candle_store)
+            if success_daily and daily_path:
+                self.logger.info(f"Exported daily candles to: {daily_path}")
+                
+                # Also copy to results/Data with date suffix
+                results_dir = os.path.join(os.getcwd(), "results", "Data")
+                os.makedirs(results_dir, exist_ok=True)
+                today_suffix = datetime.now().strftime('%d%m%Y')
+                dest_daily = os.path.join(results_dir, f"stock_data_{today_suffix}.pkl")
+                shutil.copy(daily_path, dest_daily)
+                shutil.copy(daily_path, os.path.join(results_dir, "daily_candles.pkl"))
+                self.logger.info(f"Copied daily pkl to results/Data/stock_data_{today_suffix}.pkl")
+            
+            # Export intraday candles to pkl
+            success_intraday, intraday_path = data_mgr.export_intraday_candles_to_pkl(self._candle_store)
+            if success_intraday and intraday_path:
+                self.logger.info(f"Exported intraday candles to: {intraday_path}")
+                
+                results_dir = os.path.join(os.getcwd(), "results", "Data")
+                dest_intraday = os.path.join(results_dir, f"intraday_stock_data_{today_suffix}.pkl")
+                shutil.copy(intraday_path, dest_intraday)
+                shutil.copy(intraday_path, os.path.join(results_dir, "intraday_1m_candles.pkl"))
+                self.logger.info(f"Copied intraday pkl to results/Data/intraday_stock_data_{today_suffix}.pkl")
+                
+        except Exception as e:
+            self.logger.error(f"Error exporting pkl files: {e}")
 
         # Signal shutdown to all components
         self._shutdown_event.set()
