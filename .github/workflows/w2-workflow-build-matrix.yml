@@ -80,7 +80,7 @@ jobs:
       - id: should_run
         continue-on-error: true
         name: check latest commit is less than a week
-        if: ${{ github.event_name == 'schedule' }} || ${{ github.event_name == 'workflow_dispatch' }}
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: test -z $(git rev-list  --after="7 days"  ${{ github.sha }} --max-count=1) && echo "::set-output name=should_run::false"
 
@@ -340,7 +340,7 @@ jobs:
           path: ${{ matrix.OUT_PATH }}
 
       - name: Upload Binaries to Release
-        if: startsWith(github.ref, 'refs/tags') || ${{ needs.check_should_run.outputs.should_run != 'false' }}
+        if: startsWith(github.ref, 'refs/tags') || needs.check_should_run.outputs.should_run != 'false'
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}

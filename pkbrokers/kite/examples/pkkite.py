@@ -215,7 +215,8 @@ def kite_history():
     from pkbrokers.kite.instruments import KiteInstruments
 
     instruments = KiteInstruments(
-        api_key="kitefront", access_token=PKEnvironment().KTOKEN
+        api_key="kitefront", access_token=PKEnvironment().KTOKEN, 
+        local=PKEnvironment().DB_TYPE == "local"
     )
     tokens = instruments.get_or_fetch_instrument_tokens(all_columns=True)
     # Create history client with the full response object

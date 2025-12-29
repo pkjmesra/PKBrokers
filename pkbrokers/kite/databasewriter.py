@@ -112,6 +112,16 @@ class DatabaseWriterProcess:
             self.logger.error(f"Failed to create Turso connection: {str(e)}")
             raise
 
+    def _check_blocked_db_connection(self, e):
+        error_str = str(e)
+        if "BLOCKED" in error_str.upper() or "forbidden" in error_str.lower():
+            self.logger.warning(
+                f"Turso blocked, falling back to local SQLite: {e}"
+            )
+            # Switch to local mode
+            self.db_config["type"] = "local"
+            return self._create_local_connection()
+
     def _insert_batch_turso(self, conn, ticks, force_connect=False, retrial=False):
         """Thread-safe batch insert with market depth for both local and turso"""
         if not ticks:
@@ -231,6 +241,7 @@ class DatabaseWriterProcess:
                     self._insert_batch_turso(
                         ticks=ticks, force_connect=True, retrial=True
                     )
+                self._check_blocked_db_connection(e)
 
         return conn
 

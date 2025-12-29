@@ -231,12 +231,15 @@ class KiteTickerHistory:
             if not self.table_exists(self.db_conn.cursor(), "instrument_history"):
                 self._initialize_database()
         except Exception as e:
-            if "BLOCKED" in str(e).upper() or "forbidden" in str(e).lower():
-                self.logger.warning(f"Turso blocked during init, switching to local: {e}")
-                self._use_local_db = True
-                self.db_conn = sqlite3.connect(self._local_db_path, check_same_thread=False)
-                if not self.table_exists(self.db_conn.cursor(), "instrument_history"):
-                    self._initialize_database()
+            self._check_blocked_db_connection(e)
+
+    def _check_blocked_db_connection(self, e):
+        if "BLOCKED" in str(e).upper() or "forbidden" in str(e).lower():
+            self.logger.warning(f"Turso blocked during init, switching to local: {e}")
+            self._use_local_db = True
+            self.db_conn = sqlite3.connect(self._local_db_path, check_same_thread=False)
+            if not self.table_exists(self.db_conn.cursor(), "instrument_history"):
+                self._initialize_database()
 
     def update_session_headers(self):
         # Set all required headers and cookies
