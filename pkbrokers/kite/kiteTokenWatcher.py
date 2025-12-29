@@ -1110,7 +1110,22 @@ class KiteTokenWatcher:
                     shutil.copy(intraday_path, dest_intraday)
                     self.logger.info(f"Created date-suffixed copy: intraday_stock_data_{today_suffix}.pkl")
             else:
-                self.logger.warning("Intraday pkl export failed or no data")
+                self.logger.warning("Intraday pkl export from candle store failed, trying ticks.json fallback...")
+                
+                # Fallback: convert ticks.json directly to intraday pkl
+                ticks_json_path = os.path.join(results_dir, "ticks.json")
+                if not os.path.exists(ticks_json_path):
+                    ticks_json_path = self.json_output_path  # Use the main ticks.json path
+                
+                if os.path.exists(ticks_json_path):
+                    self.logger.info(f"Converting ticks.json from {ticks_json_path} to intraday pkl...")
+                    success_ticks, ticks_pkl_path = data_mgr.convert_ticks_json_to_pkl(ticks_json_path)
+                    if success_ticks:
+                        self.logger.info(f"Successfully converted ticks.json to pkl: {ticks_pkl_path}")
+                    else:
+                        self.logger.warning("Failed to convert ticks.json to pkl")
+                else:
+                    self.logger.warning(f"No ticks.json found at {ticks_json_path}")
                 
         except Exception as e:
             self.logger.error(f"Error exporting pkl files: {e}")

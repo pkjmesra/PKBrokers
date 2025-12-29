@@ -162,39 +162,69 @@ jobs:
         import sqlite3
         from datetime import datetime
         import pandas as pd
+        import glob
         
-        # Find the history database
+        # Find the history database - search multiple locations
         db_path = None
-        for f in os.listdir('.'):
-            if f.endswith('.db') and 'history' in f.lower():
-                db_path = f
+        search_paths = [
+            '.',
+            'results/Data',
+            os.path.expanduser('~/.pkbrokers'),
+            os.path.expanduser('~/.PKDevTools_userdata'),
+        ]
+        
+        for search_dir in search_paths:
+            if not os.path.exists(search_dir):
+                continue
+            for f in os.listdir(search_dir):
+                if f.endswith('.db') and ('history' in f.lower() or 'instrument' in f.lower()):
+                    candidate = os.path.join(search_dir, f)
+                    print(f"Found database candidate: {candidate}")
+                    db_path = candidate
+                    break
+            if db_path:
                 break
         
+        # Try specific known paths
         if not db_path:
-            # Try default location
-            from pkbrokers.Archiver import Archiver
-            db_path = os.path.join(Archiver.get_user_data_dir(), 'kite_history.db')
+            known_paths = [
+                'instrument_history.db',
+                'kite_history.db',
+                'results/Data/instrument_history.db',
+            ]
+            for p in known_paths:
+                if os.path.exists(p):
+                    db_path = p
+                    break
         
-        print(f"Looking for database at: {db_path}")
+        print(f"Using database: {db_path}")
         
-        if not os.path.exists(db_path):
-            print("No history database found, checking instrument_history.db...")
-            db_path = 'instrument_history.db'
-        
-        if os.path.exists(db_path):
+        if db_path and os.path.exists(db_path):
             print(f"Found database: {db_path}")
             conn = sqlite3.connect(db_path)
             
-            # Get all daily candles
-            query = """
-            SELECT instrument_token, timestamp, open, high, low, close, volume
-            FROM instrument_history
-            WHERE interval = 'day'
-            ORDER BY instrument_token, timestamp
-            """
+            # Check what tables exist
+            tables = pd.read_sql_query("SELECT name FROM sqlite_master WHERE type='table'", conn)
+            print(f"Tables in database: {tables['name'].tolist()}")
             
-            df = pd.read_sql_query(query, conn)
-            print(f"Loaded {len(df)} rows from database")
+            # Get all daily candles - try different table/column names
+            for table_name in ['instrument_history', 'history', 'candles', 'daily_candles']:
+                try:
+                    query = f"""
+                    SELECT instrument_token, timestamp, open, high, low, close, volume
+                    FROM {table_name}
+                    WHERE interval = 'day' OR interval IS NULL
+                    ORDER BY instrument_token, timestamp
+                    """
+                    df = pd.read_sql_query(query, conn)
+                    if len(df) > 0:
+                        print(f"Loaded {len(df)} rows from {table_name}")
+                        break
+                except Exception as e:
+                    print(f"Table {table_name} not found or error: {e}")
+                    continue
+            else:
+                df = pd.DataFrame()
             
             if len(df) > 0:
                 # Get symbol mapping
@@ -232,10 +262,16 @@ jobs:
                 with open("results/Data/daily_candles.pkl", 'wb') as f:
                     pickle.dump(stock_data, f, protocol=pickle.HIGHEST_PROTOCOL)
                 print("Also saved as daily_candles.pkl")
+            else:
+                print("No data found in database")
             
             conn.close()
         else:
-            print(f"Database not found at {db_path}")
+            print(f"No database found")
+            # List all files to help debug
+            print("Files in current directory:")
+            for f in os.listdir('.'):
+                print(f"  {f}")
         EXPORT_SCRIPT
 
     - name: Commit updated pkl file to PKScreener actions-data-download

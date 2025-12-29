@@ -183,6 +183,115 @@ jobs:
         EXIT_CODE=${PIPESTATUS[0]}
         echo "pkkite exited with code $EXIT_CODE"
 
+    - name: Convert ticks.json to pkl if needed
+      if: always()
+      run: |
+        echo "Checking if pkl files need to be generated from ticks.json..."
+        
+        DATA_DIR="pkbrokers/kite/examples/results/Data"
+        TICKS_JSON_1="$DATA_DIR/ticks.json"
+        TICKS_JSON_2="pkbrokers/kite/examples/ticks.json"
+        DATE_SUFFIX=$(date +%d%m%Y)
+        
+        # Check if pkl files exist
+        PKL_EXISTS=false
+        if [ -f "$DATA_DIR/intraday_1m_candles.pkl" ] || [ -f "$DATA_DIR/intraday_stock_data_${DATE_SUFFIX}.pkl" ]; then
+          PKL_EXISTS=true
+          echo "Intraday pkl files already exist"
+        fi
+        
+        # If no pkl files, convert from ticks.json
+        if [ "$PKL_EXISTS" = false ]; then
+          echo "No pkl files found, attempting to convert ticks.json..."
+          
+          # Find ticks.json
+          if [ -f "$TICKS_JSON_1" ] && [ -s "$TICKS_JSON_1" ]; then
+            TICKS_JSON="$TICKS_JSON_1"
+          elif [ -f "$TICKS_JSON_2" ] && [ -s "$TICKS_JSON_2" ]; then
+            TICKS_JSON="$TICKS_JSON_2"
+          else
+            echo "No ticks.json found to convert"
+            exit 0
+          fi
+          
+          echo "Converting $TICKS_JSON to pkl..."
+          
+          cd pkbrokers/kite/examples
+          python3 << CONVERT_SCRIPT
+        import os
+        import json
+        import pickle
+        from datetime import datetime
+        import pandas as pd
+
+        ticks_json = "$TICKS_JSON".replace("pkbrokers/kite/examples/", "")
+        if not ticks_json.startswith("/"):
+            ticks_json = os.path.basename(ticks_json)
+            for p in ["results/Data/ticks.json", "ticks.json"]:
+                if os.path.exists(p):
+                    ticks_json = p
+                    break
+
+        print(f"Loading ticks from: {ticks_json}")
+
+        with open(ticks_json, 'r') as f:
+            ticks_data = json.load(f)
+
+        print(f"Found {len(ticks_data)} instruments in ticks.json")
+
+        data = {}
+        for token_str, tick_info in ticks_data.items():
+            try:
+                symbol = tick_info.get('trading_symbol', str(token_str))
+                ohlcv = tick_info.get('ohlcv', {})
+                
+                if not ohlcv or ohlcv.get('close', 0) <= 0:
+                    continue
+                
+                timestamp_str = ohlcv.get('timestamp', '')
+                if timestamp_str:
+                    try:
+                        dt = pd.to_datetime(timestamp_str)
+                    except:
+                        dt = datetime.now()
+                else:
+                    dt = datetime.now()
+                
+                df = pd.DataFrame([{
+                    'Date': dt,
+                    'Open': float(ohlcv.get('open', 0)),
+                    'High': float(ohlcv.get('high', 0)),
+                    'Low': float(ohlcv.get('low', 0)),
+                    'Close': float(ohlcv.get('close', 0)),
+                    'Volume': int(ohlcv.get('volume', 0)),
+                }])
+                df.set_index('Date', inplace=True)
+                data[symbol] = df
+            except Exception as e:
+                continue
+
+        if data:
+            os.makedirs('results/Data', exist_ok=True)
+            today = datetime.now().strftime('%d%m%Y')
+            
+            # Save intraday pkl
+            pkl_path = f'results/Data/intraday_stock_data_{today}.pkl'
+            with open(pkl_path, 'wb') as f:
+                pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            
+            size_mb = os.path.getsize(pkl_path) / (1024 * 1024)
+            print(f"Saved {len(data)} instruments to {pkl_path} ({size_mb:.2f} MB)")
+            
+            # Also save as generic name
+            with open('results/Data/intraday_1m_candles.pkl', 'wb') as f:
+                pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            print("Also saved as intraday_1m_candles.pkl")
+        else:
+            print("No valid data to convert")
+        CONVERT_SCRIPT
+          cd ../../..
+        fi
+
     - name: Push ticks and pkl files to PKScreener
       if: always()
       env:

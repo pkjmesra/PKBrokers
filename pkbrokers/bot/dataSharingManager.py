@@ -683,6 +683,100 @@ class DataSharingManager:
             self.logger.error(f"Error exporting intraday candles: {e}")
             return False, None
     
+    def convert_ticks_json_to_pkl(self, ticks_json_path: str = None) -> Tuple[bool, Optional[str]]:
+        """
+        Convert ticks.json file directly to intraday pkl file.
+        
+        This is useful when the candle store is empty but ticks.json has data
+        (e.g., downloaded from GitHub or another running instance).
+        
+        Args:
+            ticks_json_path: Path to ticks.json file. Defaults to data_dir/ticks.json
+            
+        Returns:
+            Tuple of (success, output_pkl_path)
+        """
+        try:
+            import json
+            import pandas as pd
+            
+            if ticks_json_path is None:
+                ticks_json_path = os.path.join(self.data_dir, "ticks.json")
+            
+            if not os.path.exists(ticks_json_path):
+                self.logger.warning(f"ticks.json not found at: {ticks_json_path}")
+                return False, None
+            
+            with open(ticks_json_path, 'r') as f:
+                ticks_data = json.load(f)
+            
+            if not ticks_data:
+                self.logger.warning("Empty ticks.json file")
+                return False, None
+            
+            self.logger.info(f"Converting {len(ticks_data)} instruments from ticks.json to pkl")
+            
+            data = {}
+            for token_str, tick_info in ticks_data.items():
+                try:
+                    symbol = tick_info.get('trading_symbol', str(token_str))
+                    ohlcv = tick_info.get('ohlcv', {})
+                    
+                    if not ohlcv:
+                        continue
+                    
+                    # Parse timestamp
+                    timestamp_str = ohlcv.get('timestamp', '')
+                    if timestamp_str:
+                        try:
+                            dt = pd.to_datetime(timestamp_str)
+                        except:
+                            dt = datetime.now(KOLKATA_TZ)
+                    else:
+                        dt = datetime.now(KOLKATA_TZ)
+                    
+                    # Create single-row DataFrame with OHLCV data
+                    df = pd.DataFrame([{
+                        'Date': dt,
+                        'Open': float(ohlcv.get('open', 0)),
+                        'High': float(ohlcv.get('high', 0)),
+                        'Low': float(ohlcv.get('low', 0)),
+                        'Close': float(ohlcv.get('close', 0)),
+                        'Volume': int(ohlcv.get('volume', 0)),
+                    }])
+                    df.set_index('Date', inplace=True)
+                    
+                    if df['Close'].iloc[0] > 0:
+                        data[symbol] = df
+                        
+                except Exception as e:
+                    self.logger.debug(f"Error processing tick for {token_str}: {e}")
+                    continue
+            
+            if data:
+                output_path = self.get_intraday_pkl_path()
+                with open(output_path, 'wb') as f:
+                    pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+                
+                file_size = os.path.getsize(output_path) / (1024 * 1024)
+                self.logger.info(f"Converted {len(data)} instruments from ticks.json to {output_path} ({file_size:.2f} MB)")
+                
+                # Also create dated copy
+                today_suffix = datetime.now(KOLKATA_TZ).strftime('%d%m%Y')
+                dated_path = os.path.join(self.data_dir, f"intraday_stock_data_{today_suffix}.pkl")
+                with open(dated_path, 'wb') as f:
+                    pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+                self.logger.info(f"Also saved as: {dated_path}")
+                
+                return True, output_path
+            else:
+                self.logger.warning("No valid data in ticks.json to convert")
+                return False, None
+                
+        except Exception as e:
+            self.logger.error(f"Error converting ticks.json to pkl: {e}")
+            return False, None
+    
     def load_pkl_into_candle_store(self, pkl_path: str, candle_store, interval: str = 'day') -> int:
         """
         Load pkl file data into InMemoryCandleStore.
