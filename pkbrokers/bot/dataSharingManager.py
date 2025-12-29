@@ -911,7 +911,9 @@ class DataSharingManager:
     
     def commit_pkl_files(self, branch_name: str = "actions-data-download") -> bool:
         """
-        Commit pkl files to GitHub repository.
+        Commit pkl files to PKScreener's GitHub repository (actions-data-download branch).
+        
+        Uses GitHub API to commit across repositories.
         
         Args:
             branch_name: Branch to commit to
@@ -920,60 +922,96 @@ class DataSharingManager:
             True if commit was successful
         """
         try:
-            from PKDevTools.classes.Committer import Committer
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+            import base64
+            import requests
+            
+            # Get GitHub token
+            github_token = os.environ.get('CI_PAT') or os.environ.get('GITHUB_TOKEN')
+            if not github_token:
+                self.logger.warning("No GitHub token found, cannot commit pkl files")
+                return False
             
             files_to_commit = []
+            today_suffix = datetime.now(KOLKATA_TZ).strftime('%d%m%Y')
             
             # Check for daily pkl
             daily_pkl = self.get_daily_pkl_path()
             if os.path.exists(daily_pkl):
-                files_to_commit.append(daily_pkl)
+                files_to_commit.append((daily_pkl, f"actions-data-download/stock_data_{today_suffix}.pkl"))
+                files_to_commit.append((daily_pkl, "actions-data-download/daily_candles.pkl"))
             
             # Check for intraday pkl
             intraday_pkl = self.get_intraday_pkl_path()
             if os.path.exists(intraday_pkl):
-                files_to_commit.append(intraday_pkl)
+                files_to_commit.append((intraday_pkl, f"actions-data-download/intraday_stock_data_{today_suffix}.pkl"))
+                files_to_commit.append((intraday_pkl, "actions-data-download/intraday_1m_candles.pkl"))
             
-            # Check for ticks.json
-            ticks_json = os.path.join(self.data_dir, "ticks.json")
-            if os.path.exists(ticks_json):
-                files_to_commit.append(ticks_json)
-            
-            # Also check for date-suffixed pkl files
-            today_suffix = datetime.now(KOLKATA_TZ).strftime('%d%m%Y')
+            # Check for date-suffixed pkl files
             dated_daily = os.path.join(self.data_dir, f"stock_data_{today_suffix}.pkl")
-            if os.path.exists(dated_daily) and dated_daily not in files_to_commit:
-                files_to_commit.append(dated_daily)
+            if os.path.exists(dated_daily) and dated_daily != daily_pkl:
+                files_to_commit.append((dated_daily, f"actions-data-download/stock_data_{today_suffix}.pkl"))
             
             dated_intraday = os.path.join(self.data_dir, f"intraday_stock_data_{today_suffix}.pkl")
-            if os.path.exists(dated_intraday) and dated_intraday not in files_to_commit:
-                files_to_commit.append(dated_intraday)
+            if os.path.exists(dated_intraday) and dated_intraday != intraday_pkl:
+                files_to_commit.append((dated_intraday, f"actions-data-download/intraday_stock_data_{today_suffix}.pkl"))
             
             if not files_to_commit:
-                self.logger.warning("No pkl/json files to commit")
+                self.logger.warning("No pkl files to commit")
                 return False
             
-            for file_path in files_to_commit:
-                try:
-                    Committer.execOSCommand(f"git add {file_path} -f >/dev/null 2>&1")
-                    commit_path = f"-A '{file_path}'"
-                    
-                    self.logger.info(f"Committing {os.path.basename(file_path)} to {branch_name}")
-                    
-                    Committer.commitTempOutcomes(
-                        addPath=commit_path,
-                        commitMessage=f"[{os.path.basename(file_path)}-{PKDateUtilities.currentDateTime()}]",
-                        branchName=branch_name,
-                        showStatus=True,
-                        timeout=900,
-                    )
-                except Exception as e:
-                    self.logger.error(f"Error committing {file_path}: {e}")
+            # Use GitHub API to commit to PKScreener repo
+            headers = {
+                "Authorization": f"token {github_token}",
+                "Accept": "application/vnd.github.v3+json"
+            }
             
-            self.last_commit_time = datetime.now(KOLKATA_TZ)
-            self.logger.info("Pkl files committed successfully")
-            return True
+            repo = "pkjmesra/PKScreener"
+            api_base = f"https://api.github.com/repos/{repo}"
+            
+            committed_files = []
+            for local_path, remote_path in files_to_commit:
+                try:
+                    # Read file content
+                    with open(local_path, 'rb') as f:
+                        content = base64.b64encode(f.read()).decode('utf-8')
+                    
+                    # Get current file SHA (if exists)
+                    sha = None
+                    get_url = f"{api_base}/contents/{remote_path}?ref={branch_name}"
+                    resp = requests.get(get_url, headers=headers)
+                    if resp.status_code == 200:
+                        sha = resp.json().get('sha')
+                    
+                    # Create/update file
+                    put_url = f"{api_base}/contents/{remote_path}"
+                    commit_msg = f"Update {os.path.basename(remote_path)} - {PKDateUtilities.currentDateTime()}"
+                    
+                    data = {
+                        "message": commit_msg,
+                        "content": content,
+                        "branch": branch_name
+                    }
+                    if sha:
+                        data["sha"] = sha
+                    
+                    resp = requests.put(put_url, headers=headers, json=data)
+                    
+                    if resp.status_code in [200, 201]:
+                        self.logger.info(f"✅ Committed {remote_path} to PKScreener/{branch_name}")
+                        committed_files.append(remote_path)
+                    else:
+                        self.logger.warning(f"Failed to commit {remote_path}: {resp.status_code} {resp.text[:200]}")
+                        
+                except Exception as e:
+                    self.logger.error(f"Error committing {local_path}: {e}")
+            
+            if committed_files:
+                self.last_commit_time = datetime.now(KOLKATA_TZ)
+                self.logger.info(f"Successfully committed {len(committed_files)} files to PKScreener")
+                return True
+            
+            return False
             
         except Exception as e:
             self.logger.error(f"Error committing pkl files: {e}")
