@@ -29,6 +29,7 @@ import logging
 import os
 import signal
 import sys
+import zipfile
 
 try:
     import thread
@@ -41,7 +42,9 @@ from typing import Optional
 
 from PKDevTools.classes.Environment import PKEnvironment
 from telegram import Update
-from telegram.ext import CallbackContext, CommandHandler, Updater
+from telegram.ext import CallbackContext, CommandHandler, MessageHandler, Filters, Updater
+
+from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
 
 MINUTES_2_IN_SECONDS = 120
 OWNER_USER = "Itsonlypk"
@@ -122,6 +125,9 @@ class PKTickBot:
             "/db - Get the most recent local SQLite DB file\n"
             "/test_ticks - Starts ticks for 3 minutes (test mode)\n"
             "/candles - Get aggregated candle data for all timeframes\n"
+            "/daily_pkl - Get daily candles pkl file\n"
+            "/intraday_pkl - Get 1-minute candles pkl file\n"
+            "/request_data - Request all pkl/db files\n"
             "/help - Show this help message\n\n"
             "📦 Files are automatically compressed to reduce size. "
             "If the file is too large, it will be split into multiple parts.\n\n"
@@ -556,6 +562,139 @@ class PKTickBot:
                 logger.error(tb_string)
 
 
+    def send_daily_pkl(self, update: Update, context: CallbackContext) -> None:
+        """Send daily candles pkl file to requesting instance."""
+        if self._shouldAvoidResponse(update):
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
+            return
+        
+        try:
+            data_mgr = get_data_sharing_manager()
+            
+            # First, export current candle data to pkl
+            from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+            candle_store = get_candle_store()
+            
+            success, pkl_path = data_mgr.export_daily_candles_to_pkl(candle_store)
+            
+            if success and pkl_path and os.path.exists(pkl_path):
+                # Zip and send
+                zip_success, zip_path = data_mgr.zip_file(pkl_path)
+                if zip_success and zip_path:
+                    with open(zip_path, 'rb') as f:
+                        update.message.reply_document(
+                            document=f,
+                            filename="daily_candles.pkl.zip",
+                            caption="📊 Daily candles pkl file"
+                        )
+                    os.unlink(zip_path)
+                    self.logger.info("Sent daily pkl to requesting instance")
+                else:
+                    update.message.reply_text("❌ Error zipping daily pkl file")
+            else:
+                update.message.reply_text("❌ No daily candle data available")
+                
+        except Exception as e:
+            self.logger.error(f"Error sending daily pkl: {e}")
+            update.message.reply_text(f"❌ Error: {e}")
+    
+    def send_intraday_pkl(self, update: Update, context: CallbackContext) -> None:
+        """Send 1-minute candles pkl file to requesting instance."""
+        if self._shouldAvoidResponse(update):
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
+            return
+        
+        try:
+            data_mgr = get_data_sharing_manager()
+            
+            # Export current candle data to pkl
+            from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+            candle_store = get_candle_store()
+            
+            success, pkl_path = data_mgr.export_intraday_candles_to_pkl(candle_store)
+            
+            if success and pkl_path and os.path.exists(pkl_path):
+                # Zip and send
+                zip_success, zip_path = data_mgr.zip_file(pkl_path)
+                if zip_success and zip_path:
+                    with open(zip_path, 'rb') as f:
+                        update.message.reply_document(
+                            document=f,
+                            filename="intraday_1m_candles.pkl.zip",
+                            caption="📊 Intraday 1-minute candles pkl file"
+                        )
+                    os.unlink(zip_path)
+                    self.logger.info("Sent intraday pkl to requesting instance")
+                else:
+                    update.message.reply_text("❌ Error zipping intraday pkl file")
+            else:
+                update.message.reply_text("❌ No intraday candle data available")
+                
+        except Exception as e:
+            self.logger.error(f"Error sending intraday pkl: {e}")
+            update.message.reply_text(f"❌ Error: {e}")
+    
+    def request_data(self, update: Update, context: CallbackContext) -> None:
+        """Request all available data (pkl files, db) from this instance."""
+        if self._shouldAvoidResponse(update):
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
+            return
+        
+        try:
+            update.message.reply_text("📤 Sending available data files...")
+            
+            # Send daily pkl
+            self.send_daily_pkl(update, context)
+            
+            # Send intraday pkl
+            self.send_intraday_pkl(update, context)
+            
+            # Send db file
+            self.send_zipped_db(update, context)
+            
+            update.message.reply_text("✅ Data transfer complete!")
+            
+        except Exception as e:
+            self.logger.error(f"Error in request_data: {e}")
+            update.message.reply_text(f"❌ Error: {e}")
+    
+    def handle_document_received(self, update: Update, context: CallbackContext) -> None:
+        """Handle received documents (pkl files from other instances)."""
+        try:
+            if update.message and update.message.document:
+                doc = update.message.document
+                file_name = doc.file_name or ""
+                
+                # Only process pkl files from authorized sources
+                if not self._shouldAvoidResponse(update):
+                    return
+                
+                # Check if it's a pkl file we want
+                if file_name.endswith('.pkl.zip') or file_name.endswith('.pkl'):
+                    self.logger.info(f"Received pkl file: {file_name}")
+                    
+                    # Download the file
+                    file = context.bot.get_file(doc.file_id)
+                    data_mgr = get_data_sharing_manager()
+                    
+                    download_path = os.path.join(data_mgr.data_dir, file_name)
+                    file.download(download_path)
+                    
+                    # Extract if zipped
+                    if file_name.endswith('.zip'):
+                        with zipfile.ZipFile(download_path, 'r') as zf:
+                            zf.extractall(data_mgr.data_dir)
+                        os.unlink(download_path)
+                    
+                    data_mgr.data_received_from_instance = True
+                    self.logger.info(f"Successfully received and extracted {file_name}")
+                    
+        except Exception as e:
+            self.logger.error(f"Error handling received document: {e}")
+
     def send_candles(self, update: Update, context: CallbackContext) -> None:
         """Send aggregated candle data for all timeframes (1m, 5m, 15m, 30m, 60m, daily)"""
         if self._shouldAvoidResponse(update):
@@ -625,6 +764,11 @@ class PKTickBot:
 
             dispatcher.add_handler(CommandHandler("help", self.help_command))
             dispatcher.add_handler(CommandHandler("candles", self.send_candles))
+            dispatcher.add_handler(CommandHandler("daily_pkl", self.send_daily_pkl))
+            dispatcher.add_handler(CommandHandler("intraday_pkl", self.send_intraday_pkl))
+            dispatcher.add_handler(CommandHandler("request_data", self.request_data))
+            # Handle received documents (for inter-bot data sharing)
+            dispatcher.add_handler(MessageHandler(Filters.document, self.handle_document_received))
             dispatcher.add_error_handler(self.error_handler)
             self.logger.info("Starting PKTickBot...")
 

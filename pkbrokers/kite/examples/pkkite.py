@@ -438,12 +438,40 @@ def pkkite():
     if args.orchestrate:
         from pkbrokers.bot.orchestrator import orchestrate, orchestrate_consumer
         from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+        from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
         setupLogger()
+        
+        data_mgr = get_data_sharing_manager()
+        
         try:
             # Let's try and get the latest ticks file from an existing running bot.
             orchestrate_consumer(command="/status")
             orchestrate_consumer(command="/ticks")
             commit_ticks(file_name="ticks.json")
+            
+            # Request pkl files from running instance
+            try:
+                default_logger().info("Requesting data files from running instance...")
+                orchestrate_consumer(command="/request_data")
+                
+                # Also request individual pkl files
+                orchestrate_consumer(command="/daily_pkl")
+                orchestrate_consumer(command="/intraday_pkl")
+                
+                data_mgr.data_received_from_instance = True
+                default_logger().info("Received data from running instance")
+            except Exception as pkl_error:
+                default_logger().warning(f"Could not get pkl files from running instance: {pkl_error}")
+                
+                # Try GitHub fallback
+                default_logger().info("Trying GitHub fallback for pkl files...")
+                success_daily, _ = data_mgr.download_from_github(file_type="daily")
+                success_intraday, _ = data_mgr.download_from_github(file_type="intraday")
+                
+                if success_daily or success_intraday:
+                    default_logger().info("Downloaded data from GitHub actions-data-download branch")
+                else:
+                    default_logger().info("No fallback data available, starting fresh")
 
             cur_ist = PKDateUtilities.currentDateTime()
             is_non_market_hour = (

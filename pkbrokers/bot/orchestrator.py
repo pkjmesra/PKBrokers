@@ -439,6 +439,29 @@ class PKTickOrchestrator:
                         self.test_mode = False
                         test_mode_counter = 0
                     last_market_check = current_time
+                    # Check if we should commit pkl files (market close detection)
+                    try:
+                        from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
+                        from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+                        
+                        data_mgr = get_data_sharing_manager()
+                        
+                        if data_mgr.should_commit():
+                            logger.info("Market close detected - committing pkl files")
+                            candle_store = get_candle_store()
+                            
+                            # Export and commit daily pkl
+                            data_mgr.export_daily_candles_to_pkl(candle_store)
+                            
+                            # Export and commit intraday pkl
+                            data_mgr.export_intraday_candles_to_pkl(candle_store)
+                            
+                            # Commit to GitHub
+                            data_mgr.commit_pkl_files()
+                            
+                    except Exception as commit_e:
+                        logger.debug(f"Pkl commit check: {commit_e}")
+                    
                     # If it's around 7:30AM IST, let's re-generate the kite token once a day each morning
                     # https://kite.trade/forum/discussion/7759/access-token-validity
                     from PKDevTools.classes.Environment import PKEnvironment
@@ -520,6 +543,38 @@ class PKTickOrchestrator:
 def orchestrate():
     # Initialize with None values, they will be set from environment when needed
     orchestrator = PKTickOrchestrator(None, None, None, None)
+    
+    # Try to get data from running instance before starting
+    logger = orchestrator._get_logger()
+    logger.info("Attempting to request data from running PKTickBot instance...")
+    
+    try:
+        from pkbrokers.bot.consumer import try_get_command_response_from_bot
+        from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
+        
+        data_mgr = get_data_sharing_manager()
+        
+        # Request data from running instance
+        response = try_get_command_response_from_bot(command="/request_data")
+        
+        if response.get("success"):
+            logger.info("Successfully received data from running instance")
+            data_mgr.data_received_from_instance = True
+        else:
+            logger.info("No running instance or no data received, will try GitHub fallback")
+            
+            # Try GitHub fallback
+            success_daily, _ = data_mgr.download_from_github(file_type="daily")
+            success_intraday, _ = data_mgr.download_from_github(file_type="intraday")
+            
+            if success_daily or success_intraday:
+                logger.info("Downloaded data from GitHub actions-data-download branch")
+            else:
+                logger.info("No fallback data available, starting fresh")
+                
+    except Exception as e:
+        logger.warning(f"Could not get data from running instance or GitHub: {e}")
+    
     orchestrator.run()
 
 
