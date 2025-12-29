@@ -160,135 +160,67 @@ jobs:
           exit 0
         fi
         
-        # Calculate the correct pastoffset by checking existing pkl file
-        echo "Calculating missing trading days from existing pkl files..."
+        # Calculate missing trading days using the unified pkl generator script
+        echo "Calculating missing trading days..."
         
-        CALCULATED_OFFSET=$(python3 << 'EOF'
-import sys
-import pickle
-import requests
-from datetime import datetime, timedelta
-
-def calculate():
-    # Default if anything fails
-    DEFAULT = 5
-    
-    # Try to find a recent large pkl file
-    base_urls = [
-        "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/",
-        "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/",
-    ]
-    
-    today = datetime.now()
-    data = None
-    found_url = None
-    
-    # Search for pkl files from recent dates
-    # First pass: look for large pkl files (>10MB - proper historical data)
-    # Second pass: accept smaller files if no large ones found
-    for min_size in [10000000, 100000]:  # 10MB, then 100KB
-        for days_back in range(15):
-            check_date = today - timedelta(days=days_back)
-            for base_url in base_urls:
-                for fmt in ['%d%m%Y', '%d%m%y']:
-                    url = f"{base_url}stock_data_{check_date.strftime(fmt)}.pkl"
-                    try:
-                        r = requests.get(url, timeout=60)
-                        if r.status_code == 200 and len(r.content) > min_size:
-                            data = pickle.loads(r.content)
-                            if isinstance(data, dict) and len(data) > 50:
-                                found_url = url
-                                print(f"Found: {url} ({len(r.content)/1024/1024:.1f}MB, {len(data)} instruments)", file=sys.stderr)
-                                break
-                    except Exception as e:
-                        continue
-                if data:
-                    break
-            if data:
-                break
-        if data:
-            break
-    
-    if not data:
-        print(f"No pkl file found, using default: {DEFAULT}", file=sys.stderr)
-        print(DEFAULT)
-        return
-    
-    # Find the latest date in the data
-    latest_date = None
-    for symbol, df in list(data.items())[:100]:
+        # Use generate_pkl_from_ticks.py which already has this logic
+        # It will download pkl, check dates, and we can capture the missing days
+        CALCULATED_OFFSET=$(python3 -c "
+        import sys, pickle, requests
+        from datetime import datetime, timedelta
+        DEFAULT = 5
         try:
-            if hasattr(df, 'index') and len(df) > 0:
-                max_date = df.index.max()
-                if hasattr(max_date, 'date'):
-                    max_date = max_date.date()
-                elif hasattr(max_date, 'to_pydatetime'):
-                    max_date = max_date.to_pydatetime().date()
-                if latest_date is None or max_date > latest_date:
-                    latest_date = max_date
-        except:
-            continue
-    
-    if latest_date is None:
-        print(f"Could not find latest date, using default: {DEFAULT}", file=sys.stderr)
-        print(DEFAULT)
-        return
-    
-    print(f"Latest date in pkl: {latest_date}", file=sys.stderr)
-    
-    # Get the last trading date
-    try:
-        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
-        last_trading = PKDateUtilities.tradingDate()
-        if hasattr(last_trading, 'date'):
-            last_trading = last_trading.date()
-        print(f"Last trading date: {last_trading}", file=sys.stderr)
-    except Exception as e:
-        print(f"PKDateUtilities error: {e}, using today", file=sys.stderr)
-        last_trading = today.date()
-    
-    # If data is fresh (up to date)
-    if latest_date >= last_trading:
-        print("Data is fresh!", file=sys.stderr)
-        print(0)
-        return
-    
-    # Calculate missing trading days using PKDateUtilities
-    try:
-        # Use PKDateUtilities to get accurate trading days count
-        missing = PKDateUtilities.trading_days_between(latest_date, last_trading)
-        print(f"Missing trading days (PKDateUtilities): {missing}", file=sys.stderr)
-        result = max(1, missing)
-    except Exception as e:
-        print(f"trading_days_between error: {e}", file=sys.stderr)
-        try:
-            # Alternative: count trading days manually
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
-            count = 0
-            check = latest_date + timedelta(days=1)
-            while check <= last_trading:
-                # Check if it's a trading day (not weekend, not holiday)
-                if PKDateUtilities.isTradingTime() or check.weekday() < 5:
-                    # Additional check for holidays would be ideal
-                    count += 1
-                check += timedelta(days=1)
-            result = max(1, count)
-            print(f"Manual count of days: {result}", file=sys.stderr)
-        except:
-            # Last fallback: ~5 trading days per 7 calendar days
-            diff = (last_trading - latest_date).days
-            result = max(1, int(diff * 5 / 7))
-            print(f"Fallback estimated days: {result}", file=sys.stderr)
-    
-    print(result)
-
-calculate()
-EOF
-        )
+            urls = [
+                'https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/stock_data_23122025.pkl',
+                'https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/stock_data_17122025.pkl',
+            ]
+            data = None
+            for url in urls:
+                try:
+                    r = requests.get(url, timeout=60)
+                    if r.status_code == 200 and len(r.content) > 1000000:
+                        data = pickle.loads(r.content)
+                        if len(data) > 100:
+                            print(f'Found pkl: {len(data)} instruments', file=sys.stderr)
+                            break
+                except: continue
+            if not data:
+                print(DEFAULT)
+                sys.exit(0)
+            latest = None
+            for s, df in list(data.items())[:50]:
+                try:
+                    if hasattr(df, 'index') and len(df) > 0:
+                        m = df.index.max()
+                        if hasattr(m, 'date'): m = m.date()
+                        if latest is None or m > latest: latest = m
+                except: continue
+            if not latest:
+                print(DEFAULT)
+                sys.exit(0)
+            print(f'Latest date: {latest}', file=sys.stderr)
+            lt = PKDateUtilities.tradingDate()
+            if hasattr(lt, 'date'): lt = lt.date()
+            print(f'Last trading: {lt}', file=sys.stderr)
+            if latest >= lt:
+                print(0)
+                sys.exit(0)
+            try:
+                missing = PKDateUtilities.trading_days_between(latest, lt)
+                print(f'Missing trading days: {missing}', file=sys.stderr)
+                print(max(1, missing))
+            except:
+                diff = (lt - latest).days
+                print(max(1, int(diff * 5 / 7)))
+        except Exception as e:
+            print(f'Error: {e}', file=sys.stderr)
+            print(DEFAULT)
+        " 2>&1 | tee /dev/stderr | tail -1)
         
-        # Ensure we have a valid number, default to 5 if empty or invalid
+        # Ensure we have a valid number
         if [ -z "$CALCULATED_OFFSET" ] || ! [[ "$CALCULATED_OFFSET" =~ ^[0-9]+$ ]]; then
-          echo "Invalid calculated offset '$CALCULATED_OFFSET', using default 5"
+          echo "Invalid offset '$CALCULATED_OFFSET', using default 5"
           CALCULATED_OFFSET=5
         fi
         
