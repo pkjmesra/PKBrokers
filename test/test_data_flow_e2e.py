@@ -238,7 +238,7 @@ class TestTickBot:
         assert hasattr(bot, 'send_intraday_pkl')
         assert hasattr(bot, 'request_data')
         assert hasattr(bot, 'handle_document_received')
-        assert hasattr(bot, 'send_ticks')
+        assert hasattr(bot, 'send_zipped_json')  # ticks command handler
 
 
 class TestHistoricalDataMerge:
