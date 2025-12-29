@@ -353,35 +353,79 @@ jobs:
           fi
         done
         
-        # Intraday pkl files
+        # Intraday pkl files - try to generate from ticks.json if not present
+        INTRADAY_FOUND=0
         for PKL_FILE in ../pkbrokers/kite/examples/results/Data/intraday_stock_data_*.pkl ../pkbrokers/kite/examples/results/Data/intraday_1m_candles.pkl; do
           if [ -f "$PKL_FILE" ]; then
             PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
-            if [ "$PKL_SIZE" -gt 1000 ]; then
-              echo "✅ Found: $PKL_FILE ($PKL_SIZE bytes)"
+            if [ "$PKL_SIZE" -gt 10000 ]; then
+              echo "✅ Found intraday: $PKL_FILE ($PKL_SIZE bytes)"
               cp "$PKL_FILE" actions-data-download/intraday_stock_data_${TODAY}.pkl
               cp "$PKL_FILE" actions-data-download/intraday_1m_candles.pkl
               FILES_COPIED=$((FILES_COPIED + 1))
+              INTRADAY_FOUND=1
               break
             fi
           fi
         done
         
-        # Copy any database files
-        cp ../pkbrokers/kite/examples/results/Data/*.db actions-data-download/ 2>/dev/null || true
+        # If no intraday pkl, try to generate from ticks.json
+        if [ "$INTRADAY_FOUND" -eq 0 ]; then
+          echo "No intraday pkl found, trying to generate from ticks.json..."
+          cd ../pkbrokers/kite/examples/
+          python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py --data-dir results/Data --verbose 2>/dev/null || true
+          cd -
+          
+          # Check again for intraday pkl
+          for PKL_FILE in ../pkbrokers/kite/examples/results/Data/intraday_stock_data_*.pkl ../pkbrokers/kite/examples/results/Data/intraday_1m_candles.pkl; do
+            if [ -f "$PKL_FILE" ]; then
+              PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
+              if [ "$PKL_SIZE" -gt 10000 ]; then
+                echo "✅ Generated intraday: $PKL_FILE ($PKL_SIZE bytes)"
+                cp "$PKL_FILE" actions-data-download/intraday_stock_data_${TODAY}.pkl
+                cp "$PKL_FILE" actions-data-download/intraday_1m_candles.pkl
+                FILES_COPIED=$((FILES_COPIED + 1))
+                break
+              fi
+            fi
+          done
+        fi
+        
+        # DO NOT copy .db files - they are too large for GitHub (>100MB limit)
+        # The database is only used locally for generating pkl files
+        echo "Note: SQLite .db files are not committed (too large for GitHub)"
         
         echo "Total files copied: $FILES_COPIED"
         
         # Commit and push
         git config user.name "github-actions[bot]"
         git config user.email "actions@github.com"
-        # Use -f to force add files that may be in .gitignore
-        git add -f actions-data-download/ 2>/dev/null || true
+        
+        # Remove any .db files that may have been accidentally copied (too large for GitHub)
+        rm -f actions-data-download/*.db 2>/dev/null || true
+        
+        # Only add pkl and json files (no .db files - they exceed GitHub's 100MB limit)
+        git add -f actions-data-download/*.pkl 2>/dev/null || true
+        git add -f actions-data-download/*.json 2>/dev/null || true
+        
+        # Show what's staged
+        echo "Files to be committed:"
+        git diff --staged --name-only
         
         if ! git diff --staged --quiet; then
           git commit -m "Update pkl files from history download - $TODAY [period: ${{ inputs.period }}]"
-          git push
-          echo "✅ Successfully committed updated pkl files to PKScreener actions-data-download"
+          
+          # Retry push with rebase if needed
+          for i in 1 2 3; do
+            if git push; then
+              echo "✅ Successfully committed updated pkl files to PKScreener actions-data-download"
+              break
+            else
+              echo "Push failed, attempt $i, pulling and retrying..."
+              git pull --rebase origin actions-data-download || true
+              sleep 2
+            fi
+          done
         else
           echo "No changes to commit"
         fi

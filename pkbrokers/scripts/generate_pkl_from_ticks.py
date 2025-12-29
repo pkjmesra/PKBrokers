@@ -303,13 +303,23 @@ def load_from_sqlite(db_path: str, verbose: bool = True) -> Dict:
             # Try to get symbol mapping from PKBrokers
             sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
             from pkbrokers.kite.instruments import KiteInstruments
-            instruments = KiteInstruments()
+            from PKDevTools.classes.Environment import PKEnvironment
+            
+            # Initialize with required arguments
+            env = PKEnvironment()
+            instruments = KiteInstruments(
+                api_key="kitefront",
+                access_token=env.KTOKEN or "",
+                local=True  # Use local mode to avoid Turso issues
+            )
             for inst in instruments.get_or_fetch_instrument_tokens(all_columns=True):
                 if isinstance(inst, dict):
                     token_to_symbol[inst.get('instrument_token')] = inst.get('tradingsymbol', str(inst.get('instrument_token')))
             log(f"Loaded {len(token_to_symbol)} symbol mappings", verbose)
         except Exception as e:
             log(f"Could not load symbol mapping: {e}", verbose)
+            # Fall back to using instrument tokens as symbols
+            log("Using instrument tokens as symbol names", verbose)
         
         # Convert to pkl format
         for token, group in df.groupby('instrument_token'):
