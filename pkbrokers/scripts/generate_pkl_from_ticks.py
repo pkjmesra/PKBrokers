@@ -37,8 +37,77 @@ def log(msg: str, verbose: bool = True):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
 
-def download_historical_pkl(verbose: bool = True) -> Optional[Dict]:
-    """Download the most recent historical pkl from GitHub."""
+def get_last_trading_date(verbose: bool = True):
+    """Get the last trading date using PKDateUtilities."""
+    try:
+        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+        last_trading = PKDateUtilities.tradingDate()
+        if hasattr(last_trading, 'date'):
+            return last_trading.date()
+        return last_trading
+    except Exception as e:
+        log(f"⚠️ Could not get last trading date: {e}", verbose)
+        return datetime.now().date()
+
+
+def calculate_missing_trading_days(data: Dict, verbose: bool = True) -> int:
+    """Calculate how many trading days are missing from the pkl data."""
+    try:
+        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+        
+        if not data:
+            return 10  # Default to 10 days if no data
+        
+        # Find the latest date in the data
+        latest_date = None
+        for symbol, df in list(data.items())[:50]:  # Sample first 50 symbols
+            try:
+                if hasattr(df, 'index') and len(df) > 0:
+                    symbol_max = df.index.max()
+                    if hasattr(symbol_max, 'date'):
+                        symbol_max = symbol_max.date()
+                    elif isinstance(symbol_max, str):
+                        symbol_max = pd.to_datetime(symbol_max).date()
+                    
+                    if latest_date is None or symbol_max > latest_date:
+                        latest_date = symbol_max
+            except:
+                continue
+        
+        if latest_date is None:
+            log("⚠️ Could not determine latest date from pkl data", verbose)
+            return 5  # Default
+        
+        # Get last trading date
+        last_trading_date = get_last_trading_date(verbose)
+        
+        if latest_date >= last_trading_date:
+            log(f"✅ Data is fresh: latest={latest_date}, last_trading={last_trading_date}", verbose)
+            return 0
+        
+        # Calculate missing trading days
+        try:
+            missing_days = PKDateUtilities.trading_days_between(latest_date, last_trading_date)
+            log(f"📅 Data is stale: latest={latest_date}, last_trading={last_trading_date}, missing={missing_days} trading days", verbose)
+            return missing_days
+        except:
+            # Fallback: simple calendar day difference
+            diff = (last_trading_date - latest_date).days
+            missing_days = max(1, diff // 2)  # Rough estimate: ~half are trading days
+            log(f"📅 Data is stale: latest={latest_date}, missing ~{missing_days} trading days (estimated)", verbose)
+            return missing_days
+            
+    except Exception as e:
+        log(f"⚠️ Error calculating missing days: {e}", verbose)
+        return 5  # Default
+
+
+def download_historical_pkl(verbose: bool = True) -> Tuple[Optional[Dict], int]:
+    """Download the most recent historical pkl from GitHub.
+    
+    Returns:
+        Tuple of (data_dict, missing_trading_days)
+    """
     
     # Try multiple locations and date formats
     base_urls = [
@@ -49,7 +118,7 @@ def download_historical_pkl(verbose: bool = True) -> Optional[Dict]:
     # Try last 10 days
     today = datetime.now()
     for days_back in range(10):
-        check_date = today - pd.Timedelta(days=days_back)
+        check_date = today - timedelta(days=days_back)
         
         # Try different date formats
         date_formats = [
@@ -68,12 +137,15 @@ def download_historical_pkl(verbose: bool = True) -> Optional[Dict]:
                         data = pickle.loads(response.content)
                         if isinstance(data, dict) and len(data) > 100:
                             log(f"✅ Downloaded historical pkl: {len(data)} instruments, {len(response.content)/1024/1024:.1f} MB", verbose)
-                            return data
+                            
+                            # Calculate missing trading days
+                            missing_days = calculate_missing_trading_days(data, verbose)
+                            return data, missing_days
                 except Exception as e:
                     continue
     
     log("❌ Could not download historical pkl from GitHub", verbose)
-    return None
+    return None, 0
 
 
 def download_ticks_json(verbose: bool = True) -> Optional[Dict]:
@@ -345,6 +417,53 @@ def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
     return merged
 
 
+def trigger_history_download(missing_days: int, verbose: bool = True) -> bool:
+    """Trigger the history download workflow via GitHub API.
+    
+    Args:
+        missing_days: Number of trading days to fetch
+        verbose: Whether to log progress
+        
+    Returns:
+        True if workflow was triggered successfully
+    """
+    try:
+        ci_pat = os.environ.get('CI_PAT') or os.environ.get('GITHUB_TOKEN')
+        if not ci_pat:
+            log("⚠️ No CI_PAT or GITHUB_TOKEN available to trigger workflow", verbose)
+            return False
+        
+        url = "https://api.github.com/repos/pkjmesra/PKBrokers/actions/workflows/w1-workflow-history-data-child.yml/dispatches"
+        
+        headers = {
+            "Authorization": f"token {ci_pat}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        payload = {
+            "ref": "main",
+            "inputs": {
+                "period": "day",
+                "pastoffset": str(missing_days),
+                "logLevel": "20"
+            }
+        }
+        
+        log(f"🚀 Triggering history download workflow with pastoffset={missing_days}...", verbose)
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        
+        if response.status_code == 204:
+            log("✅ History download workflow triggered successfully", verbose)
+            return True
+        else:
+            log(f"⚠️ Failed to trigger workflow: {response.status_code} - {response.text}", verbose)
+            return False
+            
+    except Exception as e:
+        log(f"⚠️ Error triggering history workflow: {e}", verbose)
+        return False
+
+
 def save_pkl_files(data: Dict, data_dir: str, verbose: bool = True) -> Tuple[str, str]:
     """Save pkl files with both generic and dated names."""
     
@@ -395,6 +514,7 @@ def main():
     parser.add_argument("--data-dir", default="results/Data", help="Output directory for pkl files")
     parser.add_argument("--from-db", action="store_true", help="Load data from SQLite database instead of ticks.json")
     parser.add_argument("--db-path", default=None, help="Path to SQLite database (auto-detected if not specified)")
+    parser.add_argument("--trigger-history", action="store_true", help="Trigger history download workflow if data is stale")
     parser.add_argument("--verbose", "-v", action="store_true", default=True, help="Verbose output")
     args = parser.parse_args()
     
@@ -410,12 +530,23 @@ def main():
     
     # Step 1: Always download historical pkl first (this is our base)
     log("\n[Step 1] Downloading historical pkl from GitHub...", verbose)
-    historical_data = download_historical_pkl(verbose)
+    historical_data, missing_trading_days = download_historical_pkl(verbose)
     
     if historical_data:
         log(f"Historical data: {len(historical_data)} instruments", verbose)
+        if missing_trading_days > 0:
+            log(f"⚠️ Historical data is missing {missing_trading_days} trading days", verbose)
+            
+            # Trigger history download workflow if requested
+            if args.trigger_history:
+                trigger_history_download(missing_trading_days, verbose)
     else:
         log("⚠️ No historical pkl found on GitHub", verbose)
+        missing_trading_days = 0
+        
+        # If no historical data and trigger is enabled, fetch last 10 days
+        if args.trigger_history:
+            trigger_history_download(10, verbose)
     
     # Step 2: Load new data based on mode
     log("\n[Step 2] Loading new data...", verbose)

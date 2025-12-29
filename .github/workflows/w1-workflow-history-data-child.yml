@@ -144,11 +144,157 @@ jobs:
         echo ${{ env.TEL_SESSION_DATA }} | base64 -d > user_session.session
         chmod 600 user_session.session
 
+    - name: Calculate missing trading days
+      id: calc_offset
+      if: inputs.period == 'day'
+      run: |
+        cd pkbrokers/kite/examples/
+        mkdir -p results/Data
+        
+        # Calculate the correct pastoffset by checking existing pkl file
+        PAST_OFFSET=${{ inputs.pastoffset || 0 }}
+        
+        python3 << 'CALC_SCRIPT'
+        import os
+        import sys
+        import pickle
+        import requests
+        from datetime import datetime, timedelta
+        import pandas as pd
+        
+        def get_missing_days():
+            """Calculate missing trading days from the latest pkl file."""
+            try:
+                from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+                
+                # Try to download existing pkl from GitHub
+                base_urls = [
+                    "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/",
+                    "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/",
+                ]
+                
+                today = datetime.now()
+                data = None
+                
+                for days_back in range(10):
+                    check_date = today - timedelta(days=days_back)
+                    for base_url in base_urls:
+                        for fmt in ['%d%m%Y', '%d%m%y']:
+                            url = f"{base_url}stock_data_{check_date.strftime(fmt)}.pkl"
+                            try:
+                                response = requests.get(url, timeout=30)
+                                if response.status_code == 200 and len(response.content) > 1000000:
+                                    data = pickle.loads(response.content)
+                                    if isinstance(data, dict) and len(data) > 100:
+                                        print(f"Found pkl with {len(data)} instruments", file=sys.stderr)
+                                        break
+                            except:
+                                continue
+                        if data:
+                            break
+                    if data:
+                        break
+                
+                if not data:
+                    print("5")  # Default to 5 days if no pkl found
+                    return
+                
+                # Find latest date in data
+                latest_date = None
+                for symbol, df in list(data.items())[:50]:
+                    try:
+                        if hasattr(df, 'index') and len(df) > 0:
+                            max_date = df.index.max()
+                            if hasattr(max_date, 'date'):
+                                max_date = max_date.date()
+                            if latest_date is None or max_date > latest_date:
+                                latest_date = max_date
+                    except:
+                        continue
+                
+                if latest_date is None:
+                    print("5")
+                    return
+                
+                # Get last trading date
+                last_trading = PKDateUtilities.tradingDate()
+                if hasattr(last_trading, 'date'):
+                    last_trading = last_trading.date()
+                
+                if latest_date >= last_trading:
+                    print("0")  # Data is fresh
+                    return
+                
+                # Calculate missing days
+                try:
+                    missing = PKDateUtilities.trading_days_between(latest_date, last_trading)
+                    print(str(max(1, missing)))
+                except:
+                    diff = (last_trading - latest_date).days
+                    print(str(max(1, diff // 2)))
+                    
+            except Exception as e:
+                print(f"Error: {e}", file=sys.stderr)
+                print("5")  # Default
+        
+        get_missing_days()
+        CALC_SCRIPT
+        
+        CALCULATED_OFFSET=$(python3 -c "
+        import os, sys, pickle, requests
+        from datetime import datetime, timedelta
+        try:
+            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+            today = datetime.now()
+            data = None
+            for days_back in range(10):
+                check_date = today - timedelta(days=days_back)
+                for base_url in ['https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/', 'https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/']:
+                    for fmt in ['%d%m%Y', '%d%m%y']:
+                        try:
+                            r = requests.get(f'{base_url}stock_data_{check_date.strftime(fmt)}.pkl', timeout=30)
+                            if r.status_code == 200 and len(r.content) > 1000000:
+                                data = pickle.loads(r.content)
+                                if len(data) > 100: break
+                        except: continue
+                    if data: break
+                if data: break
+            if not data: print(5); sys.exit(0)
+            latest = None
+            for s, df in list(data.items())[:50]:
+                try:
+                    if hasattr(df, 'index') and len(df) > 0:
+                        m = df.index.max()
+                        if hasattr(m, 'date'): m = m.date()
+                        if latest is None or m > latest: latest = m
+                except: continue
+            if not latest: print(5); sys.exit(0)
+            lt = PKDateUtilities.tradingDate()
+            if hasattr(lt, 'date'): lt = lt.date()
+            if latest >= lt: print(0); sys.exit(0)
+            try: print(max(1, PKDateUtilities.trading_days_between(latest, lt)))
+            except: print(max(1, (lt - latest).days // 2))
+        except Exception as e: print(5)
+        ")
+        
+        # Use calculated offset if input is 0
+        if [ "$PAST_OFFSET" -eq 0 ]; then
+          PAST_OFFSET=$CALCULATED_OFFSET
+        fi
+        
+        echo "Calculated pastoffset: $PAST_OFFSET"
+        echo "PAST_OFFSET=$PAST_OFFSET" >> $GITHUB_OUTPUT
+
     - name: Run historical data for ${{ inputs.period }}
       run: |
         cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
-        python pkkite.py --history=${{ inputs.period }} --pastoffset=${{ inputs.pastoffset || 0}} --verbose
+        
+        # Use calculated offset from previous step if available
+        OFFSET=${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 0 }}
+        echo "Running pkkite with --history=${{ inputs.period }} --pastoffset=$OFFSET"
+        
+        python pkkite.py --history=${{ inputs.period }} --pastoffset=$OFFSET --verbose
 
     - name: Export database to pkl files using unified generator
       if: inputs.period == 'day'
