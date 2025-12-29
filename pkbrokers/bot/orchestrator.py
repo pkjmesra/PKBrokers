@@ -570,6 +570,31 @@ def orchestrate():
             if success_daily or success_intraday:
                 logger.info("Downloaded data from GitHub actions-data-download branch")
                 
+                # Copy downloaded pkl files to results/Data for workflow to commit
+                # This ensures the data is available even if candle store loading fails
+                import shutil
+                from datetime import datetime
+                results_dir = os.path.join(os.getcwd(), "results", "Data")
+                os.makedirs(results_dir, exist_ok=True)
+                
+                today_suffix = datetime.now().strftime('%d%m%Y')
+                
+                if success_daily and daily_path and os.path.exists(daily_path):
+                    # Copy as date-specific file
+                    dest_daily = os.path.join(results_dir, f"stock_data_{today_suffix}.pkl")
+                    shutil.copy(daily_path, dest_daily)
+                    logger.info(f"Copied daily pkl to: {dest_daily}")
+                    
+                    # Also copy as generic name
+                    shutil.copy(daily_path, os.path.join(results_dir, "daily_candles.pkl"))
+                
+                if success_intraday and intraday_path and os.path.exists(intraday_path):
+                    dest_intraday = os.path.join(results_dir, f"intraday_stock_data_{today_suffix}.pkl")
+                    shutil.copy(intraday_path, dest_intraday)
+                    logger.info(f"Copied intraday pkl to: {dest_intraday}")
+                    
+                    shutil.copy(intraday_path, os.path.join(results_dir, "intraday_1m_candles.pkl"))
+                
                 # Load the downloaded pkl data into the candle store
                 try:
                     from pkbrokers.kite.inMemoryCandleStore import get_candle_store
