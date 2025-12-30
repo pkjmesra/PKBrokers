@@ -382,58 +382,102 @@ def load_from_sqlite(db_path: str, verbose: bool = True) -> Dict:
         
         # Check available tables
         tables_df = pd.read_sql_query("SELECT name FROM sqlite_master WHERE type='table'", conn)
-        log(f"Tables in database: {tables_df['name'].tolist()}", verbose)
+        table_list = tables_df['name'].tolist()
+        log(f"Tables in database: {table_list}", verbose)
         
-        # Try different table names
         df = pd.DataFrame()
-        for table_name in ['instrument_history', 'history', 'candles', 'daily_candles']:
+        has_instruments_table = 'instruments' in table_list
+        
+        # Try to JOIN with instruments table to get tradingsymbols directly
+        if has_instruments_table and 'instrument_history' in table_list:
             try:
-                query = f"""
-                SELECT instrument_token, timestamp, open, high, low, close, volume
-                FROM {table_name}
-                WHERE interval = 'day' OR interval IS NULL
-                ORDER BY instrument_token, timestamp
+                query = """
+                SELECT ih.instrument_token, ih.timestamp, ih.open, ih.high, ih.low, ih.close, ih.volume,
+                       i.tradingsymbol
+                FROM instrument_history ih
+                JOIN instruments i ON ih.instrument_token = i.instrument_token
+                WHERE ih.interval = 'day' OR ih.interval IS NULL
+                ORDER BY ih.instrument_token, ih.timestamp
                 """
                 df = pd.read_sql_query(query, conn)
                 if len(df) > 0:
-                    log(f"Loaded {len(df)} rows from {table_name}", verbose)
-                    break
+                    log(f"Loaded {len(df)} rows with JOINed tradingsymbols from instrument_history + instruments", verbose)
             except Exception as e:
-                continue
+                log(f"JOIN query failed: {e}, falling back to separate queries", verbose)
+                df = pd.DataFrame()
+        
+        # Fall back to loading instrument_history without JOIN
+        if len(df) == 0:
+            for table_name in ['instrument_history', 'history', 'candles', 'daily_candles']:
+                try:
+                    query = f"""
+                    SELECT instrument_token, timestamp, open, high, low, close, volume
+                    FROM {table_name}
+                    WHERE interval = 'day' OR interval IS NULL
+                    ORDER BY instrument_token, timestamp
+                    """
+                    df = pd.read_sql_query(query, conn)
+                    if len(df) > 0:
+                        log(f"Loaded {len(df)} rows from {table_name}", verbose)
+                        break
+                except Exception as e:
+                    continue
         
         if len(df) == 0:
             log("No data found in database tables", verbose)
             conn.close()
             return candles
         
-        # Load symbol mapping
+        # Check if we have tradingsymbol column from JOIN
+        has_tradingsymbol = 'tradingsymbol' in df.columns
+        
+        # If no tradingsymbol from JOIN, try to load symbol mapping from instruments table
         token_to_symbol = {}
-        try:
-            # Try to get symbol mapping from PKBrokers
-            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-            from pkbrokers.kite.instruments import KiteInstruments
-            from PKDevTools.classes.Environment import PKEnvironment
-            
-            # Initialize with required arguments
-            env = PKEnvironment()
-            instruments = KiteInstruments(
-                api_key="kitefront",
-                access_token=env.KTOKEN or "",
-                local=True  # Use local mode to avoid Turso issues
-            )
-            for inst in instruments.get_or_fetch_instrument_tokens(all_columns=True):
-                if isinstance(inst, dict):
-                    token_to_symbol[inst.get('instrument_token')] = inst.get('tradingsymbol', str(inst.get('instrument_token')))
-            log(f"Loaded {len(token_to_symbol)} symbol mappings", verbose)
-        except Exception as e:
-            log(f"Could not load symbol mapping: {e}", verbose)
-            # Fall back to using instrument tokens as symbols
-            log("Using instrument tokens as symbol names", verbose)
+        if not has_tradingsymbol and has_instruments_table:
+            try:
+                instruments_df = pd.read_sql_query(
+                    "SELECT instrument_token, tradingsymbol FROM instruments",
+                    conn
+                )
+                for _, row in instruments_df.iterrows():
+                    token_to_symbol[row['instrument_token']] = row['tradingsymbol']
+                log(f"Loaded {len(token_to_symbol)} symbol mappings from instruments table", verbose)
+            except Exception as e:
+                log(f"Could not load from instruments table: {e}", verbose)
+        
+        # If still no symbols, try PKBrokers KiteInstruments
+        if not has_tradingsymbol and len(token_to_symbol) == 0:
+            try:
+                sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+                from pkbrokers.kite.instruments import KiteInstruments
+                from PKDevTools.classes.Environment import PKEnvironment
+                
+                env = PKEnvironment()
+                instruments = KiteInstruments(
+                    api_key="kitefront",
+                    access_token=env.KTOKEN or "",
+                    local=True
+                )
+                for inst in instruments.get_or_fetch_instrument_tokens(all_columns=True):
+                    if isinstance(inst, dict):
+                        token_to_symbol[inst.get('instrument_token')] = inst.get('tradingsymbol', str(inst.get('instrument_token')))
+                log(f"Loaded {len(token_to_symbol)} symbol mappings from KiteInstruments", verbose)
+            except Exception as e:
+                log(f"Could not load symbol mapping from KiteInstruments: {e}", verbose)
+                log("Using instrument tokens as symbol names", verbose)
         
         # Convert to pkl format
         for token, group in df.groupby('instrument_token'):
-            symbol = token_to_symbol.get(token, str(token))
-            group_df = group[['timestamp', 'open', 'high', 'low', 'close', 'volume']].copy()
+            # Get symbol from tradingsymbol column, or from mapping, or use token
+            if has_tradingsymbol:
+                symbol = group['tradingsymbol'].iloc[0]
+                if pd.isna(symbol) or not symbol:
+                    symbol = token_to_symbol.get(token, str(token))
+            else:
+                symbol = token_to_symbol.get(token, str(token))
+            
+            cols_to_use = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            group_df = group[cols_to_use].copy()
             group_df['timestamp'] = pd.to_datetime(group_df['timestamp'])
             group_df.set_index('timestamp', inplace=True)
             group_df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
@@ -732,6 +776,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
 
 
 
