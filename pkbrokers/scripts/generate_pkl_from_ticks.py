@@ -51,19 +51,45 @@ def get_last_trading_date(verbose: bool = True):
 
 
 def calculate_missing_trading_days(data: Dict, verbose: bool = True) -> int:
-    """Calculate how many trading days are missing from the pkl data."""
+    """Calculate how many trading days are missing from the pkl data.
+    
+    Checks the actual date index in the data, not just the filename.
+    """
     try:
         from PKDevTools.classes.PKDateUtilities import PKDateUtilities
         
         if not data:
             return 10  # Default to 10 days if no data
         
-        # Find the latest date in the data
+        # Find the latest date in the data by checking actual index values
         latest_date = None
-        for symbol, df in list(data.items())[:50]:  # Sample first 50 symbols
+        sample_symbols = ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL']
+        
+        # Try known symbols first, then fall back to sampling
+        symbols_to_check = [s for s in sample_symbols if s in data] or list(data.keys())[:50]
+        
+        for symbol in symbols_to_check:
             try:
-                if hasattr(df, 'index') and len(df) > 0:
-                    symbol_max = df.index.max()
+                sym_data = data[symbol]
+                
+                # Handle dict format (with 'data', 'columns', 'index' keys)
+                if isinstance(sym_data, dict) and 'index' in sym_data:
+                    index_values = sym_data['index']
+                    if index_values:
+                        # Get the max date from the index
+                        dates = pd.to_datetime(index_values, format='mixed', errors='coerce')
+                        valid_dates = dates.dropna()
+                        if len(valid_dates) > 0:
+                            symbol_max = valid_dates.max()
+                            if hasattr(symbol_max, 'date'):
+                                symbol_max = symbol_max.date()
+                            if latest_date is None or symbol_max > latest_date:
+                                latest_date = symbol_max
+                                log(f"📊 {symbol}: latest date in data = {latest_date}", verbose)
+                
+                # Handle DataFrame format
+                elif hasattr(sym_data, 'index') and len(sym_data) > 0:
+                    symbol_max = sym_data.index.max()
                     if hasattr(symbol_max, 'date'):
                         symbol_max = symbol_max.date()
                     elif isinstance(symbol_max, str):
@@ -71,7 +97,9 @@ def calculate_missing_trading_days(data: Dict, verbose: bool = True) -> int:
                     
                     if latest_date is None or symbol_max > latest_date:
                         latest_date = symbol_max
-            except:
+                        log(f"📊 {symbol}: latest date in data = {latest_date}", verbose)
+                        
+            except Exception as e:
                 continue
         
         if latest_date is None:
