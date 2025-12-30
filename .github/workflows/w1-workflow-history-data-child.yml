@@ -471,24 +471,15 @@ jobs:
         CURRENT_PERIOD="${{ github.event.inputs.period }}"
         echo "Current period: $CURRENT_PERIOD"
         
+        # Only run for two intervals: day and minute (1-min)
+        # Other intervals (5minute, 10minute, 30minute, 60minute) are skipped
         case "$CURRENT_PERIOD" in
             "day")
                 NEXT_PERIOD="minute"
                 ;;
             "minute")
-                NEXT_PERIOD="5minute"
-                ;;
-            "5minute")
-                NEXT_PERIOD="10minute"
-                ;;
-            "10minute")
-                NEXT_PERIOD="30minute"
-                ;;
-            "30minute")
-                NEXT_PERIOD="60minute"
-                ;;
-            "60minute")
-                echo "✅ All periods completed. Exiting."
+                # Stop after minute - don't cascade to other intervals
+                echo "✅ All periods completed (day and minute). Exiting."
                 echo "should_exit=true" >> $GITHUB_OUTPUT
                 exit 0
                 ;;
