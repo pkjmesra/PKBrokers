@@ -445,6 +445,38 @@ def load_from_sqlite(db_path: str, verbose: bool = True) -> Dict:
             except Exception as e:
                 log(f"Could not load from instruments table: {e}", verbose)
         
+        # If still no symbols, try loading from separate instruments.db file
+        if not has_tradingsymbol and len(token_to_symbol) == 0:
+            # instruments.db is typically in the same directory as instrument_history.db
+            db_dir = os.path.dirname(db_path)
+            instruments_db_paths = [
+                os.path.join(db_dir, "instruments.db"),
+                os.path.join(os.path.dirname(db_dir), "instruments.db"),
+                os.path.join(os.getcwd(), "instruments.db"),
+            ]
+            # Also check common user data directories
+            try:
+                from PKDevTools.classes import Archiver
+                instruments_db_paths.append(os.path.join(Archiver.get_user_data_dir(), "instruments.db"))
+            except:
+                pass
+            
+            for inst_db_path in instruments_db_paths:
+                if os.path.exists(inst_db_path):
+                    try:
+                        inst_conn = sqlite3.connect(inst_db_path)
+                        instruments_df = pd.read_sql_query(
+                            "SELECT instrument_token, tradingsymbol FROM instruments",
+                            inst_conn
+                        )
+                        for _, row in instruments_df.iterrows():
+                            token_to_symbol[row['instrument_token']] = row['tradingsymbol']
+                        inst_conn.close()
+                        log(f"Loaded {len(token_to_symbol)} symbol mappings from {inst_db_path}", verbose)
+                        break
+                    except Exception as e:
+                        log(f"Could not load from {inst_db_path}: {e}", verbose)
+        
         # If still no symbols, try PKBrokers KiteInstruments
         if not has_tradingsymbol and len(token_to_symbol) == 0:
             try:
