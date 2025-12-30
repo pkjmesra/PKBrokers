@@ -36,6 +36,28 @@ from PKDevTools.classes import Archiver
 from PKDevTools.classes.log import default_logger
 
 
+MAX_DAILY_ROWS = 251  # Keep only most recent 251 rows for daily data
+
+
+def trim_daily_data_to_251_rows(data: Dict) -> Dict:
+    """
+    Trim daily stock data to keep only the most recent 251 rows per stock.
+    
+    This ensures consistent file sizes and keeps approximately 1 year of trading data.
+    Only applies to daily data (stock_data_*.pkl), not intraday data.
+    """
+    for symbol in list(data.keys()):
+        try:
+            item = data[symbol]
+            if isinstance(item, dict) and 'data' in item and 'index' in item:
+                if len(item['data']) > MAX_DAILY_ROWS:
+                    item['data'] = item['data'][-MAX_DAILY_ROWS:]
+                    item['index'] = item['index'][-MAX_DAILY_ROWS:]
+        except Exception:
+            continue
+    return data
+
+
 class LocalCandleDatabase:
     """
     Local SQLite database manager for storing candle data.
@@ -584,13 +606,16 @@ class LocalCandleDatabase:
         # Convert to PKScreener format
         pkl_data = {}
         for symbol, df in daily_data.items():
+            # Trim to most recent 251 rows for daily data
+            if len(df) > MAX_DAILY_ROWS:
+                df = df.sort_index().tail(MAX_DAILY_ROWS)
             pkl_data[symbol] = df.to_dict('split')
             pkl_data[symbol]['columns'] = ['open', 'high', 'low', 'close', 'volume']
             
         with open(daily_pickle_path, 'wb') as f:
             pickle.dump(pkl_data, f, protocol=pickle.HIGHEST_PROTOCOL)
             
-        self.logger.info(f"Exported {len(pkl_data)} symbols to {daily_pickle_path}")
+        self.logger.info(f"Exported {len(pkl_data)} symbols (trimmed to {MAX_DAILY_ROWS} rows each) to {daily_pickle_path}")
         
         # Export intraday data
         intraday_data = self.get_intraday_candles()

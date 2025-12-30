@@ -49,6 +49,9 @@ import requests
 from PKDevTools.classes import Archiver
 from PKDevTools.classes.log import default_logger
 
+# Maximum rows to keep for daily stock data (approximately 1 year of trading data)
+MAX_DAILY_ROWS = 251
+
 # Constants
 KOLKATA_TZ = pytz.timezone("Asia/Kolkata")
 DEFAULT_PATH = Archiver.get_user_data_dir()
@@ -607,6 +610,20 @@ class DataSharingManager:
                         today_count += 1
             
             if data:
+                # Trim each stock to most recent 251 rows before saving
+                trimmed_count = 0
+                for symbol in list(data.keys()):
+                    try:
+                        df = data[symbol]
+                        if hasattr(df, '__len__') and len(df) > MAX_DAILY_ROWS:
+                            data[symbol] = df.sort_index().tail(MAX_DAILY_ROWS)
+                            trimmed_count += 1
+                    except Exception:
+                        continue
+                
+                if trimmed_count > 0:
+                    self.logger.info(f"Trimmed {trimmed_count} stocks to {MAX_DAILY_ROWS} rows each")
+                
                 with open(output_path, 'wb') as f:
                     pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
                 
@@ -1046,6 +1063,10 @@ def get_data_sharing_manager() -> DataSharingManager:
     if _data_sharing_manager is None:
         _data_sharing_manager = DataSharingManager()
     return _data_sharing_manager
+
+
+
+
 
 
 

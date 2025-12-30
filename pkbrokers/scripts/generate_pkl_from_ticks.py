@@ -37,6 +37,51 @@ def log(msg: str, verbose: bool = True):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
 
+def trim_daily_data_to_251_rows(data: Dict, verbose: bool = True) -> Dict:
+    """
+    Trim daily stock data to keep only the most recent 251 rows per stock.
+    
+    This ensures consistent file sizes and keeps approximately 1 year of trading data.
+    Only applies to daily data (stock_data_*.pkl), not intraday data.
+    
+    Args:
+        data: Dictionary mapping symbol to DataFrame or dict with 'data'/'index' keys
+        verbose: Whether to log progress
+        
+    Returns:
+        Trimmed data dictionary
+    """
+    MAX_ROWS = 251
+    trimmed_count = 0
+    
+    for symbol in list(data.keys()):
+        try:
+            item = data[symbol]
+            
+            if isinstance(item, pd.DataFrame):
+                if len(item) > MAX_ROWS:
+                    # Sort by index to ensure we keep the most recent
+                    item = item.sort_index()
+                    data[symbol] = item.tail(MAX_ROWS)
+                    trimmed_count += 1
+            elif isinstance(item, dict):
+                # Handle dict format with 'data' and 'index' keys
+                if 'data' in item and 'index' in item:
+                    if len(item['data']) > MAX_ROWS:
+                        # Keep last MAX_ROWS entries
+                        item['data'] = item['data'][-MAX_ROWS:]
+                        item['index'] = item['index'][-MAX_ROWS:]
+                        trimmed_count += 1
+        except Exception as e:
+            log(f"⚠️ Error trimming {symbol}: {e}", verbose)
+            continue
+    
+    if trimmed_count > 0:
+        log(f"✂️ Trimmed {trimmed_count} stocks to {MAX_ROWS} rows each", verbose)
+    
+    return data
+
+
 def get_last_trading_date(verbose: bool = True):
     """Get the last trading date using PKDateUtilities."""
     try:
@@ -542,11 +587,17 @@ def trigger_history_download(missing_days: int, verbose: bool = True) -> bool:
 
 
 def save_pkl_files(data: Dict, data_dir: str, verbose: bool = True) -> Tuple[str, str]:
-    """Save pkl files with both generic and dated names."""
+    """Save pkl files with both generic and dated names.
+    
+    Daily data is trimmed to 251 rows per stock before saving.
+    """
     
     os.makedirs(data_dir, exist_ok=True)
     
     today = datetime.now().strftime('%d%m%Y')
+    
+    # Trim daily data to 251 rows per stock before saving
+    data = trim_daily_data_to_251_rows(data, verbose)
     
     # Save daily pkl
     daily_path = os.path.join(data_dir, f"stock_data_{today}.pkl")
@@ -681,6 +732,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
 
 
 

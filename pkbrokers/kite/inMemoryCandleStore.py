@@ -123,6 +123,9 @@ MAX_CANDLES = {
     '1d': 365,    # One year of daily candles
 }
 
+# Maximum rows for daily pkl export (approximately 1 year of trading days)
+MAX_DAILY_ROWS = 251
+
 
 @dataclass
 class Candle:
@@ -723,6 +726,11 @@ class InMemoryCandleStore:
                     # Convert timestamp to ISO format with timezone
                     dt = datetime.fromtimestamp(candle.timestamp, tz=KOLKATA_TZ)
                     index.append(dt.isoformat())
+                
+                # Trim to most recent MAX_DAILY_ROWS for daily data
+                if len(data) > MAX_DAILY_ROWS:
+                    data = data[-MAX_DAILY_ROWS:]
+                    index = index[-MAX_DAILY_ROWS:]
                 
                 result[symbol] = {
                     'data': data,
