@@ -510,8 +510,12 @@ def load_from_sqlite(db_path: str, verbose: bool = True) -> Dict:
             
             cols_to_use = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
             group_df = group[cols_to_use].copy()
-            group_df['timestamp'] = pd.to_datetime(group_df['timestamp'])
+            # Parse timestamps and ensure tz-naive for consistent merging
+            group_df['timestamp'] = pd.to_datetime(group_df['timestamp'], format='mixed', utc=True)
             group_df.set_index('timestamp', inplace=True)
+            # Convert to tz-naive
+            if hasattr(group_df.index, 'tz') and group_df.index.tz is not None:
+                group_df.index = group_df.index.tz_localize(None)
             group_df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
             candles[symbol] = group_df
         
@@ -541,17 +545,20 @@ def convert_ticks_to_candles(ticks_data: Dict, verbose: bool = True) -> Dict:
             if close <= 0:
                 continue
             
-            # Parse timestamp
+            # Parse timestamp and ensure tz-naive
             timestamp_str = ohlcv.get('timestamp', '')
             if timestamp_str:
                 try:
-                    dt = pd.to_datetime(timestamp_str)
+                    dt = pd.to_datetime(timestamp_str, utc=True)
+                    # Convert to tz-naive
+                    if hasattr(dt, 'tz') and dt.tz is not None:
+                        dt = dt.tz_localize(None)
                 except:
                     dt = datetime.now()
             else:
                 dt = datetime.now()
             
-            # Create DataFrame
+            # Create DataFrame with tz-naive index
             df = pd.DataFrame([{
                 'Open': float(ohlcv.get('open', close)),
                 'High': float(ohlcv.get('high', close)),
@@ -560,6 +567,10 @@ def convert_ticks_to_candles(ticks_data: Dict, verbose: bool = True) -> Dict:
                 'Volume': int(ohlcv.get('volume', 0)),
             }], index=[dt])
             
+            # Ensure index is tz-naive
+            if hasattr(df.index, 'tz') and df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
+            
             candles[symbol] = df
             
         except Exception as e:
@@ -567,6 +578,22 @@ def convert_ticks_to_candles(ticks_data: Dict, verbose: bool = True) -> Dict:
     
     log(f"Converted {len(candles)} instruments from ticks to candles", verbose)
     return candles
+
+
+def _normalize_index_tz(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize DataFrame index to timezone-naive for consistent merging."""
+    if df is None or not hasattr(df, 'index'):
+        return df
+    
+    try:
+        if hasattr(df.index, 'tz') and df.index.tz is not None:
+            # Convert tz-aware to tz-naive (UTC first, then remove tz)
+            df = df.copy()
+            df.index = df.index.tz_convert('UTC').tz_localize(None)
+    except Exception:
+        pass
+    
+    return df
 
 
 def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
@@ -592,6 +619,8 @@ def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
                     hist_df.index = hist_df.index.tz_localize(None)
         
         if hasattr(hist_df, 'index'):
+            # Ensure timezone-naive
+            hist_df = _normalize_index_tz(hist_df)
             merged[symbol] = hist_df.copy()
     
     # Add/update with today's data
@@ -599,9 +628,14 @@ def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
     new_count = 0
     
     for symbol, today_df in today.items():
+        # Ensure today's data is also timezone-naive
+        today_df = _normalize_index_tz(today_df)
+        
         if symbol in merged:
             # Append today's data, removing duplicates
             existing = merged[symbol]
+            # Ensure both are tz-naive before concatenation
+            existing = _normalize_index_tz(existing)
             combined = pd.concat([existing, today_df])
             combined = combined[~combined.index.duplicated(keep='last')]
             combined = combined.sort_index()
@@ -744,6 +778,15 @@ def main():
             # Trigger history download workflow if requested
             if args.trigger_history:
                 trigger_history_download(missing_trading_days, verbose)
+        else:
+            # Data is already fresh - no need to fetch again
+            log("✅ Historical data is already up-to-date, skipping new data fetch", verbose)
+            log("\n[Step 4] Saving pkl files (using existing fresh data)...", verbose)
+            save_pkl_files(historical_data, data_dir, verbose)
+            log("=" * 60, verbose)
+            log("✅ SUCCESS: PKL files saved (data was already fresh)", verbose)
+            log("=" * 60, verbose)
+            return
     else:
         log("⚠️ No historical pkl found on GitHub", verbose)
         missing_trading_days = 0
