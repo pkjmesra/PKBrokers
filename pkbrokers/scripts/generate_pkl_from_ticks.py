@@ -145,7 +145,8 @@ def download_historical_pkl(verbose: bool = True) -> Tuple[Optional[Dict], int]:
     
     # Try last 10 days
     today = datetime.now()
-    for days_back in range(10):
+    # Look back up to 30 days to find a valid pkl file with quality data
+    for days_back in range(30):
         check_date = today - timedelta(days=days_back)
         
         # Try different date formats
@@ -190,11 +191,16 @@ def download_historical_pkl(verbose: bool = True) -> Tuple[Optional[Dict], int]:
                                 log(f"⚠️ Skipping {url} - insufficient historical data", verbose)
                                 continue
                             
+                            # Also validate that the actual data date is close to the filename date
+                            # If data is too old (> 20 trading days behind), skip and look for better file
+                            actual_missing = calculate_missing_trading_days(data, verbose)
+                            if actual_missing > 20:
+                                log(f"⚠️ Skipping {url} - data too stale ({actual_missing} trading days behind)", verbose)
+                                continue
+                            
                             log(f"✅ Downloaded historical pkl: {len(data)} instruments, {len(response.content)/1024/1024:.1f} MB", verbose)
                             
-                            # Calculate missing trading days
-                            missing_days = calculate_missing_trading_days(data, verbose)
-                            return data, missing_days
+                            return data, actual_missing
                 except Exception as e:
                     continue
     
