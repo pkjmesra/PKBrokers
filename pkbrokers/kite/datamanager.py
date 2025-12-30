@@ -100,12 +100,16 @@ class InstrumentDataManager:
         self.ticks_json_path = Path(Archiver.get_user_data_dir()) / "ticks.json"
         
         # GitHub URLs for dated pickle file
-        self.pickle_url = f"https://github.com/pkjmesra/PKScreener/tree/actions-data-download/results/Data/{path}"
-        self.raw_pickle_url = f"https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/{path}"
+        # Note: Files are stored in actions-data-download/ subdirectory, NOT results/Data/
+        self.pickle_url = f"https://github.com/pkjmesra/PKScreener/tree/actions-data-download/actions-data-download/{path}"
+        self.raw_pickle_url = f"https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/{path}"
         
-        # Fallback URLs for undated pickle file (stock_data.pkl)
+        # Fallback URLs for undated pickle file (stock_data.pkl or daily_candles.pkl)
         _, undated_path = Archiver.afterMarketStockDataExists(date_suffix=False)
-        self.fallback_pickle_url = f"https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/{undated_path}"
+        self.fallback_pickle_url = f"https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/{undated_path}"
+        
+        # Additional fallback for daily_candles.pkl which has full historical data
+        self.daily_candles_url = "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/daily_candles.pkl"
         self.fallback_local_path = Path(Archiver.get_user_data_dir()) / undated_path
         
         self.db_conn = None
@@ -1049,13 +1053,23 @@ class InstrumentDataManager:
             response = requests.head(self.raw_pickle_url, timeout=10)
             if response.status_code == 200:
                 self._using_fallback_url = False
+                self._using_daily_candles = False
                 return True
             
             # Try fallback undated file
             response = requests.head(self.fallback_pickle_url, timeout=10)
             if response.status_code == 200:
                 self._using_fallback_url = True
+                self._using_daily_candles = False
                 self.logger.info(f"Dated pickle not found, using fallback: {self.fallback_pickle_url}")
+                return True
+            
+            # Try daily_candles.pkl as final fallback (has full historical data)
+            response = requests.head(self.daily_candles_url, timeout=10)
+            if response.status_code == 200:
+                self._using_fallback_url = False
+                self._using_daily_candles = True
+                self.logger.info(f"Using daily_candles.pkl as fallback: {self.daily_candles_url}")
                 return True
             
             return False
@@ -1291,13 +1305,16 @@ class InstrumentDataManager:
     def _load_pickle_from_github(self) -> Optional[Dict]:
         """
         Download and load pickle data from GitHub.
-        Tries dated file first, then falls back to undated stock_data.pkl.
+        Tries dated file first, then falls back to undated stock_data.pkl or daily_candles.pkl.
         """
         # Determine which URL to use
         url_to_use = self.raw_pickle_url
         local_path = self.local_pickle_path
         
-        if getattr(self, '_using_fallback_url', False):
+        if getattr(self, '_using_daily_candles', False):
+            url_to_use = self.daily_candles_url
+            local_path = Path(Archiver.get_user_data_dir()) / "daily_candles.pkl"
+        elif getattr(self, '_using_fallback_url', False):
             url_to_use = self.fallback_pickle_url
             local_path = self.fallback_local_path
         
@@ -1305,12 +1322,19 @@ class InstrumentDataManager:
             self.logger.info(f"Downloading pickle from: {url_to_use}")
             response = requests.get(url_to_use, timeout=60)
             
-            # If dated file fails, try fallback
+            # If dated file fails, try fallback chain
             if response.status_code != 200 and url_to_use == self.raw_pickle_url:
                 self.logger.info("Dated pickle not found, trying fallback...")
                 url_to_use = self.fallback_pickle_url
                 local_path = self.fallback_local_path
                 response = requests.get(url_to_use, timeout=60)
+                
+                # If still failed, try daily_candles.pkl
+                if response.status_code != 200:
+                    self.logger.info("Fallback not found, trying daily_candles.pkl...")
+                    url_to_use = self.daily_candles_url
+                    local_path = Path(Archiver.get_user_data_dir()) / "daily_candles.pkl"
+                    response = requests.get(url_to_use, timeout=60)
             
             response.raise_for_status()
             
