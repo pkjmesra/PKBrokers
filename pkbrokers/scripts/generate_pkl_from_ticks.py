@@ -431,7 +431,10 @@ def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
             if 'data' in hist_df and 'columns' in hist_df:
                 hist_df = pd.DataFrame(hist_df['data'], columns=hist_df['columns'])
                 if 'index' in historical[symbol]:
-                    hist_df.index = pd.to_datetime(historical[symbol]['index'])
+                    # Use format='mixed' to handle various ISO8601 formats with timezone/microseconds
+                    hist_df.index = pd.to_datetime(historical[symbol]['index'], format='mixed', utc=True)
+                    # Convert to timezone-naive for consistency
+                    hist_df.index = hist_df.index.tz_localize(None)
         
         if hasattr(hist_df, 'index'):
             merged[symbol] = hist_df.copy()
