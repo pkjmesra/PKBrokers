@@ -136,6 +136,32 @@ def download_historical_pkl(verbose: bool = True) -> Tuple[Optional[Dict], int]:
                     if response.status_code == 200 and len(response.content) > 1000000:  # > 1MB
                         data = pickle.loads(response.content)
                         if isinstance(data, dict) and len(data) > 100:
+                            # Validate data quality - check rows per stock
+                            sample_symbols = ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK']
+                            min_rows = 100  # Expect at least 100 rows for valid historical data
+                            
+                            rows_ok = False
+                            for sym in sample_symbols:
+                                if sym in data:
+                                    sym_data = data[sym]
+                                    if isinstance(sym_data, dict) and 'data' in sym_data:
+                                        row_count = len(sym_data.get('data', []))
+                                    elif hasattr(sym_data, '__len__'):
+                                        row_count = len(sym_data)
+                                    else:
+                                        row_count = 0
+                                    
+                                    if row_count >= min_rows:
+                                        rows_ok = True
+                                        log(f"✅ Data quality check passed: {sym} has {row_count} rows", verbose)
+                                        break
+                                    else:
+                                        log(f"⚠️ Data quality issue: {sym} has only {row_count} rows (need {min_rows}+)", verbose)
+                            
+                            if not rows_ok:
+                                log(f"⚠️ Skipping {url} - insufficient historical data", verbose)
+                                continue
+                            
                             log(f"✅ Downloaded historical pkl: {len(data)} instruments, {len(response.content)/1024/1024:.1f} MB", verbose)
                             
                             # Calculate missing trading days
