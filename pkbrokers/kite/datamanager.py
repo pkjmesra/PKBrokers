@@ -639,6 +639,98 @@ class InstrumentDataManager:
         self._pickle_data = value
         self._pickle_data_loaded = True
 
+    def _is_direct_dataframe_format(self, data: Any) -> bool:
+        """
+        Check if data is in direct DataFrame format (dict of symbol -> DataFrame).
+        
+        This format is used when PKL files contain pandas DataFrames directly
+        instead of dict-serialized format.
+        
+        Args:
+            data: Data to check
+            
+        Returns:
+            bool: True if data contains DataFrames directly, False otherwise
+        """
+        if not isinstance(data, dict) or not data:
+            return False
+        
+        # Check first few symbols
+        sample_symbols = list(data.keys())[:3]
+        
+        for symbol in sample_symbols:
+            symbol_data = data[symbol]
+            
+            # Check if it's a pandas DataFrame
+            if not isinstance(symbol_data, pd.DataFrame):
+                return False
+            
+            # Check for OHLCV columns (case-insensitive)
+            cols_lower = [c.lower() for c in symbol_data.columns]
+            required_cols = ['open', 'high', 'low', 'close', 'volume']
+            if not all(col in cols_lower for col in required_cols):
+                return False
+        
+        return True
+
+    def _convert_direct_dataframe_to_symbol_format(self, data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
+        """
+        Convert direct DataFrame format to symbol-indexed dict format.
+        
+        Args:
+            data: Dict of symbol -> DataFrame
+            
+        Returns:
+            Dict: Symbol-indexed format with 'data', 'columns', 'index' structure
+        """
+        result = {}
+        
+        for symbol, df in data.items():
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                continue
+            
+            # Create a clean DataFrame with only OHLCV columns
+            # Handle case where both lowercase and uppercase exist (e.g., 'open' and 'Open')
+            # These columns may be complementary (lowercase has old data, uppercase has new data)
+            ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
+            clean_df = pd.DataFrame(index=df.index)
+            
+            for col in ohlcv_cols:
+                lower_col = col
+                upper_col = col.capitalize()
+                
+                # Check if both lowercase and uppercase exist
+                has_lower = lower_col in df.columns
+                has_upper = upper_col in df.columns
+                
+                if has_lower and has_upper:
+                    # Both exist - merge them (fillna from one to another)
+                    lower_data = df[lower_col].iloc[:, 0] if isinstance(df[lower_col], pd.DataFrame) else df[lower_col]
+                    upper_data = df[upper_col].iloc[:, 0] if isinstance(df[upper_col], pd.DataFrame) else df[upper_col]
+                    # Fill NaN from lowercase with uppercase values
+                    clean_df[col] = lower_data.fillna(upper_data)
+                elif has_lower:
+                    clean_df[col] = df[lower_col].iloc[:, 0] if isinstance(df[lower_col], pd.DataFrame) else df[lower_col]
+                elif has_upper:
+                    clean_df[col] = df[upper_col].iloc[:, 0] if isinstance(df[upper_col], pd.DataFrame) else df[upper_col]
+                elif col.upper() in df.columns:
+                    clean_df[col] = df[col.upper()].iloc[:, 0] if isinstance(df[col.upper()], pd.DataFrame) else df[col.upper()]
+            
+            # Skip if we don't have all required columns
+            if len(clean_df.columns) < 5:
+                continue
+            
+            # Drop any rows where ALL values are NaN
+            clean_df = clean_df.dropna(how='all')
+            
+            if clean_df.empty:
+                continue
+            
+            # Convert to dict format
+            result[symbol] = clean_df.to_dict('split')
+        
+        return result
+
     def _is_symbol_dataframe_format(self, data: Any) -> bool:
         """
         Check if data is in symbol-indexed DataFrame-compatible format.
@@ -653,7 +745,9 @@ class InstrumentDataManager:
             return False
         
         # Check if it's symbol-indexed format
-        for symbol, symbol_data in data.items():
+        sample_symbols = list(data.keys())[:3]  # Only check first 3 for performance
+        for symbol in sample_symbols:
+            symbol_data = data[symbol]
             if not isinstance(symbol_data, dict):
                 return False
             
@@ -671,19 +765,15 @@ class InstrumentDataManager:
             if not isinstance(symbol_data['index'], list):
                 return False
             
-            # Check if columns match expected OHLCV format
+            # Check if columns match expected OHLCV format (case-insensitive)
+            cols_lower = [c.lower() for c in symbol_data['columns']]
             expected_columns = ['open', 'high', 'low', 'close', 'volume']
-            if symbol_data['columns'] != expected_columns:
+            if not all(col in cols_lower for col in expected_columns):
                 return False
             
             # Check if data rows match index length
             if len(symbol_data['data']) != len(symbol_data['index']):
                 return False
-            
-            # Check if each data row has correct number of columns
-            for row in symbol_data['data']:
-                if not isinstance(row, list) or len(row) != len(expected_columns):
-                    return False
         
         return True
 
@@ -818,10 +908,12 @@ class InstrumentDataManager:
         Detect the format of the loaded data.
         
         Returns:
-            str: Format type - 'symbol_dataframe', 'old', 'hybrid', 'legacy_dataframe', or 'unknown'
+            str: Format type - 'symbol_dataframe', 'direct_dataframe', 'old', 'hybrid', 'legacy_dataframe', or 'unknown'
         """
         if self._is_symbol_dataframe_format(data):
             return 'symbol_dataframe'
+        elif self._is_direct_dataframe_format(data):
+            return 'direct_dataframe'
         elif self._is_old_format(data):
             return 'old'
         elif self._is_hybrid_format(data):
@@ -1091,6 +1183,11 @@ class InstrumentDataManager:
                 self.pickle_data = loaded_data
                 self.logger.info("Loaded data in symbol-indexed DataFrame format from local file")
                 
+            elif format_type == 'direct_dataframe':
+                self.logger.info("Converting direct DataFrame format to symbol-indexed format")
+                self.pickle_data = self._convert_direct_dataframe_to_symbol_format(loaded_data)
+                self._save_pickle_file()
+                
             elif format_type == 'old':
                 self.logger.info("Converting old format to symbol-indexed DataFrame format")
                 self.pickle_data = self._convert_old_format_to_symbol_dataframe_format(loaded_data)
@@ -1109,7 +1206,7 @@ class InstrumentDataManager:
                 self._save_pickle_file()
                 
             else:
-                self.logger.error("Unknown data format in local pickle file")
+                self.logger.error(f"Unknown data format in local pickle file:{type(loaded_data).__name__}: {list(loaded_data.keys())[:3] if isinstance(loaded_data, dict) else loaded_data}")
                 return None
             
             return self.pickle_data
@@ -1353,6 +1450,11 @@ class InstrumentDataManager:
                 self.pickle_data = loaded_data
                 self.logger.info(f"Loaded {len(loaded_data)} symbols in symbol-indexed DataFrame format")
                 
+            elif format_type == 'direct_dataframe':
+                self.logger.info(f"Converting {len(loaded_data)} symbols from direct DataFrame format")
+                self.pickle_data = self._convert_direct_dataframe_to_symbol_format(loaded_data)
+                self._save_pickle_file()
+                
             elif format_type == 'old':
                 self.logger.info("Converting old format to symbol-indexed DataFrame format")
                 self.pickle_data = self._convert_old_format_to_symbol_dataframe_format(loaded_data)
@@ -1371,7 +1473,7 @@ class InstrumentDataManager:
                 self._save_pickle_file()
                 
             else:
-                self.logger.error("Unknown data format in GitHub pickle file")
+                self.logger.error(f"Unknown data format in GitHub pickle file:{type(loaded_data).__name__}: {list(loaded_data.keys())[:3] if isinstance(loaded_data, dict) else loaded_data}")
                 return None
 
             return self.pickle_data
