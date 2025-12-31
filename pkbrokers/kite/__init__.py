@@ -30,7 +30,7 @@ The MIT License (MIT)
 # required for the package as well as this file, ReadMe.txt file as well as
 # commit the changes into the main/checked-out branch.
 # major.minor.dateOfRelease.pipelineJobNumber
-VERSION = '0.1.20251230.70'
+VERSION = '0.1.20251231.58'
 
 # High-performance candle store exports
 from pkbrokers.kite.inMemoryCandleStore import (
