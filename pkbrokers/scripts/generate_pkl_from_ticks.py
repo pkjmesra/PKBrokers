@@ -43,6 +43,7 @@ def trim_daily_data_to_251_rows(data: Dict, verbose: bool = True) -> Dict:
     
     This ensures consistent file sizes and keeps approximately 1 year of trading data.
     Only applies to daily data (stock_data_*.pkl), not intraday data.
+    Also filters out numeric keys (instrument tokens) which have incomplete/stale data.
     
     Args:
         data: Dictionary mapping symbol to DataFrame or dict with 'data'/'index' keys
@@ -53,8 +54,15 @@ def trim_daily_data_to_251_rows(data: Dict, verbose: bool = True) -> Dict:
     """
     MAX_ROWS = 251
     trimmed_count = 0
+    removed_tokens = 0
     
     for symbol in list(data.keys()):
+        # Remove numeric keys (instrument tokens) - they shouldn't be in the final output
+        if str(symbol).isdigit():
+            del data[symbol]
+            removed_tokens += 1
+            continue
+            
         try:
             item = data[symbol]
             
@@ -76,6 +84,8 @@ def trim_daily_data_to_251_rows(data: Dict, verbose: bool = True) -> Dict:
             log(f"⚠️ Error trimming {symbol}: {e}", verbose)
             continue
     
+    if removed_tokens > 0:
+        log(f"🔄 Removed {removed_tokens} instrument tokens (unmapped)", verbose)
     if trimmed_count > 0:
         log(f"✂️ Trimmed {trimmed_count} stocks to {MAX_ROWS} rows each", verbose)
     
@@ -606,8 +616,12 @@ def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
     merged = {}
     today_date = datetime.now().date()
     
-    # Start with all historical data
+    # Start with all historical data (skip numeric keys which are instrument tokens)
     for symbol, hist_df in historical.items():
+        # Skip numeric keys (instrument tokens) from historical - they have stale data
+        if str(symbol).isdigit():
+            continue
+            
         if isinstance(hist_df, dict):
             # Convert dict format to DataFrame
             if 'data' in hist_df and 'columns' in hist_df:
@@ -626,8 +640,15 @@ def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
     # Add/update with today's data
     updated_count = 0
     new_count = 0
+    skipped_tokens = 0
     
     for symbol, today_df in today.items():
+        # Skip numeric keys (instrument tokens) - they should have been mapped to symbols
+        # If mapping failed, it's better to skip than to add duplicate/inconsistent data
+        if str(symbol).isdigit():
+            skipped_tokens += 1
+            continue
+            
         # Ensure today's data is also timezone-naive
         today_df = _normalize_index_tz(today_df)
         
@@ -645,6 +666,8 @@ def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
             merged[symbol] = today_df
             new_count += 1
     
+    if skipped_tokens > 0:
+        log(f"Warning: Skipped {skipped_tokens} instrument tokens (symbol mapping failed)", verbose)
     log(f"Merged: {updated_count} updated, {new_count} new, {len(merged)} total instruments", verbose)
     return merged
 
