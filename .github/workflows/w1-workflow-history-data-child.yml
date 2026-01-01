@@ -96,7 +96,7 @@ jobs:
         KUSER: ${{ secrets.KUSER }}
         KPWD: ${{ secrets.KPWD }}
         KTOTP: ${{ secrets.KTOTP }}
-        DB_TYPE: ${{ secrets.DB_TYPE }}
+        DB_TYPE: local
         TBTOKEN: ${{ secrets.TBTOKEN }}
         Tel_API_ID: ${{ secrets.Tel_API_ID }}
         Tel_API_Hash: ${{ secrets.Tel_API_Hash }}
@@ -123,7 +123,7 @@ jobs:
         KUSER=$KUSER
         KPWD=$KPWD
         KTOTP=$KTOTP
-        DB_TYPE=$DB_TYPE
+        DB_TYPE=local
         TBTOKEN=$TBTOKEN
         PERIOD=$PERIOD
         Tel_API_ID=$Tel_API_ID
@@ -513,7 +513,7 @@ jobs:
         KUSER: ${{ secrets.KUSER }}
         KPWD: ${{ secrets.KPWD }}
         KTOTP: ${{ secrets.KTOTP }}
-        DB_TYPE: ${{ secrets.DB_TYPE }}
+        DB_TYPE: local
         TBTOKEN: ${{ secrets.TBTOKEN }}
         Tel_API_ID: ${{ secrets.Tel_API_ID }}
         Tel_API_Hash: ${{ secrets.Tel_API_Hash }}
@@ -540,7 +540,7 @@ jobs:
         KUSER=$KUSER
         KPWD=$KPWD
         KTOTP=$KTOTP
-        DB_TYPE=$DB_TYPE
+        DB_TYPE=local
         TBTOKEN=$TBTOKEN
         PERIOD=$PERIOD
         Tel_API_ID=$Tel_API_ID

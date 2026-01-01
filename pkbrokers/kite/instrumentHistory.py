@@ -214,17 +214,27 @@ class KiteTickerHistory:
         self._local_db_path = os.path.join(
             Archiver.get_user_data_dir(), "instrument_history.db"
         )
-        try:
-            self.db_conn = libsql.connect(
-                database=PKEnvironment().TDU, auth_token=PKEnvironment().TAT
-            )
-        except Exception as e:
-            if "BLOCKED" in str(e).upper() or "forbidden" in str(e).lower():
-                self.logger.warning(f"Turso database blocked, using local SQLite: {e}")
-                self._use_local_db = True
-                self.db_conn = sqlite3.connect(self._local_db_path, check_same_thread=False)
-            else:
-                raise
+        
+        # Check if local SQLite is preferred (for faster batch operations)
+        db_type = os.environ.get("DB_TYPE", "").lower()
+        force_local = db_type == "local" or db_type == "sqlite"
+        
+        if force_local:
+            self.logger.info("Using local SQLite database (DB_TYPE=local)")
+            self._use_local_db = True
+            self.db_conn = sqlite3.connect(self._local_db_path, check_same_thread=False)
+        else:
+            try:
+                self.db_conn = libsql.connect(
+                    database=PKEnvironment().TDU, auth_token=PKEnvironment().TAT
+                )
+            except Exception as e:
+                if "BLOCKED" in str(e).upper() or "forbidden" in str(e).lower():
+                    self.logger.warning(f"Turso database blocked, using local SQLite: {e}")
+                    self._use_local_db = True
+                    self.db_conn = sqlite3.connect(self._local_db_path, check_same_thread=False)
+                else:
+                    raise
 
         # Only create if it doesn't exist
         try:
