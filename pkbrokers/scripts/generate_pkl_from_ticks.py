@@ -37,6 +37,119 @@ def log(msg: str, verbose: bool = True):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
 
+# Global cache for token-to-symbol mapping
+_token_to_symbol_cache: Dict[int, str] = {}
+
+
+def get_token_to_symbol_mapping(verbose: bool = True) -> Dict[int, str]:
+    """
+    Get instrument token to trading symbol mapping using KiteInstruments.
+    
+    This uses PKBrokers' KiteInstruments class to get the authoritative
+    mapping between instrument tokens and trading symbols.
+    
+    Returns:
+        Dict mapping instrument_token (int) to tradingsymbol (str)
+    """
+    global _token_to_symbol_cache
+    
+    if _token_to_symbol_cache:
+        return _token_to_symbol_cache
+    
+    try:
+        # Add parent directory to path for imports
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(os.path.dirname(script_dir))
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+        
+        from pkbrokers.kite.instruments import KiteInstruments
+        from PKDevTools.classes.Environment import PKEnvironment
+        
+        env = PKEnvironment()
+        instruments = KiteInstruments(
+            api_key="kitefront",
+            access_token=env.KTOKEN or "",
+            local=True
+        )
+        
+        # Get all equities with token and symbol
+        equities = instruments.get_equities(
+            column_names="instrument_token,tradingsymbol",
+            only_nse_stocks=False
+        )
+        
+        for eq in equities:
+            token = eq.get('instrument_token')
+            symbol = eq.get('tradingsymbol')
+            if token and symbol:
+                _token_to_symbol_cache[int(token)] = str(symbol)
+        
+        log(f"Loaded {len(_token_to_symbol_cache)} token-to-symbol mappings from KiteInstruments", verbose)
+        
+    except Exception as e:
+        log(f"Warning: Could not load token mappings from KiteInstruments: {e}", verbose)
+    
+    return _token_to_symbol_cache
+
+
+def map_tokens_to_symbols(data: Dict, verbose: bool = True) -> Dict:
+    """
+    Convert instrument token keys to trading symbol keys.
+    
+    Args:
+        data: Dictionary that may have numeric keys (instrument tokens)
+        verbose: Whether to log progress
+        
+    Returns:
+        Dictionary with symbol keys instead of token keys where possible
+    """
+    token_to_symbol = get_token_to_symbol_mapping(verbose)
+    
+    if not token_to_symbol:
+        log("Warning: No token-to-symbol mapping available", verbose)
+        return data
+    
+    result = {}
+    mapped_count = 0
+    unmapped_count = 0
+    
+    for key, value in data.items():
+        str_key = str(key)
+        
+        if str_key.isdigit():
+            # This is an instrument token - try to map it
+            token = int(str_key)
+            symbol = token_to_symbol.get(token)
+            
+            if symbol:
+                # Use symbol as key, but check for conflicts
+                if symbol in result:
+                    # Symbol already exists, keep the one with more recent data
+                    existing = result[symbol]
+                    new_df = value if isinstance(value, pd.DataFrame) else pd.DataFrame(value.get('data', []))
+                    existing_df = existing if isinstance(existing, pd.DataFrame) else pd.DataFrame(existing.get('data', []))
+                    
+                    if len(new_df) > len(existing_df):
+                        result[symbol] = value
+                else:
+                    result[symbol] = value
+                mapped_count += 1
+            else:
+                # No mapping found - skip this entry
+                unmapped_count += 1
+        else:
+            # Already a symbol key
+            result[key] = value
+    
+    if mapped_count > 0:
+        log(f"Mapped {mapped_count} instrument tokens to symbols", verbose)
+    if unmapped_count > 0:
+        log(f"Warning: Skipped {unmapped_count} unmapped instrument tokens", verbose)
+    
+    return result
+
+
 def trim_daily_data_to_251_rows(data: Dict, verbose: bool = True) -> Dict:
     """
     Trim daily stock data to keep only the most recent 251 rows per stock.
@@ -613,12 +726,17 @@ def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
         log("No historical data to merge with", verbose)
         return today
     
+    # First, map any instrument tokens to symbols in both datasets
+    log("Mapping instrument tokens to symbols...", verbose)
+    historical = map_tokens_to_symbols(historical, verbose)
+    today = map_tokens_to_symbols(today, verbose)
+    
     merged = {}
     today_date = datetime.now().date()
     
-    # Start with all historical data (skip numeric keys which are instrument tokens)
+    # Start with all historical data (skip any remaining numeric keys)
     for symbol, hist_df in historical.items():
-        # Skip numeric keys (instrument tokens) from historical - they have stale data
+        # Skip numeric keys (instrument tokens) that couldn't be mapped
         if str(symbol).isdigit():
             continue
             
@@ -643,8 +761,7 @@ def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
     skipped_tokens = 0
     
     for symbol, today_df in today.items():
-        # Skip numeric keys (instrument tokens) - they should have been mapped to symbols
-        # If mapping failed, it's better to skip than to add duplicate/inconsistent data
+        # Skip numeric keys (instrument tokens) that couldn't be mapped
         if str(symbol).isdigit():
             skipped_tokens += 1
             continue
@@ -667,7 +784,7 @@ def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
             new_count += 1
     
     if skipped_tokens > 0:
-        log(f"Warning: Skipped {skipped_tokens} instrument tokens (symbol mapping failed)", verbose)
+        log(f"Warning: Skipped {skipped_tokens} unmappable instrument tokens", verbose)
     log(f"Merged: {updated_count} updated, {new_count} new, {len(merged)} total instruments", verbose)
     return merged
 
