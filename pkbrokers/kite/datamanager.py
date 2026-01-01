@@ -1895,7 +1895,8 @@ class InstrumentDataManager:
                 
                 # Convert back to sorted lists
                 all_entries = list(existing_date_map.values())
-                all_entries.sort(key=lambda x: x[0])  # Sort by timestamp
+                # Normalize timestamps for sorting - convert to string to handle mixed types
+                all_entries.sort(key=lambda x: str(x[0]))  # Sort by stringified timestamp
                 
                 self.pickle_data[symbol] = {
                     'data': [data for _, data in all_entries],
