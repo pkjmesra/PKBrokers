@@ -278,7 +278,10 @@ def calculate_missing_trading_days(data: Dict, verbose: bool = True) -> int:
         last_trading_date = get_last_trading_date(verbose)
         
         if latest_date >= last_trading_date:
-            log(f"✅ Data is fresh: latest={latest_date}, last_trading={last_trading_date}", verbose)
+            log(f"✅ Data date is current: latest={latest_date}, last_trading={last_trading_date}", verbose)
+            # Note: Even when date is current, the data might be from early morning (e.g., 10:24 AM)
+            # and missing market close data (3:30 PM). We return 0 but the caller should still
+            # try to merge with DB data to get the complete day's data.
             return 0
         
         # Calculate missing trading days
@@ -919,14 +922,10 @@ def main():
             if args.trigger_history:
                 trigger_history_download(missing_trading_days, verbose)
         else:
-            # Data is already fresh - no need to fetch again
-            log("✅ Historical data is already up-to-date, skipping new data fetch", verbose)
-            log("\n[Step 4] Saving pkl files (using existing fresh data)...", verbose)
-            save_pkl_files(historical_data, data_dir, verbose)
-            log("=" * 60, verbose)
-            log("✅ SUCCESS: PKL files saved (data was already fresh)", verbose)
-            log("=" * 60, verbose)
-            return
+            log("✅ Historical data date is current", verbose)
+            # NOTE: Even when the date is current, we should still try to merge with DB data
+            # because the pkl might have partial day data (e.g., 10:24 AM) while DB has
+            # complete day data (e.g., 3:30 PM market close). Continue to Step 2.
     else:
         log("⚠️ No historical pkl found on GitHub", verbose)
         missing_trading_days = 0
