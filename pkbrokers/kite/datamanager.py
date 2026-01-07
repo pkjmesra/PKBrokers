@@ -330,7 +330,9 @@ class InstrumentDataManager:
                 new_rows = []
                 new_index = []
                 for idx, row in zip(hist_index, hist_rows):
-                    idx_date = idx[:10] if len(idx) >= 10 else idx
+                    # Convert index to string to handle both string and Timestamp types
+                    idx_str = str(idx)
+                    idx_date = idx_str[:10] if len(idx_str) >= 10 else idx_str
                     if idx_date != today_str:
                         new_rows.append(row)
                         new_index.append(idx)
