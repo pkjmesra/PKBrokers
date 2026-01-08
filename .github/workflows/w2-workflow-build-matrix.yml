@@ -93,7 +93,7 @@ jobs:
   # Prepare version for PyPI publish - runs before Build
   Prepare-Version:
     name: Prepare Version for PyPI
-    needs: [check_should_run, Test-Source]
+    needs: [check_should_run]
     runs-on: ubuntu-latest
     permissions: write-all
     outputs:
