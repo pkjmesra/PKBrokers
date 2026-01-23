@@ -68,7 +68,7 @@ jobs:
         python-version: '3.11'
 
     - name: Install dependencies
-      run: pip install -e . kiteconnect
+      run: pip install -e . kiteconnect libsql
 
     - name: Create .env.dev file with secrets
       env:
