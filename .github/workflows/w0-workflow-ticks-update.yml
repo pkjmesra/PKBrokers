@@ -91,7 +91,7 @@ jobs:
     - name: Install PKBrokers dependencies
       run: |
         pip install -e .
-        pip install kiteconnect
+        pip install kiteconnect libsql==0.1.6
 
     - name: Create .env.dev file with secrets
       env:
