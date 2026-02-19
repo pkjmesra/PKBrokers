@@ -343,7 +343,7 @@ class WebSocketProcess:
                 self.logger.error(
                     f"Websocket_index:{self.websocket_index}: WebSocket connection error: {str(e)}. Reconnecting in 5 seconds..."
                 )
-                if "HTTP 403" in str(e):
+                if "HTTP 403" in str(e).lower() or "enctoken" in str(e).lower():
                     from pkbrokers.kite.examples.externals import kite_auth
                     kite_auth()
                 await asyncio.sleep(5)
