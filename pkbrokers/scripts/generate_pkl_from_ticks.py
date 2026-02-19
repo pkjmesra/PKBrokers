@@ -533,7 +533,7 @@ def load_local_ticks_json(data_dir: str, verbose: bool = True, min_instruments: 
         # Call kite_ticks in full mode - this will save fresh ticks.json in results/Data directory
         log("Running kite_ticks(test_mode=False) to generate fresh data...", verbose)
         from pkbrokers.kite.examples.pkkite import kite_ticks
-        kite_ticks(test_mode=False)  # Full mode, not test
+        kite_ticks(test_mode=True)  # Full mode, but test
         
         # After kite_ticks completes, check the expected output location
         expected_path = os.path.join(data_dir, "results", "Data", "ticks.json")
