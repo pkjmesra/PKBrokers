@@ -522,6 +522,7 @@ def pkkite():
     print(
         "You can use like this :\npkkite --auth\npkkite --ticks\npkkite --history\npkkite --instruments\npkkite --pickle\npkkite --orchestrate\npkkite --consumer"
     )
+    exit(0)
 
 
 if __name__ == "__main__":
