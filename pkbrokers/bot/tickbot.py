@@ -338,14 +338,25 @@ class PKTickBot:
                 data = json.load(f)
         except BaseException:
             return None
-
+        
         instruments = list(data.values())
+        
+        # First, filter out the instruments with latest timestamps per symbol
+        # Since each symbol appears only once in your JSON, we just need to sort by both criteria
+        
+        # Sort by timestamp (latest first) and then by tick count (highest first)
         top_limit = sorted(
-            instruments, key=lambda x: x.get("tick_count", 0), reverse=True
-        )[: limit + 2]
+            instruments,
+            key=lambda x: (
+                datetime.fromisoformat(x.get("last_updated", "1970-01-01T00:00:00")),
+                x.get("tick_count", 0)
+            ),
+            reverse=True  # This will give us latest timestamp and highest tick count first
+        )[:limit + 2]
+        
         output = None
         if len(top_limit) > 0:
-            output = "Symbol         |Tick |Price\n"
+            output = "Symbol         |Tick |Price  \n"
             output += "---------------|-----|-------\n"
             NIFTY_50 = 256265
             BSE_SENSEX = 265
@@ -356,10 +367,11 @@ class PKTickBot:
                 symbol = instrument.get("trading_symbol", "N/A")
                 tick_count = instrument.get("tick_count", 0)
                 price = instrument.get("ohlcv", {}).get("close", 0)
-
-                output += f"{symbol:15}|{tick_count:4} | {price:6.1f}\n"
-
-        return f"<pre>{html.escape(output)}</pre>"
+                last_updated = instrument.get("last_updated", "N/A")[11:19]  # Extract time only
+                
+                output += f"{symbol:15}|{tick_count:4} | {price:6.1f} \n"
+        
+        return f"Last Update: {last_updated}\n<pre>{html.escape(output)}</pre>"
 
     def top_ticks(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
