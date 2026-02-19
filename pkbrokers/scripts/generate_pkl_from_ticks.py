@@ -31,6 +31,8 @@ from typing import Dict, Optional, Tuple
 import pandas as pd
 import requests
 
+from pkbrokers.kite.examples.pkkite import kite_ticks
+
 
 def log(msg: str, verbose: bool = True):
     if verbose:
@@ -379,8 +381,43 @@ def download_historical_pkl(verbose: bool = True) -> Tuple[Optional[Dict], int]:
     return None, 0
 
 
+def is_data_fresh(data: Dict, verbose: bool = True) -> bool:
+    """Check if the ticks data is from today's trading date"""
+    if not data or not isinstance(data, dict):
+        return False
+    
+    # Get today's trading date
+    from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+    today_trading_date = PKDateUtilities.tradingDate()
+    
+    # Find the latest timestamp in the data
+    latest_timestamp_str = None
+    for instrument_token, instrument_data in data.items():
+        last_updated = instrument_data.get("last_updated")
+        if last_updated:
+            if latest_timestamp_str is None or last_updated > latest_timestamp_str:
+                latest_timestamp_str = last_updated
+    
+    if latest_timestamp_str:
+        # Parse the timestamp (handling both with and without microseconds)
+        try:
+            # Try with microseconds first
+            latest_date = datetime.fromisoformat(latest_timestamp_str).date()
+        except ValueError:
+            # Try without microseconds
+            latest_date = datetime.fromisoformat(latest_timestamp_str.split('.')[0]).date()
+        
+        log(f"Latest data date: {latest_date}, Today's trading date: {today_trading_date}", verbose)
+        return latest_date == today_trading_date
+    
+    return False
+
 def download_ticks_json(verbose: bool = True) -> Optional[Dict]:
-    """Download ticks.json from GitHub."""
+    """Download ticks.json from GitHub with freshness check."""
+    
+    from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+    today_trading_date = PKDateUtilities.tradingDate()
+    log(f"Looking for ticks from trading date: {today_trading_date}", verbose)
     
     urls = [
         # Primary location - actions-data-download subdirectory
@@ -399,6 +436,7 @@ def download_ticks_json(verbose: bool = True) -> Optional[Dict]:
             if response.status_code != 200:
                 continue
             
+            # Load data from response
             if url.endswith('.zip'):
                 with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
                     if 'ticks.json' in zf.namelist():
@@ -409,18 +447,25 @@ def download_ticks_json(verbose: bool = True) -> Optional[Dict]:
             else:
                 data = response.json()
             
+            # Validate and check freshness
             if isinstance(data, dict) and len(data) > 100:
-                log(f"✅ Downloaded ticks.json: {len(data)} instruments", verbose)
-                return data
+                if is_data_fresh(data, verbose):
+                    log(f"✅ Downloaded fresh ticks.json: {len(data)} instruments", verbose)
+                    return data
+                else:
+                    log(f"⚠️ Downloaded ticks.json is stale (not from today)", verbose)
+            else:
+                log(f"⚠️ Downloaded ticks.json has insufficient data: {len(data) if isinstance(data, dict) else 0} instruments", verbose)
+                
         except Exception as e:
+            log(f"⚠️ Error with {url}: {e}", verbose)
             continue
     
-    log("❌ Could not download ticks.json from GitHub", verbose)
+    log("❌ Could not download fresh ticks.json from GitHub", verbose)
     return None
 
-
 def load_local_ticks_json(data_dir: str, verbose: bool = True, min_instruments: int = 10) -> Optional[Dict]:
-    """Load ticks.json from local path.
+    """Load ticks.json from local path with freshness check.
     
     Args:
         data_dir: Directory to search for ticks.json
@@ -428,16 +473,24 @@ def load_local_ticks_json(data_dir: str, verbose: bool = True, min_instruments: 
         min_instruments: Minimum number of instruments required (default 10)
     
     Returns:
-        Dict of ticks data or None if not found/too small
+        Dict of fresh ticks data or None if not found/too small/stale
     """
     
+    # Get today's trading date
+    from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+    today_trading_date = PKDateUtilities.tradingDate()
+    log(f"Today's trading date: {today_trading_date}", verbose)
+    
+    # Define paths to check
     paths = [
         os.path.join(data_dir, "ticks.json"),
         os.path.join(data_dir, "results", "Data", "ticks.json"),
+        os.path.join(data_dir, "results", "Data", "ticks.json.zip"),  # Also check for zip
         "ticks.json",
         "results/Data/ticks.json",
     ]
     
+    # First, try to load local file and check freshness
     for path in paths:
         if os.path.exists(path):
             try:
@@ -445,17 +498,78 @@ def load_local_ticks_json(data_dir: str, verbose: bool = True, min_instruments: 
                 if file_size < 100:  # Skip tiny files (empty or nearly empty)
                     log(f"⚠️ Skipping tiny ticks.json: {path} ({file_size} bytes)", verbose)
                     continue
-                    
-                with open(path, 'r') as f:
-                    data = json.load(f)
-                if isinstance(data, dict) and len(data) >= min_instruments:
-                    log(f"✅ Loaded local ticks.json: {path} ({len(data)} instruments)", verbose)
+                
+                # Handle zip files
+                if path.endswith('.zip'):
+                    with zipfile.ZipFile(path, 'r') as zf:
+                        if 'ticks.json' in zf.namelist():
+                            with zf.open('ticks.json') as f:
+                                data = json.load(f)
+                        else:
+                            continue
+                else:
+                    with open(path, 'r') as f:
+                        data = json.load(f)
+                
+                # Validate data
+                if not (isinstance(data, dict) and len(data) >= min_instruments):
+                    log(f"⚠️ ticks.json has too few instruments: {len(data) if isinstance(data, dict) else 0}", verbose)
+                    continue
+                
+                # Check freshness
+                if is_data_fresh(data, verbose):
+                    log(f"✅ Loaded fresh local ticks.json: {path} ({len(data)} instruments)", verbose)
                     return data
                 else:
-                    log(f"⚠️ ticks.json has too few instruments: {len(data) if isinstance(data, dict) else 0}", verbose)
+                    log(f"⚠️ Local ticks.json is stale (not from today). Will fetch fresh data.", verbose)
+                    
             except Exception as e:
                 log(f"⚠️ Error loading {path}: {e}", verbose)
                 continue
+    
+    # If no fresh local data found, try generating fresh data with kite_ticks
+    log("🔄 No fresh local data found. Attempting to generate fresh ticks with kite_ticks()...", verbose)
+    try:
+        # Call kite_ticks in full mode - this will save fresh ticks.json in results/Data directory
+        log("Running kite_ticks(test_mode=False) to generate fresh data...", verbose)
+        from pkbrokers.kite.examples.pkkite import kite_ticks
+        kite_ticks(test_mode=False)  # Full mode, not test
+        
+        # After kite_ticks completes, check the expected output location
+        expected_path = os.path.join(data_dir, "results", "Data", "ticks.json")
+        
+        # Also check current directory as fallback
+        possible_paths = [
+            expected_path,
+            os.path.join("results", "Data", "ticks.json"),
+            "ticks.json"
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                log(f"Checking for fresh data at: {path}", verbose)
+                with open(path, 'r') as f:
+                    data = json.load(f)
+                
+                if isinstance(data, dict) and len(data) >= min_instruments:
+                    if is_data_fresh(data, verbose):
+                        log(f"✅ Successfully generated fresh ticks.json: {path} ({len(data)} instruments)", verbose)
+                        return data
+                    else:
+                        log(f"⚠️ Generated ticks.json is stale - something went wrong", verbose)
+                else:
+                    log(f"⚠️ Generated ticks.json has insufficient data", verbose)
+        
+        log("❌ Could not find valid ticks.json after kite_ticks", verbose)
+        
+    except Exception as e:
+        log(f"❌ Failed to generate fresh ticks via kite_ticks: {e}", verbose)
+    
+    # Final fallback: try to download from GitHub
+    log("Attempting to download fresh ticks from GitHub as final fallback...", verbose)
+    github_data = download_ticks_json(verbose)
+    if github_data:
+        return github_data
     
     return None
 
@@ -990,20 +1104,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
