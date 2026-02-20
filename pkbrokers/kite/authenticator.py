@@ -201,7 +201,7 @@ class KiteAuthenticator:
             with env_update_context(os.path.join(os.getcwd(), ".env.dev")) as updater:
                 updater.update_values({"KTOKEN": access_token})
                 updater.reload_env()
-                default_logger().debug(
+                default_logger().info(
                     f"Token updated in os.environment: {PKEnvironment().KTOKEN}"
                 )
             try:

@@ -126,6 +126,7 @@ class WebSocketProcess:
         self.log_level = log_level
         self.logger = None
         self.websocket = None
+        self.encToken_invalidated = False
         self.multiprocessingForWindows()
 
     def _build_websocket_url(self):
@@ -343,9 +344,12 @@ class WebSocketProcess:
                 self.logger.error(
                     f"Websocket_index:{self.websocket_index}: WebSocket connection error: {str(e)}. Reconnecting in 5 seconds..."
                 )
-                if "HTTP 403" in str(e).lower() or "enctoken" in str(e).lower():
+                if ("http 403" in str(e).lower() or "enctoken" in str(e).lower()) and not self.encToken_invalidated:
+                    self.encToken_invalidated = True
                     from pkbrokers.kite.examples.externals import kite_auth
                     kite_auth()
+                    self.enctoken = PKEnvironment().KTOKEN
+                    self.encToken_invalidated = len(PKEnvironment().KTOKEN) == 0
                 await asyncio.sleep(5)
 
     def setupLogger(self):
