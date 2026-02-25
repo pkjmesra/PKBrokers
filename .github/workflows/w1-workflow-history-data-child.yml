@@ -178,7 +178,7 @@ jobs:
 
         try:
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
-            from PKDevTools.classes.Archiver import Archiver
+            from PKDevTools.classes import Archiver
             
             # Method 1: Try to get cache file name from Archiver
             print('Checking for cache file from Archiver...', file=sys.stderr)
