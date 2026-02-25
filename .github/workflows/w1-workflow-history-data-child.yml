@@ -161,59 +161,169 @@ jobs:
           exit 0
         fi
         
-        # Calculate missing trading days using the unified pkl generator script
+        # Calculate missing trading days using Archiver
         echo "Calculating missing trading days..."
         
-        # Use generate_pkl_from_ticks.py which already has this logic
-        # It will download pkl, check dates, and we can capture the missing days
+        # Install required packages if not already present
+        pip install pkdevtools requests
+        
         CALCULATED_OFFSET=$(python3 -c "
         import sys, pickle, requests
         from datetime import datetime, timedelta
+        import os
+
         DEFAULT = 5
+        LATEST_FILE = None
+        LATEST_DATE = None
+
         try:
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
-            urls = [
-                'https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/stock_data_23122025.pkl',
-                'https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/stock_data_17122025.pkl',
-            ]
-            data = None
-            for url in urls:
+            from PKDevTools.classes.Archiver import Archiver
+            
+            # Method 1: Try to get cache file name from Archiver
+            print('Checking for cache file from Archiver...', file=sys.stderr)
+            try:
+                cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
+                if cache_exists and cache_file_name:
+                    url = f'https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/{cache_file_name}'
+                    print(f'Trying Archiver cache file: {cache_file_name}', file=sys.stderr)
+                    try:
+                        r = requests.get(url, timeout=60)
+                        if r.status_code == 200 and len(r.content) > 1000000:
+                            data = pickle.loads(r.content)
+                            if len(data) > 100:
+                                print(f'✅ Found Archiver cache file: {cache_file_name}', file=sys.stderr)
+                                LATEST_FILE = url
+                                LATEST_DATE = cache_file_name.replace('stock_data_', '').replace('.pkl', '')
+                                try:
+                                    LATEST_DATE = datetime.strptime(LATEST_DATE, '%d%m%Y').date()
+                                except:
+                                    LATEST_DATE = None
+                    except Exception as e:
+                        print(f'Error loading Archiver cache file: {e}', file=sys.stderr)
+            except Exception as e:
+                print(f'Archiver method failed: {e}', file=sys.stderr)
+            
+            # Method 2: If Archiver method failed, find the latest file in the directory
+            if LATEST_FILE is None:
+                print('Falling back to finding latest file in directory...', file=sys.stderr)
+                
+                # Base URL for the directory listing (using GitHub API to list files)
+                api_url = 'https://api.github.com/repos/pkjmesra/PKScreener/contents/actions-data-download?ref=actions-data-download'
+                
                 try:
-                    r = requests.get(url, timeout=60)
-                    if r.status_code == 200 and len(r.content) > 1000000:
-                        data = pickle.loads(r.content)
-                        if len(data) > 100:
-                            print(f'Found pkl: {len(data)} instruments', file=sys.stderr)
-                            break
-                except: continue
-            if not data:
+                    headers = {}
+                    # Add token if available for higher rate limits
+                    if 'GITHUB_TOKEN' in os.environ:
+                        headers['Authorization'] = f'token {os.environ["GITHUB_TOKEN"]}'
+                    
+                    r = requests.get(api_url, headers=headers, timeout=30)
+                    if r.status_code == 200:
+                        files = r.json()
+                        pkl_files = []
+                        
+                        for file in files:
+                            if file['name'].startswith('stock_data_') and file['name'].endswith('.pkl'):
+                                # Extract date from filename (stock_data_DDMMYYYY.pkl)
+                                date_str = file['name'].replace('stock_data_', '').replace('.pkl', '')
+                                try:
+                                    file_date = datetime.strptime(date_str, '%d%m%Y').date()
+                                    pkl_files.append((file_date, file['name'], file['download_url']))
+                                except:
+                                    continue
+                        
+                        if pkl_files:
+                            # Sort by date (latest first)
+                            pkl_files.sort(key=lambda x: x[0], reverse=True)
+                            latest_date, latest_name, latest_url = pkl_files[0]
+                            print(f'Latest file found: {latest_name} from {latest_date}', file=sys.stderr)
+                            
+                            # Download the latest file
+                            r = requests.get(latest_url, timeout=60)
+                            if r.status_code == 200 and len(r.content) > 1000000:
+                                data = pickle.loads(r.content)
+                                if len(data) > 100:
+                                    LATEST_FILE = latest_url
+                                    LATEST_DATE = latest_date
+                except Exception as e:
+                    print(f'Error listing directory: {e}', file=sys.stderr)
+            
+            # Method 3: Fallback to hardcoded URLs if both methods fail
+            if LATEST_FILE is None:
+                print('Falling back to hardcoded URLs...', file=sys.stderr)
+                urls = [
+                    'https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/stock_data_17122025.pkl',
+                ]
+                
+                for url in urls:
+                    try:
+                        r = requests.get(url, timeout=60)
+                        if r.status_code == 200 and len(r.content) > 1000000:
+                            data = pickle.loads(r.content)
+                            if len(data) > 100:
+                                print(f'Found pkl: {url}', file=sys.stderr)
+                                LATEST_FILE = url
+                                # Extract date from URL
+                                date_str = url.split('stock_data_')[-1].split('.pkl')[0]
+                                try:
+                                    LATEST_DATE = datetime.strptime(date_str, '%d%m%Y').date()
+                                except:
+                                    LATEST_DATE = None
+                                break
+                    except: 
+                        continue
+            
+            # If no data found, return default offset
+            if LATEST_FILE is None:
+                print('No data found, using default offset', file=sys.stderr)
                 print(DEFAULT)
                 sys.exit(0)
-            latest = None
-            for s, df in list(data.items())[:50]:
-                try:
-                    if hasattr(df, 'index') and len(df) > 0:
-                        m = df.index.max()
-                        if hasattr(m, 'date'): m = m.date()
-                        if latest is None or m > latest: latest = m
-                except: continue
-            if not latest:
-                print(DEFAULT)
-                sys.exit(0)
-            print(f'Latest date: {latest}', file=sys.stderr)
+            
+            # Now we have data, find the latest date in it
+            if LATEST_DATE is None:
+                # If we couldn't get date from filename, extract from data
+                latest_data_date = None
+                for symbol, df in list(data.items())[:50]:
+                    try:
+                        if hasattr(df, 'index') and len(df) > 0:
+                            max_date = df.index.max()
+                            if hasattr(max_date, 'date'):
+                                max_date = max_date.date()
+                            if latest_data_date is None or max_date > latest_data_date:
+                                latest_data_date = max_date
+                    except: 
+                        continue
+                
+                if latest_data_date:
+                    LATEST_DATE = latest_data_date
+                else:
+                    print('Could not determine latest date from data', file=sys.stderr)
+                    print(DEFAULT)
+                    sys.exit(0)
+            
+            print(f'Latest date in data: {LATEST_DATE}', file=sys.stderr)
+            
+            # Get today's trading date
             lt = PKDateUtilities.tradingDate()
-            if hasattr(lt, 'date'): lt = lt.date()
-            print(f'Last trading: {lt}', file=sys.stderr)
-            if latest >= lt:
+            if hasattr(lt, 'date'):
+                lt = lt.date()
+            print(f'Last trading date: {lt}', file=sys.stderr)
+            
+            # Compare dates
+            if LATEST_DATE >= lt:
                 print(0)
                 sys.exit(0)
+            
+            # Calculate missing trading days
             try:
-                missing = PKDateUtilities.trading_days_between(latest, lt)
+                missing = PKDateUtilities.trading_days_between(LATEST_DATE, lt)
                 print(f'Missing trading days: {missing}', file=sys.stderr)
                 print(max(1, missing))
             except:
-                diff = (lt - latest).days
+                # Fallback calculation
+                diff = (lt - LATEST_DATE).days
                 print(max(1, int(diff * 5 / 7)))
+                
         except Exception as e:
             print(f'Error: {e}', file=sys.stderr)
             print(DEFAULT)
