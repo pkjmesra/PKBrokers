@@ -226,8 +226,9 @@ def kite_history():
         try:
             past_offset = int(args.pastoffset)
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+            from datetime import timedelta
             from_date = PKDateUtilities.YmdStringFromDate(
-                PKDateUtilities.currentDateTime() - 365
+                PKDateUtilities.currentDateTime() - timedelta(days=365)
             ) if past_offset == 0 else PKDateUtilities.nthPastTradingDateStringFromFutureDate(n=past_offset)
             print(f"from_date set to {from_date} for --pastoffset: {args.pastoffset}. This means the history data will be fetched starting from {from_date}.")
         except ValueError:
