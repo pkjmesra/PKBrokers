@@ -10,10 +10,10 @@ This script:
 5. Saves as dated pkl files (~37MB+)
 
 Usage:
-    # From ticks.json (default)
+    # From ticks.json (default - for market hours with tick merging)
     python generate_pkl_from_ticks.py [--data-dir PATH] [--verbose]
     
-    # From SQLite database (for history workflow)
+    # From SQLite database (for after-market hours, no tick merging)
     python generate_pkl_from_ticks.py --from-db [--db-path PATH] [--data-dir PATH] [--verbose]
 """
 
@@ -316,7 +316,7 @@ def download_historical_pkl(verbose: bool = True) -> Tuple[Optional[Dict], int]:
         "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/",
     ]
     
-    # Try last 10 days
+    # Try last 30 days
     today = datetime.now()
     # Look back up to 30 days to find a valid pkl file with quality data
     for days_back in range(30):
@@ -324,9 +324,9 @@ def download_historical_pkl(verbose: bool = True) -> Tuple[Optional[Dict], int]:
         
         # Try different date formats
         date_formats = [
-            check_date.strftime('%d%m%Y'),  # 29122025
-            check_date.strftime('%d%m%y'),   # 291225
-            f"{check_date.day}{check_date.strftime('%m%y')}",  # 291225 without leading zero
+            check_date.strftime('%d%m%Y'),  # 25022026
+            check_date.strftime('%d%m%y'),   # 250226
+            f"{check_date.day}{check_date.strftime('%m%y')}",  # 250226 without leading zero
         ]
         
         for base_url in base_urls:
@@ -340,7 +340,7 @@ def download_historical_pkl(verbose: bool = True) -> Tuple[Optional[Dict], int]:
                         if isinstance(data, dict) and len(data) > 100:
                             # Validate data quality - check rows per stock
                             sample_symbols = ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK']
-                            min_rows = 100  # Expect at least 100 rows for valid historical data
+                            min_rows = 248  # Increased from 100 to 248 for better quality (approx 248 is full year)
                             
                             rows_ok = False
                             for sym in sample_symbols:
@@ -530,10 +530,10 @@ def load_local_ticks_json(data_dir: str, verbose: bool = True, min_instruments: 
     # If no fresh local data found, try generating fresh data with kite_ticks
     log("🔄 No fresh local data found. Attempting to generate fresh ticks with kite_ticks()...", verbose)
     try:
-        # Call kite_ticks in full mode - this will save fresh ticks.json in results/Data directory
-        log("Running kite_ticks(test_mode=False) to generate fresh data...", verbose)
+        # Call kite_ticks in test mode - 3 minutes is enough for a sample
+        log("Running kite_ticks(test_mode=True) to generate fresh data...", verbose)
         from pkbrokers.kite.examples.pkkite import kite_ticks
-        kite_ticks(test_mode=True)  # Full mode, but test
+        kite_ticks(test_mode=True)  # Keep as test_mode=True as requested
         
         # After kite_ticks completes, check the expected output location
         expected_path = os.path.join(data_dir, "results", "Data", "ticks.json")
@@ -1056,12 +1056,37 @@ def main():
         db_path = args.db_path if args.db_path else find_sqlite_database(verbose)
         if db_path:
             new_candles = load_from_sqlite(db_path, verbose)
-        
-        if not new_candles:
-            log("⚠️ No data from database, trying ticks.json as fallback...", verbose)
+            
+            # FIX: Merge database data with historical data
+            if historical_data and new_candles:
+                log("Merging database data with historical data...", verbose)
+                merged_data = merge_candles(historical_data, new_candles, verbose)
+                # Save merged data instead of just database data
+                log("\n[Step 4] Saving merged pkl files from database + historical...", verbose)
+                save_pkl_files(merged_data, data_dir, verbose)
+            elif new_candles:
+                log("No historical data to merge with, saving database data only", verbose)
+                save_pkl_files(new_candles, data_dir, verbose)
+            else:
+                log("⚠️ No data from database, trying ticks.json as fallback...", verbose)
+                ticks_data = load_local_ticks_json(data_dir, verbose)
+                if ticks_data:
+                    new_candles = convert_ticks_to_candles(ticks_data, verbose)
+                    if historical_data:
+                        merged_data = merge_candles(historical_data, new_candles, verbose)
+                        save_pkl_files(merged_data, data_dir, verbose)
+                    else:
+                        save_pkl_files(new_candles, data_dir, verbose)
+        else:
+            log("⚠️ No database found, trying ticks.json as fallback...", verbose)
             ticks_data = load_local_ticks_json(data_dir, verbose)
             if ticks_data:
                 new_candles = convert_ticks_to_candles(ticks_data, verbose)
+                if historical_data:
+                    merged_data = merge_candles(historical_data, new_candles, verbose)
+                    save_pkl_files(merged_data, data_dir, verbose)
+                else:
+                    save_pkl_files(new_candles, data_dir, verbose)
     else:
         # Load from ticks.json
         ticks_data = load_local_ticks_json(data_dir, verbose)
@@ -1070,32 +1095,28 @@ def main():
         
         if ticks_data:
             new_candles = convert_ticks_to_candles(ticks_data, verbose)
+            
             # Save intraday pkl (just today's ticks) - only if we have meaningful data
             if new_candles and len(new_candles) >= 10:
                 save_intraday_pkl(new_candles, data_dir, verbose)
             else:
                 log("⚠️ Not enough new data for intraday pkl", verbose)
-    
-    # Step 3: Determine what to save
-    log("\n[Step 3] Preparing final data...", verbose)
-    
-    if not historical_data and not new_candles:
-        log("❌ FAILED: No data available (neither historical nor new)", verbose)
-        sys.exit(1)
-    
-    # Merge or use what we have
-    if new_candles and len(new_candles) >= 10:
-        merged_data = merge_candles(historical_data, new_candles, verbose)
-    elif historical_data:
-        merged_data = historical_data
-        log("Using historical data only (no new data to merge)", verbose)
-    else:
-        merged_data = new_candles
-        log("Using new data only (no historical data found)", verbose)
-    
-    # Step 4: Save merged daily pkl
-    log("\n[Step 4] Saving pkl files...", verbose)
-    save_pkl_files(merged_data, data_dir, verbose)
+            
+            # Merge with historical data for daily pkl
+            if historical_data:
+                merged_data = merge_candles(historical_data, new_candles, verbose)
+                log("\n[Step 4] Saving merged daily pkl files...", verbose)
+                save_pkl_files(merged_data, data_dir, verbose)
+            else:
+                log("No historical data to merge with, saving ticks data only", verbose)
+                save_pkl_files(new_candles, data_dir, verbose)
+        else:
+            log("⚠️ No ticks data found, using historical data only", verbose)
+            if historical_data:
+                save_pkl_files(historical_data, data_dir, verbose)
+            else:
+                log("❌ FAILED: No data available (neither historical nor new)", verbose)
+                sys.exit(1)
     
     log("=" * 60, verbose)
     log("✅ SUCCESS: PKL files generated", verbose)
