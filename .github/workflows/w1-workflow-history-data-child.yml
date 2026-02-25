@@ -420,7 +420,7 @@ jobs:
     - name: Export database to pkl files using unified generator
       # Step: Convert SQLite database to PKL format for efficient storage
       # For day period only
-      # If market is open and not holiday, merges with ticks.json data
+      # If market is open and not holiday, merges ticks.json data with database
       # If market is closed or holiday, exports database as-is without merging
       if: inputs.period == 'day'
       run: |
@@ -431,18 +431,17 @@ jobs:
         
         if [ "$MERGE_FLAG" == "true" ]; then
             echo "🟢 Market is open - merging ticks.json data with database..."
-            echo "Using unified pkl generator script (--from-db mode with tick merging)..."
+            echo "Using unified pkl generator script (with tick merging)..."
             
-            # Use the unified generate_pkl_from_ticks.py script with --from-db flag
+            # Without --from-db flag, it will load from ticks.json and merge with historical data
             python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py \
-              --from-db \
               --data-dir results/Data \
               --verbose
         else
             echo "🔴 Market is closed OR today is a holiday - exporting database as-is (no tick merging)..."
             echo "Using unified pkl generator script (--from-db mode only)..."
             
-            # Use the unified generate_pkl_from_ticks.py script with --from-db flag (no tick merging)
+            # With --from-db flag, it will load from SQLite database only
             python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py \
               --from-db \
               --data-dir results/Data \
