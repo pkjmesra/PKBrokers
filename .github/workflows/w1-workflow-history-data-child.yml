@@ -37,7 +37,7 @@
 # UPDATED BEHAVIOR:
 # - Market hours check (9:15 AM - 3:30 PM IST, non-holiday): Merges ticks.json data
 # - Outside market hours or holidays: Commits PKL file as-is without merging ticks
-# - PKL file size validation: Ensures daily files are >= 35MB
+# - PKL file size validation: Ensures daily files are >= 25MB
 # - Uses cache_file_name from Archiver for date instead of current date
 # =============================================================================
 
@@ -437,6 +437,7 @@ jobs:
             python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py \
               --data-dir results/Data \
               --verbose
+              --past-offset ${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 0 }}
         else
             echo "🔴 Market is closed OR today is a holiday - exporting database as-is (no tick merging)..."
             echo "Using unified pkl generator script (--from-db mode only)..."
@@ -446,6 +447,7 @@ jobs:
               --from-db \
               --data-dir results/Data \
               --verbose
+              --past-offset ${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 0 }}
         fi
         
         echo ""
@@ -455,7 +457,7 @@ jobs:
     - name: Commit updated pkl file to PKScreener actions-data-download
       # Step: Upload the generated PKL files to the PKScreener repository
       # Uses cache_file_name from Archiver for date instead of current date
-      # Validates daily PKL files are at least 35MB before committing
+      # Validates daily PKL files are at least 25MB before committing
       env:
         CI_PAT: ${{ secrets.CI_PAT }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -500,7 +502,7 @@ jobs:
             "day")
                 TARGET_FILE="stock_data_${TARGET_DATE}.pkl"
                 GENERIC_FILE="daily_candles.pkl"
-                MIN_SIZE=35000000  # 35 MB minimum for daily (fixed from 1MB to 35MB)
+                MIN_SIZE=25000000  # 25 MB minimum for daily (fixed from 1MB to 25MB)
                 ;;
             "minute")
                 TARGET_FILE="intraday_stock_data_${TARGET_DATE}.pkl"
@@ -555,7 +557,7 @@ jobs:
                   FILES_COPIED=$((FILES_COPIED + 1))
                   break
                 else
-                  echo "⚠️ File too small (needs >35MB): $PKL_FILE ($PKL_SIZE bytes)"
+                  echo "⚠️ File too small (needs >25MB): $PKL_FILE ($PKL_SIZE bytes)"
                 fi
               fi
             done

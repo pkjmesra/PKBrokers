@@ -807,8 +807,8 @@ class KiteTickerHistory:
             from_date = PKDateUtilities.YmdStringFromDate(
                 PKDateUtilities.currentDateTime()
                 - self.timedelta_for_interval(interval=interval.lower())
-                - timedelta(days=past_offset)
-            )
+                # - timedelta(days=past_offset)
+            ) if past_offset == 0 else PKDateUtilities.nthPastTradingDateStringFromFutureDate(n=past_offset)
         if to_date is None or len(to_date) == 0:
             to_date = PKDateUtilities.YmdStringFromDate(
                 PKDateUtilities.currentDateTime()

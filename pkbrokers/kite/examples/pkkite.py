@@ -222,8 +222,19 @@ def kite_history():
     # Create history client with the full response object
     history = KiteTickerHistory(enctoken=PKEnvironment().KTOKEN)
 
+    if args.pastoffset:
+        try:
+            past_offset = int(args.pastoffset)
+            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+            from_date = PKDateUtilities.YmdStringFromDate(
+                PKDateUtilities.currentDateTime() - 365
+            ) if past_offset == 0 else PKDateUtilities.nthPastTradingDateStringFromFutureDate(n=past_offset)
+            print(f"from_date set to {from_date} for --pastoffset: {args.pastoffset}. This means the history data will be fetched starting from {from_date}.")
+        except ValueError:
+            print(f"Invalid value for --pastoffset: {args.pastoffset}. It should be an integer representing the number of past trading days to fetch data for.")
+            sys.exit(1)
     history.get_multiple_instruments_history(
-        instruments=tokens, interval=args.history, forceFetch=True, insertOnly=True
+        instruments=tokens, interval=args.history, forceFetch=True, insertOnly=True, past_offset=int(args.pastoffset) if args.pastoffset else 0,
     )
     if len(history.failed_tokens) > 0:
         history.get_multiple_instruments_history(

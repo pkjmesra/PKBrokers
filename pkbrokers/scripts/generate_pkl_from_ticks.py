@@ -303,7 +303,7 @@ def calculate_missing_trading_days(data: Dict, verbose: bool = True) -> int:
         return 5  # Default
 
 
-def download_historical_pkl(verbose: bool = True) -> Tuple[Optional[Dict], int]:
+def download_historical_pkl(verbose: bool = True, past_offset: int = 30) -> Tuple[Optional[Dict], int]:
     """Download the most recent historical pkl from GitHub.
     
     Returns:
@@ -319,14 +319,14 @@ def download_historical_pkl(verbose: bool = True) -> Tuple[Optional[Dict], int]:
     # Try last 30 days
     today = datetime.now()
     # Look back up to 30 days to find a valid pkl file with quality data
-    for days_back in range(30):
+    for days_back in range(past_offset if past_offset > 0 else 30):
         check_date = today - timedelta(days=days_back)
         
         # Try different date formats
         date_formats = [
             check_date.strftime('%d%m%Y'),  # 25022026
-            check_date.strftime('%d%m%y'),   # 250226
-            f"{check_date.day}{check_date.strftime('%m%y')}",  # 250226 without leading zero
+            # check_date.strftime('%d%m%y'),   # 250226
+            # f"{check_date.day}{check_date.strftime('%m%y')}",  # 250226 without leading zero
         ]
         
         for base_url in base_urls:
@@ -1010,22 +1010,25 @@ def main():
     parser.add_argument("--from-db", action="store_true", help="Load data from SQLite database instead of ticks.json")
     parser.add_argument("--db-path", default=None, help="Path to SQLite database (auto-detected if not specified)")
     parser.add_argument("--trigger-history", action="store_true", help="Trigger history download workflow if data is stale")
+    parser.add_argument("--past-offset", default=30, help="Past offset days to check for the existence of pkl files")
     parser.add_argument("--verbose", "-v", action="store_true", default=True, help="Verbose output")
     args = parser.parse_args()
     
     verbose = args.verbose
     data_dir = args.data_dir
+    past_offset = int(args.past_offset) if args.past_offset else 30
     
     log("=" * 60, verbose)
     log("PKL Generator: Unified pkl file generation", verbose)
     log(f"Mode: {'SQLite Database' if args.from_db else 'Ticks JSON'}", verbose)
+    log(f"Past offset: {past_offset} days", verbose)
     log("=" * 60, verbose)
     
     new_candles = {}
     
     # Step 1: Always download historical pkl first (this is our base)
     log("\n[Step 1] Downloading historical pkl from GitHub...", verbose)
-    historical_data, missing_trading_days = download_historical_pkl(verbose)
+    historical_data, missing_trading_days = download_historical_pkl(verbose, past_offset=past_offset+1)
     
     if historical_data:
         log(f"Historical data: {len(historical_data)} instruments", verbose)
