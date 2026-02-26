@@ -670,6 +670,38 @@ jobs:
                   cp "$PKL_FILE" actions-data-download/$TARGET_FILE
                   cp "$PKL_FILE" actions-data-download/$GENERIC_FILE
                   FILES_COPIED=$((FILES_COPIED + 1))
+                  # Commit and push
+                  git config user.name "github-actions[bot]"
+                  git config user.email "actions@github.com"
+                  
+                  # Remove any .db files that may have been accidentally copied (too large for GitHub)
+                  rm -f actions-data-download/instrument_history_${{ inputs.period }}*.db 2>/dev/null || true
+                  
+                  # Only add pkl and json files (no .db files - they exceed GitHub's 100MB limit)
+                  git add -f actions-data-download/*.pkl 2>/dev/null || true
+                  git add -f actions-data-download/*.json 2>/dev/null || true
+                  
+                  # Show what's staged
+                  echo "Files to be committed:"
+                  git diff --staged --name-only
+                  
+                  if ! git diff --staged --quiet; then
+                    git commit -m "Update $TARGET_FILE from history download - $TARGET_DATE [period: $PERIOD]"
+                    
+                    # Retry push with rebase if needed
+                    for i in 1 2 3; do
+                      if git push; then
+                        echo "✅ Successfully committed updated pkl files to PKScreener actions-data-download"
+                        break
+                      else
+                        echo "Push failed, attempt $i, pulling and retrying..."
+                        git pull --rebase origin actions-data-download || true
+                        sleep 2
+                      fi
+                    done
+                  else
+                    echo "No changes to commit"
+                  fi
                   break
                 else
                   echo "⚠️ File too small (needs >25MB): $PKL_FILE ($PKL_SIZE bytes)"
@@ -731,8 +763,8 @@ jobs:
         fi
         
         # DO NOT copy .db files - they are too large for GitHub (>100MB limit)
-        # Note: instruments.db is committed separately in an earlier step
-        echo "Note: SQLite .db files are not committed here (instruments.db committed separately)"
+        # Note: instrument_history.db is committed separately in an earlier step
+        echo "Note: SQLite .db files are not committed here (instrument_history.db committed separately)"
         
         echo "Total files copied: $FILES_COPIED"
         
