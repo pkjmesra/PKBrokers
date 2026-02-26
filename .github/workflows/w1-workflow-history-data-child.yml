@@ -380,13 +380,34 @@ jobs:
         python pkkite.py --history=${{ inputs.period }} --pastoffset=$OFFSET --verbose
 
     - name: Find and commit instruments.db to PKScreener actions-data-download
-      # NEW STEP: Commit instruments.db before market check to ensure token mappings are available
+      # UPDATED STEP: Commit instruments.db with date suffix and clean up old instrument_*.db files
       # This file is critical for token-to-symbol mapping in subsequent steps
+      # Renames to instruments_YYYYMMDD.db format and removes older instrument_*.db files
       env:
         CI_PAT: ${{ secrets.CI_PAT }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         cd pkbrokers/kite/examples/
+        
+        # First, get the target date using the same logic as the pkl commit step
+        echo "Getting target date from Archiver..."
+        TARGET_INFO=$(python3 -c "
+        from PKDevTools.classes import Archiver
+        cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
+        if cache_exists and cache_file_name:
+            print(f'{cache_file_name}')
+        else:
+            print('stock_data_$(date +%d%m%Y).pkl')
+        ")
+        
+        # Extract date from cache file name (stock_data_DDMMYYYY.pkl)
+        if [[ $TARGET_INFO =~ stock_data_([0-9]{8})\.pkl ]]; then
+            TARGET_DATE="${BASH_REMATCH[1]}"
+        else
+            TARGET_DATE=$(date +%d%m%Y)
+        fi
+        
+        echo "Target date for instruments.db: $TARGET_DATE"
         
         # Find instruments.db in common locations
         echo "Searching for instruments.db..."
@@ -420,24 +441,43 @@ jobs:
         git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
         cd pkscreener-data
         
-        # Copy instruments.db to the repository
+        # Create dated filename
+        DATED_INSTRUMENTS_FILE="instruments_${{ inputs.period }}_${TARGET_DATE}.db"
+        echo "Dated instruments file: $DATED_INSTRUMENTS_FILE"
+        
+        # Copy instruments.db to the repository with dated name
         mkdir -p actions-data-download
-        cp "../$INSTRUMENTS_DB_PATH" actions-data-download/instruments.db
+        cp "../$INSTRUMENTS_DB_PATH" "actions-data-download/$DATED_INSTRUMENTS_FILE"
+        
+        # Delete any older instrument_*.db files (except the current one)
+        echo "Removing older instrument_*.db files..."
+        OLD_FILES=$(ls actions-data-download/instrument_${{ inputs.period }}_*.db 2>/dev/null | grep -v "$DATED_INSTRUMENTS_FILE" || true)
+        if [ -n "$OLD_FILES" ]; then
+          echo "Found old instrument files to remove:"
+          echo "$OLD_FILES"
+          rm -f $OLD_FILES
+        else
+          echo "No old instrument files found"
+        fi
         
         # Configure git
         git config user.name "github-actions[bot]"
         git config user.email "actions@github.com"
         
-        # Add and commit
-        git add -f actions-data-download/instruments.db
+        # Add all changes (new file and deletions)
+        git add -A actions-data-download/
+        
+        # Show what's changed
+        echo "Changes to be committed:"
+        git diff --staged --name-status
         
         if ! git diff --staged --quiet; then
-          git commit -m "Update instruments.db for token-symbol mapping [skip ci]"
+          git commit -m "Update instruments.db to $DATED_INSTRUMENTS_FILE and cleanup old versions [skip ci]"
           
           # Retry push with rebase if needed
           for i in 1 2 3; do
             if git push; then
-              echo "✅ Successfully committed instruments.db to PKScreener actions-data-download"
+              echo "✅ Successfully committed $DATED_INSTRUMENTS_FILE to PKScreener actions-data-download"
               break
             else
               echo "Push failed, attempt $i, pulling and retrying..."
