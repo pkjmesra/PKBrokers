@@ -379,10 +379,10 @@ jobs:
         
         python pkkite.py --history=${{ inputs.period }} --pastoffset=$OFFSET --verbose
 
-    - name: Find and commit instruments.db to PKScreener actions-data-download
-      # UPDATED STEP: Commit instruments.db with date suffix and clean up old instrument_*.db files
+    - name: Find and commit instrument_history.db to PKScreener actions-data-download
+      # UPDATED STEP: Commit instrument_history.db with date suffix and clean up old instrument_history_*.db files
       # This file is critical for token-to-symbol mapping in subsequent steps
-      # Renames to instruments_YYYYMMDD.db format and removes older instrument_*.db files
+      # Renames to instrument_history_YYYYMMDD.db format and removes older instrument_history_*.db files
       env:
         CI_PAT: ${{ secrets.CI_PAT }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -407,33 +407,33 @@ jobs:
             TARGET_DATE=$(date +%d%m%Y)
         fi
         
-        echo "Target date for instruments.db: $TARGET_DATE"
+        echo "Target date for instrument_history.db: $TARGET_DATE"
         
-        # Find instruments.db in common locations
-        echo "Searching for instruments.db..."
+        # Find instrument_history.db in common locations
+        echo "Searching for instrument_history.db..."
         
         INSTRUMENTS_DB_PATH=""
         
         # Check common locations
         POSSIBLE_PATHS=(
-          "instruments.db"
-          "results/Data/instruments.db"
-          "../../../instruments.db"
-          "$HOME/.PKDevTools_userdata/instruments.db"
-          "$HOME/.pkbrokers/instruments.db"
+          "instrument_history.db"
+          "results/Data/instrument_history.db"
+          "../../../instrument_history.db"
+          "$HOME/.PKDevTools_userdata/instrument_history.db"
+          "$HOME/.pkbrokers/instrument_history.db"
         )
         
         for path in "${POSSIBLE_PATHS[@]}"; do
           if [ -f "$path" ]; then
             INSTRUMENTS_DB_PATH="$path"
             DB_SIZE=$(stat -c%s "$path" 2>/dev/null || stat -f%z "$path")
-            echo "✅ Found instruments.db at: $path ($DB_SIZE bytes)"
+            echo "✅ Found instrument_history.db at: $path ($DB_SIZE bytes)"
             break
           fi
         done
         
         if [ -z "$INSTRUMENTS_DB_PATH" ]; then
-          echo "⚠️ No instruments.db found, skipping commit"
+          echo "⚠️ No instrument_history.db found, skipping commit"
           exit 0
         fi
         
@@ -442,22 +442,22 @@ jobs:
         cd pkscreener-data
         
         # Create dated filename
-        DATED_INSTRUMENTS_FILE="instruments_${{ inputs.period }}_${TARGET_DATE}.db"
-        echo "Dated instruments file: $DATED_INSTRUMENTS_FILE"
+        DATED_INSTRUMENTS_FILE="instrument_history_${{ inputs.period }}_${TARGET_DATE}.db"
+        echo "Dated instrument_history file: $DATED_INSTRUMENTS_FILE"
         
-        # Copy instruments.db to the repository with dated name
+        # Copy instrument_history.db to the repository with dated name
         mkdir -p actions-data-download
         cp "../$INSTRUMENTS_DB_PATH" "actions-data-download/$DATED_INSTRUMENTS_FILE"
         
-        # Delete any older instrument_*.db files (except the current one)
-        echo "Removing older instrument_*.db files..."
-        OLD_FILES=$(ls actions-data-download/instrument_${{ inputs.period }}_*.db 2>/dev/null | grep -v "$DATED_INSTRUMENTS_FILE" || true)
+        # Delete any older instrument_history_*.db files (except the current one)
+        echo "Removing older instrument_history_*.db files..."
+        OLD_FILES=$(ls actions-data-download/instrument_history_${{ inputs.period }}_*.db 2>/dev/null | grep -v "$DATED_INSTRUMENTS_FILE" || true)
         if [ -n "$OLD_FILES" ]; then
-          echo "Found old instrument files to remove:"
+          echo "Found old instrument_history files to remove:"
           echo "$OLD_FILES"
           rm -f $OLD_FILES
         else
-          echo "No old instrument files found"
+          echo "No old instrument_history files found"
         fi
         
         # Configure git
@@ -472,7 +472,7 @@ jobs:
         git diff --staged --name-status
         
         if ! git diff --staged --quiet; then
-          git commit -m "Update instruments.db to $DATED_INSTRUMENTS_FILE and cleanup old versions [skip ci]"
+          git commit -m "Update instrument_history.db to $DATED_INSTRUMENTS_FILE and cleanup old versions [skip ci]"
           
           # Retry push with rebase if needed
           for i in 1 2 3; do
@@ -486,7 +486,7 @@ jobs:
             fi
           done
         else
-          echo "No changes to instruments.db"
+          echo "No changes to instrument_history.db"
         fi
         
         cd ../..
@@ -551,7 +551,7 @@ jobs:
             # Without --from-db flag, it will load from ticks.json and merge with historical data
             python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py \
               --data-dir results/Data \
-              --verbose
+              --verbose \
               --past-offset ${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 0 }}
         else
             echo "🔴 Market is closed OR today is a holiday - exporting database as-is (no tick merging)..."
@@ -561,7 +561,7 @@ jobs:
             python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py \
               --from-db \
               --data-dir results/Data \
-              --verbose
+              --verbose \
               --past-offset ${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 0 }}
         fi
         
