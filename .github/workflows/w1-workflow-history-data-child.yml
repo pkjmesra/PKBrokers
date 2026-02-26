@@ -368,12 +368,86 @@ jobs:
         echo "PAST_OFFSET=$CALCULATED_OFFSET" >> $GITHUB_OUTPUT
 
     - name: Run historical data for ${{ inputs.period }}
-      # Step: Execute pkkite.py to fetch historical data for the specified period
-      # Uses the calculated offset to determine how many days to fetch
+      # OPTIMIZED STEP: First check if today's instrument_history db.zip exists in the repo.
+      # If it does, download and use it. Otherwise, run pkkite.py to fetch historical data.
+      # Uses the calculated offset to determine how many days to fetch only as a fallback.
       run: |
-        cp .env.dev pkbrokers/kite/examples/.env.dev
         cd pkbrokers/kite/examples/
-        
+        mkdir -p results/Data
+
+        # --- Determine TARGET_DATE using the same logic as the commit step ---
+        echo "Getting target date from Archiver for potential download..."
+        TARGET_INFO=$(python3 -c "
+        from PKDevTools.classes import Archiver
+        cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
+        if cache_exists and cache_file_name:
+            print(f'{cache_file_name}')
+        else:
+            print('stock_data_$(date +%d%m%Y).pkl')
+        ")
+
+        # Extract date from cache file name (stock_data_DDMMYYYY.pkl)
+        if [[ $TARGET_INFO =~ stock_data_([0-9]{8})\.pkl ]]; then
+            TARGET_DATE="${BASH_REMATCH[1]}"
+        else
+            TARGET_DATE=$(date +%d%m%Y)
+        fi
+        echo "Target date for checking instrument_history: $TARGET_DATE"
+        # ----------------------------------------------------------------
+
+        # Construct the expected filename and URL
+        DATED_INSTRUMENTS_ZIP="instrument_history_${{ inputs.period }}_${TARGET_DATE}.db.zip"
+        # Use the correct base URL for your raw files
+        BASE_RAW_URL="https://raw.githubusercontent.com/pkjmesra/PKScreener/refs/heads/actions-data-download/actions-data-download/"
+        FILE_URL="${BASE_RAW_URL}${DATED_INSTRUMENTS_ZIP}"
+
+        echo "Checking for existing instrument history zip: $FILE_URL"
+
+        # Use curl with --head to check if the file exists without downloading it fully
+        HTTP_STATUS=$(curl -s --head -w "%{http_code}" "$FILE_URL" -o /dev/null)
+
+        if [ "$HTTP_STATUS" == "200" ]; then
+            echo "✅ Found existing instrument history zip for today. Downloading and extracting..."
+            
+            # Download the zip file
+            curl -L -o "$DATED_INSTRUMENTS_ZIP" "$FILE_URL"
+            
+            # Unzip it directly into results/Data/ as instrument_history.db
+            # Assuming the zip contains the .db file, possibly with the dated name or a generic one.
+            # We extract and force rename/move to the target location.
+            unzip -o "$DATED_INSTRUMENTS_ZIP" -d temp_instrument_dir/
+            
+            # Find the extracted .db file (it might have the dated name or a generic one)
+            EXTRACTED_DB_FILE=$(find temp_instrument_dir -name "*.db" | head -1)
+            
+            if [ -f "$EXTRACTED_DB_FILE" ]; then
+                mv "$EXTRACTED_DB_FILE" "results/Data/instrument_history.db"
+                echo "✅ Successfully placed instrument_history.db in results/Data/"
+            else
+                echo "⚠️ Could not find .db file inside the downloaded zip."
+                # Fallback: remove potentially incomplete extraction
+                rm -rf temp_instrument_dir
+                # We will fall through to the pkkite logic below
+            fi
+            
+            # Clean up
+            rm -rf temp_instrument_dir
+            rm -f "$DATED_INSTRUMENTS_ZIP"
+            
+            # If we successfully got the DB, we might not need to run pkkite for the main history.
+            # However, pkkite might also generate other files. The original step only ran pkkite.
+            # To strictly follow the optimization, we skip pkkite only if the DB was successfully placed.
+            if [ -f "results/Data/instrument_history.db" ]; then
+                echo "Skipping pkkite.py run as today's instrument_history.db is already available."
+                exit 0
+            else
+                echo "Proceeding to run pkkite.py as fallback."
+            fi
+        else
+            echo "ℹ️ No existing instrument history zip found (HTTP $HTTP_STATUS). Running pkkite.py..."
+        fi
+
+        # --- Original logic (runs only if download failed or file didn't exist) ---
         # Use calculated offset from previous step if available
         OFFSET=${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 0 }}
         echo "Running pkkite with --history=${{ inputs.period }} --pastoffset=$OFFSET"
