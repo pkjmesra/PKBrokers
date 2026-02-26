@@ -379,117 +379,117 @@ jobs:
         
         python pkkite.py --history=${{ inputs.period }} --pastoffset=$OFFSET --verbose
 
-    - name: Find and commit instrument_history.db to PKScreener actions-data-download
-      # UPDATED STEP: Commit instrument_history.db with date suffix and clean up old instrument_history_*.db files
-      # This file is critical for token-to-symbol mapping in subsequent steps
-      # Renames to instrument_history_YYYYMMDD.db format and removes older instrument_history_*.db files
-      env:
-        CI_PAT: ${{ secrets.CI_PAT }}
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        cd pkbrokers/kite/examples/
+    # - name: Find and commit instrument_history.db to PKScreener actions-data-download
+    #   # UPDATED STEP: Commit instrument_history.db with date suffix and clean up old instrument_history_*.db files
+    #   # This file is critical for token-to-symbol mapping in subsequent steps
+    #   # Renames to instrument_history_YYYYMMDD.db format and removes older instrument_history_*.db files
+    #   env:
+    #     CI_PAT: ${{ secrets.CI_PAT }}
+    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    #   run: |
+    #     cd pkbrokers/kite/examples/
         
-        # First, get the target date using the same logic as the pkl commit step
-        echo "Getting target date from Archiver..."
-        TARGET_INFO=$(python3 -c "
-        from PKDevTools.classes import Archiver
-        cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
-        if cache_exists and cache_file_name:
-            print(f'{cache_file_name}')
-        else:
-            print('stock_data_$(date +%d%m%Y).pkl')
-        ")
+    #     # First, get the target date using the same logic as the pkl commit step
+    #     echo "Getting target date from Archiver..."
+    #     TARGET_INFO=$(python3 -c "
+    #     from PKDevTools.classes import Archiver
+    #     cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
+    #     if cache_exists and cache_file_name:
+    #         print(f'{cache_file_name}')
+    #     else:
+    #         print('stock_data_$(date +%d%m%Y).pkl')
+    #     ")
         
-        # Extract date from cache file name (stock_data_DDMMYYYY.pkl)
-        if [[ $TARGET_INFO =~ stock_data_([0-9]{8})\.pkl ]]; then
-            TARGET_DATE="${BASH_REMATCH[1]}"
-        else
-            TARGET_DATE=$(date +%d%m%Y)
-        fi
+    #     # Extract date from cache file name (stock_data_DDMMYYYY.pkl)
+    #     if [[ $TARGET_INFO =~ stock_data_([0-9]{8})\.pkl ]]; then
+    #         TARGET_DATE="${BASH_REMATCH[1]}"
+    #     else
+    #         TARGET_DATE=$(date +%d%m%Y)
+    #     fi
         
-        echo "Target date for instrument_history.db: $TARGET_DATE"
+    #     echo "Target date for instrument_history.db: $TARGET_DATE"
         
-        # Find instrument_history.db in common locations
-        echo "Searching for instrument_history.db..."
+    #     # Find instrument_history.db in common locations
+    #     echo "Searching for instrument_history.db..."
         
-        INSTRUMENTS_DB_PATH=""
+    #     INSTRUMENTS_DB_PATH=""
         
-        # Check common locations
-        POSSIBLE_PATHS=(
-          "instrument_history.db"
-          "results/Data/instrument_history.db"
-          "../../../instrument_history.db"
-          "$HOME/.PKDevTools_userdata/instrument_history.db"
-          "$HOME/.pkbrokers/instrument_history.db"
-        )
+    #     # Check common locations
+    #     POSSIBLE_PATHS=(
+    #       "instrument_history.db"
+    #       "results/Data/instrument_history.db"
+    #       "../../../instrument_history.db"
+    #       "$HOME/.PKDevTools_userdata/instrument_history.db"
+    #       "$HOME/.pkbrokers/instrument_history.db"
+    #     )
         
-        for path in "${POSSIBLE_PATHS[@]}"; do
-          if [ -f "$path" ]; then
-            INSTRUMENTS_DB_PATH="$path"
-            DB_SIZE=$(stat -c%s "$path" 2>/dev/null || stat -f%z "$path")
-            echo "✅ Found instrument_history.db at: $path ($DB_SIZE bytes)"
-            break
-          fi
-        done
+    #     for path in "${POSSIBLE_PATHS[@]}"; do
+    #       if [ -f "$path" ]; then
+    #         INSTRUMENTS_DB_PATH="$path"
+    #         DB_SIZE=$(stat -c%s "$path" 2>/dev/null || stat -f%z "$path")
+    #         echo "✅ Found instrument_history.db at: $path ($DB_SIZE bytes)"
+    #         break
+    #       fi
+    #     done
         
-        if [ -z "$INSTRUMENTS_DB_PATH" ]; then
-          echo "⚠️ No instrument_history.db found, skipping commit"
-          exit 0
-        fi
+    #     if [ -z "$INSTRUMENTS_DB_PATH" ]; then
+    #       echo "⚠️ No instrument_history.db found, skipping commit"
+    #       exit 0
+    #     fi
         
-        # Clone PKScreener actions-data-download branch
-        git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
-        cd pkscreener-data
+    #     # Clone PKScreener actions-data-download branch
+    #     git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
+    #     cd pkscreener-data
         
-        # Create dated filename
-        DATED_INSTRUMENTS_FILE="instrument_history_${{ inputs.period }}_${TARGET_DATE}.db"
-        echo "Dated instrument_history file: $DATED_INSTRUMENTS_FILE"
+    #     # Create dated filename
+    #     DATED_INSTRUMENTS_FILE="instrument_history_${{ inputs.period }}_${TARGET_DATE}.db"
+    #     echo "Dated instrument_history file: $DATED_INSTRUMENTS_FILE"
         
-        # Copy instrument_history.db to the repository with dated name
-        mkdir -p actions-data-download
-        cp "../$INSTRUMENTS_DB_PATH" "actions-data-download/$DATED_INSTRUMENTS_FILE"
+    #     # Copy instrument_history.db to the repository with dated name
+    #     mkdir -p actions-data-download
+    #     cp "../$INSTRUMENTS_DB_PATH" "actions-data-download/$DATED_INSTRUMENTS_FILE"
         
-        # Delete any older instrument_history_*.db files (except the current one)
-        echo "Removing older instrument_history_*.db files..."
-        OLD_FILES=$(ls actions-data-download/instrument_history_${{ inputs.period }}_*.db 2>/dev/null | grep -v "$DATED_INSTRUMENTS_FILE" || true)
-        if [ -n "$OLD_FILES" ]; then
-          echo "Found old instrument_history files to remove:"
-          echo "$OLD_FILES"
-          rm -f $OLD_FILES
-        else
-          echo "No old instrument_history files found"
-        fi
+    #     # Delete any older instrument_history_*.db files (except the current one)
+    #     echo "Removing older instrument_history_*.db files..."
+    #     OLD_FILES=$(ls actions-data-download/instrument_history_${{ inputs.period }}_*.db 2>/dev/null | grep -v "$DATED_INSTRUMENTS_FILE" || true)
+    #     if [ -n "$OLD_FILES" ]; then
+    #       echo "Found old instrument_history files to remove:"
+    #       echo "$OLD_FILES"
+    #       rm -f $OLD_FILES
+    #     else
+    #       echo "No old instrument_history files found"
+    #     fi
         
-        # Configure git
-        git config user.name "github-actions[bot]"
-        git config user.email "actions@github.com"
+    #     # Configure git
+    #     git config user.name "github-actions[bot]"
+    #     git config user.email "actions@github.com"
         
-        # Add all changes (new file and deletions)
-        git add -A actions-data-download/
+    #     # Add all changes (new file and deletions)
+    #     git add -A actions-data-download/
         
-        # Show what's changed
-        echo "Changes to be committed:"
-        git diff --staged --name-status
+    #     # Show what's changed
+    #     echo "Changes to be committed:"
+    #     git diff --staged --name-status
         
-        if ! git diff --staged --quiet; then
-          git commit -m "Update instrument_history.db to $DATED_INSTRUMENTS_FILE and cleanup old versions [skip ci]"
+    #     if ! git diff --staged --quiet; then
+    #       git commit -m "Update instrument_history.db to $DATED_INSTRUMENTS_FILE and cleanup old versions [skip ci]"
           
-          # Retry push with rebase if needed
-          for i in 1 2 3; do
-            if git push; then
-              echo "✅ Successfully committed $DATED_INSTRUMENTS_FILE to PKScreener actions-data-download"
-              break
-            else
-              echo "Push failed, attempt $i, pulling and retrying..."
-              git pull --rebase origin actions-data-download || true
-              sleep 2
-            fi
-          done
-        else
-          echo "No changes to instrument_history.db"
-        fi
+    #       # Retry push with rebase if needed
+    #       for i in 1 2 3; do
+    #         if git push; then
+    #           echo "✅ Successfully committed $DATED_INSTRUMENTS_FILE to PKScreener actions-data-download"
+    #           break
+    #         else
+    #           echo "Push failed, attempt $i, pulling and retrying..."
+    #           git pull --rebase origin actions-data-download || true
+    #           sleep 2
+    #         fi
+    #       done
+    #     else
+    #       echo "No changes to instrument_history.db"
+    #     fi
         
-        cd ../..
+    #     cd ../..
 
     - name: Check if market is open for tick merging
       # Step: Determine if we should merge ticks.json data based on market hours and holidays
