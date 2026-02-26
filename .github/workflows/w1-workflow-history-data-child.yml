@@ -612,8 +612,9 @@ jobs:
         
         echo "Using target date from cache: $TARGET_DATE"
         
-        # Clone PKScreener actions-data-download branch
-        git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
+        # # Clone PKScreener actions-data-download branch
+        # We should not clone again if already cloned to avoid any error because the pkscreener-data directory already exists from the previous step. Instead, we can just cd into it.
+        # git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
         cd pkscreener-data
         
         PERIOD="${{ inputs.period }}"
@@ -684,6 +685,7 @@ jobs:
                 PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
                 if [ "$PKL_SIZE" -gt "$MIN_SIZE" ]; then
                   echo "✅ Found valid local daily pkl: $PKL_FILE ($PKL_SIZE bytes)"
+                  # Let's go ahead and commit the pkl files right away - we don't need to download from GitHub since we just generated them locally
                   cp "$PKL_FILE" "actions-data-download/$TARGET_FILE"
                   cp "$PKL_FILE" "actions-data-download/$GENERIC_FILE"
                   FILES_COPIED=$((FILES_COPIED + 1))
