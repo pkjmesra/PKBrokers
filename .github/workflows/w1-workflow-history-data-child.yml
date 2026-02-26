@@ -1,18 +1,18 @@
 # """
 #     The MIT License (MIT)
-# 
+
 #     Copyright (c) 2023 pkjmesra
-# 
+
 #     Permission is hereby granted, free of charge, to any person obtaining a copy
 #     of this software and associated documentation files (the "Software"), to deal
 #     in the Software without restriction, including without limitation the rights
 #     to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 #     copies of the Software, and to permit persons to whom the Software is
 #     furnished to do so, subject to the following conditions:
-# 
+
 #     The above copyright notice and this permission notice shall be included in all
 #     copies or substantial portions of the Software.
-# 
+
 #     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 #     IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 #     FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -30,15 +30,17 @@
 # CURRENT FUNCTIONALITY:
 # 1. Calculates missing trading days by checking existing data files
 # 2. Fetches historical data using pkkite.py for specified period
-# 3. Exports database to PKL files using unified generator
-# 4. Commits updated PKL files to PKScreener actions-data-download branch
-# 5. Chains to next period (day -> minute) automatically
+# 3. Commits instruments.db to GitHub (new step)
+# 4. Exports database to PKL files using unified generator
+# 5. Commits updated PKL files to PKScreener actions-data-download branch
+# 6. Chains to next period (day -> minute) automatically
 #
 # UPDATED BEHAVIOR:
 # - Market hours check (9:15 AM - 3:30 PM IST, non-holiday): Merges ticks.json data
 # - Outside market hours or holidays: Commits PKL file as-is without merging ticks
-# - PKL file size validation: Ensures daily files are >= 25MB
+# - PKL file size validation: Ensures daily files are >= 35MB
 # - Uses cache_file_name from Archiver for date instead of current date
+# - instruments.db is committed before market check to ensure token mappings are available
 # =============================================================================
 
 name: 1. History Data Child
@@ -377,6 +379,78 @@ jobs:
         
         python pkkite.py --history=${{ inputs.period }} --pastoffset=$OFFSET --verbose
 
+    - name: Find and commit instruments.db to PKScreener actions-data-download
+      # NEW STEP: Commit instruments.db before market check to ensure token mappings are available
+      # This file is critical for token-to-symbol mapping in subsequent steps
+      env:
+        CI_PAT: ${{ secrets.CI_PAT }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        cd pkbrokers/kite/examples/
+        
+        # Find instruments.db in common locations
+        echo "Searching for instruments.db..."
+        
+        INSTRUMENTS_DB_PATH=""
+        
+        # Check common locations
+        POSSIBLE_PATHS=(
+          "instruments.db"
+          "results/Data/instruments.db"
+          "../../../instruments.db"
+          "$HOME/.PKDevTools_userdata/instruments.db"
+          "$HOME/.pkbrokers/instruments.db"
+        )
+        
+        for path in "${POSSIBLE_PATHS[@]}"; do
+          if [ -f "$path" ]; then
+            INSTRUMENTS_DB_PATH="$path"
+            DB_SIZE=$(stat -c%s "$path" 2>/dev/null || stat -f%z "$path")
+            echo "✅ Found instruments.db at: $path ($DB_SIZE bytes)"
+            break
+          fi
+        done
+        
+        if [ -z "$INSTRUMENTS_DB_PATH" ]; then
+          echo "⚠️ No instruments.db found, skipping commit"
+          exit 0
+        fi
+        
+        # Clone PKScreener actions-data-download branch
+        git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
+        cd pkscreener-data
+        
+        # Copy instruments.db to the repository
+        mkdir -p actions-data-download
+        cp "../$INSTRUMENTS_DB_PATH" actions-data-download/instruments.db
+        
+        # Configure git
+        git config user.name "github-actions[bot]"
+        git config user.email "actions@github.com"
+        
+        # Add and commit
+        git add -f actions-data-download/instruments.db
+        
+        if ! git diff --staged --quiet; then
+          git commit -m "Update instruments.db for token-symbol mapping [skip ci]"
+          
+          # Retry push with rebase if needed
+          for i in 1 2 3; do
+            if git push; then
+              echo "✅ Successfully committed instruments.db to PKScreener actions-data-download"
+              break
+            else
+              echo "Push failed, attempt $i, pulling and retrying..."
+              git pull --rebase origin actions-data-download || true
+              sleep 2
+            fi
+          done
+        else
+          echo "No changes to instruments.db"
+        fi
+        
+        cd ../..
+
     - name: Check if market is open for tick merging
       # Step: Determine if we should merge ticks.json data based on market hours and holidays
       # Market hours: 9:15 AM to 3:30 PM IST on non-holiday weekdays
@@ -392,7 +466,8 @@ jobs:
         SHOULD_MERGE_TICKS=$(python3 -c "
         from PKDevTools.classes.PKDateUtilities import PKDateUtilities
         from datetime import datetime, time
-        import sys, pytz
+        import pytz
+        import sys
         
         # Check if today is a holiday
         is_holiday = PKDateUtilities.isTodayHoliday()
@@ -616,7 +691,8 @@ jobs:
         fi
         
         # DO NOT copy .db files - they are too large for GitHub (>100MB limit)
-        echo "Note: SQLite .db files are not committed (too large for GitHub)"
+        # Note: instruments.db is committed separately in an earlier step
+        echo "Note: SQLite .db files are not committed here (instruments.db committed separately)"
         
         echo "Total files copied: $FILES_COPIED"
         
