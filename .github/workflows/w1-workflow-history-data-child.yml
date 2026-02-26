@@ -659,15 +659,18 @@ jobs:
         ls -la results/Data/*.pkl 2>/dev/null || echo "No pkl files found"
 
     - name: Commit updated pkl file to PKScreener actions-data-download
-      # UPDATED STEP: Use local pkl file instead of downloading from GitHub
-      # Validates daily PKL files are at least 25MB before committing
+      # FIXED STEP: Use absolute path to find pkl files
       env:
         CI_PAT: ${{ secrets.CI_PAT }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        cd pkbrokers/kite/examples/
+        # Store the original working directory
+        ORIGINAL_DIR=$(pwd)
+        echo "Original directory: $ORIGINAL_DIR"
         
         # Get cache file name from Archiver to determine the correct date
+        cd pkbrokers/kite/examples/
+        
         CACHE_INFO=$(python3 -c "
         from PKDevTools.classes import Archiver
         cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
@@ -686,9 +689,12 @@ jobs:
         
         echo "Using target date from cache: $TARGET_DATE"
         
-        # # Clone PKScreener actions-data-download branch
-        # We should not clone again if already cloned to avoid any error because the pkscreener-data directory already exists from the previous step. Instead, we can just cd into it.
-        # git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
+        # Store the absolute path to results/Data
+        RESULTS_DATA_DIR="$(pwd)/results/Data"
+        echo "Results data directory: $RESULTS_DATA_DIR"
+        
+        # Go back to original dir and then to pkscreener-data
+        cd "$ORIGINAL_DIR"
         cd pkscreener-data
         
         PERIOD="${{ inputs.period }}"
@@ -745,43 +751,40 @@ jobs:
         echo "Generic file: $GENERIC_FILE"
         echo "Minimum size required: $MIN_SIZE bytes"
         
-        # List available files in local results directory
-        LOCAL_DATA_DIR="../pkbrokers/kite/examples/results/Data"
-        echo "Files in $LOCAL_DATA_DIR:"
-        ls -la $LOCAL_DATA_DIR 2>/dev/null || echo "Directory not found"
+        # List available files using absolute path
+        echo "Files in $RESULTS_DATA_DIR:"
+        ls -la "$RESULTS_DATA_DIR" 2>/dev/null || echo "Directory not found"
         
         FILES_COPIED=0
         
         if [ "$PERIOD" = "day" ]; then
-            # Use local pkl files directly - no GitHub download
-            for PKL_FILE in $LOCAL_DATA_DIR/stock_data_*.pkl $LOCAL_DATA_DIR/daily_candles.pkl; do
+            # Use absolute path to find pkl files
+            for PKL_FILE in "$RESULTS_DATA_DIR"/stock_data_*.pkl "$RESULTS_DATA_DIR"/daily_candles.pkl; do
               if [ -f "$PKL_FILE" ]; then
                 PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
                 if [ "$PKL_SIZE" -gt "$MIN_SIZE" ]; then
                   echo "✅ Found valid local daily pkl: $PKL_FILE ($PKL_SIZE bytes)"
-                  # Let's go ahead and commit the pkl files right away - we don't need to download from GitHub since we just generated them locally
                   cp "$PKL_FILE" "actions-data-download/$TARGET_FILE"
                   cp "$PKL_FILE" "actions-data-download/$GENERIC_FILE"
                   FILES_COPIED=$((FILES_COPIED + 1))
-                  # Commit and push
+                  
+                  # Commit and push (rest of the code remains same)
                   git config user.name "github-actions[bot]"
                   git config user.email "actions@github.com"
                   
-                  # Remove any .db files that may have been accidentally copied (too large for GitHub)
-                  rm -f actions-data-download/instrument_history_${{ inputs.period }}*.db 2>/dev/null || true
+                  # Remove any .db files that may have been accidentally copied
+                  rm -f actions-data-download/instrument_history_*.db 2>/dev/null || true
                   
-                  # Only add pkl and json files (no .db files - they exceed GitHub's 100MB limit)
+                  # Only add pkl and json files
                   git add -f actions-data-download/*.pkl 2>/dev/null || true
                   git add -f actions-data-download/*.json 2>/dev/null || true
                   
-                  # Show what's staged
                   echo "Files to be committed:"
                   git diff --staged --name-only
                   
                   if ! git diff --staged --quiet; then
                     git commit -m "Update $TARGET_FILE from history download - $TARGET_DATE [period: $PERIOD]"
                     
-                    # Retry push with rebase if needed
                     for i in 1 2 3; do
                       if git push; then
                         echo "✅ Successfully committed updated pkl files to PKScreener actions-data-download"
@@ -801,7 +804,7 @@ jobs:
                 fi
               fi
             done
-            
+
             # Also try to commit intraday from local ticks.json for day period
             INTRADAY_FOUND=0
             for PKL_FILE in $LOCAL_DATA_DIR/intraday_stock_data_*.pkl $LOCAL_DATA_DIR/intraday_1m_candles.pkl; do
