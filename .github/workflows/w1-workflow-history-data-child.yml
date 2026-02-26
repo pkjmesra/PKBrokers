@@ -30,17 +30,18 @@
 # CURRENT FUNCTIONALITY:
 # 1. Calculates missing trading days by checking existing data files
 # 2. Fetches historical data using pkkite.py for specified period
-# 3. Commits instruments.db to GitHub (new step)
+# 3. Commits instrument_history.db to GitHub (zipped to stay under 100MB limit)
 # 4. Exports database to PKL files using unified generator
-# 5. Commits updated PKL files to PKScreener actions-data-download branch
+# 5. Commits updated PKL files to PKScreener actions-data-download branch (using local files only)
 # 6. Chains to next period (day -> minute) automatically
 #
 # UPDATED BEHAVIOR:
 # - Market hours check (9:15 AM - 3:30 PM IST, non-holiday): Merges ticks.json data
 # - Outside market hours or holidays: Commits PKL file as-is without merging ticks
-# - PKL file size validation: Ensures daily files are >= 35MB
+# - PKL file size validation: Ensures daily files are >= 25MB
 # - Uses cache_file_name from Archiver for date instead of current date
-# - instruments.db is committed before market check to ensure token mappings are available
+# - instrument_history.db is zipped before commit to stay under 100MB limit
+# - PKL commit uses local files only (no GitHub download)
 # =============================================================================
 
 name: 1. History Data Child
@@ -379,117 +380,131 @@ jobs:
         
         python pkkite.py --history=${{ inputs.period }} --pastoffset=$OFFSET --verbose
 
-    # - name: Find and commit instrument_history.db to PKScreener actions-data-download
-    #   # UPDATED STEP: Commit instrument_history.db with date suffix and clean up old instrument_history_*.db files
-    #   # This file is critical for token-to-symbol mapping in subsequent steps
-    #   # Renames to instrument_history_YYYYMMDD.db format and removes older instrument_history_*.db files
-    #   env:
-    #     CI_PAT: ${{ secrets.CI_PAT }}
-    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    #   run: |
-    #     cd pkbrokers/kite/examples/
+    - name: Find and commit instrument_history.db to PKScreener actions-data-download
+      # UPDATED STEP: Commit instrument_history.db with date suffix, zip it to stay under 100MB limit
+      # This file is critical for token-to-symbol mapping in subsequent steps
+      # Renames to instrument_history_YYYYMMDD.db, zips it, and removes older instrument_history_*.db.zip files
+      env:
+        CI_PAT: ${{ secrets.CI_PAT }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        cd pkbrokers/kite/examples/
         
-    #     # First, get the target date using the same logic as the pkl commit step
-    #     echo "Getting target date from Archiver..."
-    #     TARGET_INFO=$(python3 -c "
-    #     from PKDevTools.classes import Archiver
-    #     cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
-    #     if cache_exists and cache_file_name:
-    #         print(f'{cache_file_name}')
-    #     else:
-    #         print('stock_data_$(date +%d%m%Y).pkl')
-    #     ")
+        # First, get the target date using the same logic as the pkl commit step
+        echo "Getting target date from Archiver..."
+        TARGET_INFO=$(python3 -c "
+        from PKDevTools.classes import Archiver
+        cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
+        if cache_exists and cache_file_name:
+            print(f'{cache_file_name}')
+        else:
+            print('stock_data_$(date +%d%m%Y).pkl')
+        ")
         
-    #     # Extract date from cache file name (stock_data_DDMMYYYY.pkl)
-    #     if [[ $TARGET_INFO =~ stock_data_([0-9]{8})\.pkl ]]; then
-    #         TARGET_DATE="${BASH_REMATCH[1]}"
-    #     else
-    #         TARGET_DATE=$(date +%d%m%Y)
-    #     fi
+        # Extract date from cache file name (stock_data_DDMMYYYY.pkl)
+        if [[ $TARGET_INFO =~ stock_data_([0-9]{8})\.pkl ]]; then
+            TARGET_DATE="${BASH_REMATCH[1]}"
+        else
+            TARGET_DATE=$(date +%d%m%Y)
+        fi
         
-    #     echo "Target date for instrument_history.db: $TARGET_DATE"
+        echo "Target date for instrument_history.db: $TARGET_DATE"
         
-    #     # Find instrument_history.db in common locations
-    #     echo "Searching for instrument_history.db..."
+        # Find instrument_history.db in common locations
+        echo "Searching for instrument_history.db..."
         
-    #     INSTRUMENTS_DB_PATH=""
+        INSTRUMENTS_DB_PATH=""
         
-    #     # Check common locations
-    #     POSSIBLE_PATHS=(
-    #       "instrument_history.db"
-    #       "results/Data/instrument_history.db"
-    #       "../../../instrument_history.db"
-    #       "$HOME/.PKDevTools_userdata/instrument_history.db"
-    #       "$HOME/.pkbrokers/instrument_history.db"
-    #     )
+        # Check common locations
+        POSSIBLE_PATHS=(
+          "instrument_history.db"
+          "results/Data/instrument_history.db"
+          "../../../instrument_history.db"
+          "$HOME/.PKDevTools_userdata/instrument_history.db"
+          "$HOME/.pkbrokers/instrument_history.db"
+        )
         
-    #     for path in "${POSSIBLE_PATHS[@]}"; do
-    #       if [ -f "$path" ]; then
-    #         INSTRUMENTS_DB_PATH="$path"
-    #         DB_SIZE=$(stat -c%s "$path" 2>/dev/null || stat -f%z "$path")
-    #         echo "✅ Found instrument_history.db at: $path ($DB_SIZE bytes)"
-    #         break
-    #       fi
-    #     done
+        for path in "${POSSIBLE_PATHS[@]}"; do
+          if [ -f "$path" ]; then
+            INSTRUMENTS_DB_PATH="$path"
+            DB_SIZE=$(stat -c%s "$path" 2>/dev/null || stat -f%z "$path")
+            echo "✅ Found instrument_history.db at: $path ($DB_SIZE bytes)"
+            break
+          fi
+        done
         
-    #     if [ -z "$INSTRUMENTS_DB_PATH" ]; then
-    #       echo "⚠️ No instrument_history.db found, skipping commit"
-    #       exit 0
-    #     fi
+        if [ -z "$INSTRUMENTS_DB_PATH" ]; then
+          echo "⚠️ No instrument_history.db found, skipping commit"
+          exit 0
+        fi
         
-    #     # Clone PKScreener actions-data-download branch
-    #     git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
-    #     cd pkscreener-data
+        # Clone PKScreener actions-data-download branch
+        git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
+        cd pkscreener-data
         
-    #     # Create dated filename
-    #     DATED_INSTRUMENTS_FILE="instrument_history_${{ inputs.period }}_${TARGET_DATE}.db"
-    #     echo "Dated instrument_history file: $DATED_INSTRUMENTS_FILE"
+        # Create dated filename and zip it
+        DATED_INSTRUMENTS_FILE="instrument_history_${{ inputs.period }}_${TARGET_DATE}.db"
+        DATED_INSTRUMENTS_ZIP="instrument_history_${{ inputs.period }}_${TARGET_DATE}.db.zip"
+        echo "Dated instrument_history file: $DATED_INSTRUMENTS_FILE"
+        echo "Zipped instrument_history file: $DATED_INSTRUMENTS_ZIP"
         
-    #     # Copy instrument_history.db to the repository with dated name
-    #     mkdir -p actions-data-download
-    #     cp "../$INSTRUMENTS_DB_PATH" "actions-data-download/$DATED_INSTRUMENTS_FILE"
+        # Copy and zip the database file
+        mkdir -p actions-data-download
+        cp "../$INSTRUMENTS_DB_PATH" "actions-data-download/$DATED_INSTRUMENTS_FILE"
         
-    #     # Delete any older instrument_history_*.db files (except the current one)
-    #     echo "Removing older instrument_history_*.db files..."
-    #     OLD_FILES=$(ls actions-data-download/instrument_history_${{ inputs.period }}_*.db 2>/dev/null | grep -v "$DATED_INSTRUMENTS_FILE" || true)
-    #     if [ -n "$OLD_FILES" ]; then
-    #       echo "Found old instrument_history files to remove:"
-    #       echo "$OLD_FILES"
-    #       rm -f $OLD_FILES
-    #     else
-    #       echo "No old instrument_history files found"
-    #     fi
+        # Zip the file (go into directory to avoid path in zip)
+        cd actions-data-download
+        zip -9 "$DATED_INSTRUMENTS_ZIP" "$DATED_INSTRUMENTS_FILE"
+        cd ..
         
-    #     # Configure git
-    #     git config user.name "github-actions[bot]"
-    #     git config user.email "actions@github.com"
+        # Remove the uncompressed file (keep only zip)
+        rm -f "actions-data-download/$DATED_INSTRUMENTS_FILE"
         
-    #     # Add all changes (new file and deletions)
-    #     git add -A actions-data-download/
+        # Show zip file size
+        ZIP_SIZE=$(stat -c%s "actions-data-download/$DATED_INSTRUMENTS_ZIP" 2>/dev/null || stat -f%z "actions-data-download/$DATED_INSTRUMENTS_ZIP")
+        echo "✅ Created zipped instrument_history.db: $DATED_INSTRUMENTS_ZIP ($(($ZIP_SIZE/1024/1024)) MB)"
         
-    #     # Show what's changed
-    #     echo "Changes to be committed:"
-    #     git diff --staged --name-status
+        # Delete any older instrument_history_*.db.zip files (except the current one)
+        echo "Removing older instrument_history_*.db.zip files..."
+        OLD_FILES=$(ls actions-data-download/instrument_history_${{ inputs.period }}_*.db.zip 2>/dev/null | grep -v "$DATED_INSTRUMENTS_ZIP" || true)
+        if [ -n "$OLD_FILES" ]; then
+          echo "Found old instrument_history files to remove:"
+          echo "$OLD_FILES"
+          rm -f $OLD_FILES
+        else
+          echo "No old instrument_history files found"
+        fi
         
-    #     if ! git diff --staged --quiet; then
-    #       git commit -m "Update instrument_history.db to $DATED_INSTRUMENTS_FILE and cleanup old versions [skip ci]"
+        # Configure git
+        git config user.name "github-actions[bot]"
+        git config user.email "actions@github.com"
+        
+        # Add all changes (new zip file and deletions)
+        git add -A actions-data-download/
+        
+        # Show what's changed
+        echo "Changes to be committed:"
+        git diff --staged --name-status
+        
+        if ! git diff --staged --quiet; then
+          git commit -m "Update instrument_history.db to $DATED_INSTRUMENTS_ZIP and cleanup old versions [skip ci]"
           
-    #       # Retry push with rebase if needed
-    #       for i in 1 2 3; do
-    #         if git push; then
-    #           echo "✅ Successfully committed $DATED_INSTRUMENTS_FILE to PKScreener actions-data-download"
-    #           break
-    #         else
-    #           echo "Push failed, attempt $i, pulling and retrying..."
-    #           git pull --rebase origin actions-data-download || true
-    #           sleep 2
-    #         fi
-    #       done
-    #     else
-    #       echo "No changes to instrument_history.db"
-    #     fi
+          # Retry push with rebase if needed
+          for i in 1 2 3; do
+            if git push; then
+              echo "✅ Successfully committed $DATED_INSTRUMENTS_ZIP to PKScreener actions-data-download"
+              break
+            else
+              echo "Push failed, attempt $i, pulling and retrying..."
+              git pull --rebase origin actions-data-download || true
+              sleep 2
+            fi
+          done
+        else
+          echo "No changes to instrument_history.db"
+        fi
         
-    #     cd ../..
+        cd ../..
 
     - name: Check if market is open for tick merging
       # Step: Determine if we should merge ticks.json data based on market hours and holidays
@@ -570,13 +585,14 @@ jobs:
         ls -la results/Data/*.pkl 2>/dev/null || echo "No pkl files found"
 
     - name: Commit updated pkl file to PKScreener actions-data-download
-      # Step: Upload the generated PKL files to the PKScreener repository
-      # Uses cache_file_name from Archiver for date instead of current date
+      # UPDATED STEP: Use local pkl file instead of downloading from GitHub
       # Validates daily PKL files are at least 25MB before committing
       env:
         CI_PAT: ${{ secrets.CI_PAT }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        cd pkbrokers/kite/examples/
+        
         # Get cache file name from Archiver to determine the correct date
         CACHE_INFO=$(python3 -c "
         from PKDevTools.classes import Archiver
@@ -617,7 +633,7 @@ jobs:
             "day")
                 TARGET_FILE="stock_data_${TARGET_DATE}.pkl"
                 GENERIC_FILE="daily_candles.pkl"
-                MIN_SIZE=25000000  # 25 MB minimum for daily (fixed from 1MB to 25MB)
+                MIN_SIZE=25000000  # 25 MB minimum for daily
                 ;;
             "minute")
                 TARGET_FILE="intraday_stock_data_${TARGET_DATE}.pkl"
@@ -654,21 +670,22 @@ jobs:
         echo "Generic file: $GENERIC_FILE"
         echo "Minimum size required: $MIN_SIZE bytes"
         
-        # List available files
-        echo "Files in ../pkbrokers/kite/examples/results/Data/:"
-        ls -la ../pkbrokers/kite/examples/results/Data/ 2>/dev/null || echo "Directory not found"
+        # List available files in local results directory
+        LOCAL_DATA_DIR="../pkbrokers/kite/examples/results/Data"
+        echo "Files in $LOCAL_DATA_DIR:"
+        ls -la $LOCAL_DATA_DIR 2>/dev/null || echo "Directory not found"
         
         FILES_COPIED=0
         
         if [ "$PERIOD" = "day" ]; then
-            # Daily pkl files
-            for PKL_FILE in ../pkbrokers/kite/examples/results/Data/stock_data_*.pkl ../pkbrokers/kite/examples/results/Data/daily_candles.pkl; do
+            # Use local pkl files directly - no GitHub download
+            for PKL_FILE in $LOCAL_DATA_DIR/stock_data_*.pkl $LOCAL_DATA_DIR/daily_candles.pkl; do
               if [ -f "$PKL_FILE" ]; then
                 PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
                 if [ "$PKL_SIZE" -gt "$MIN_SIZE" ]; then
-                  echo "✅ Found valid daily pkl: $PKL_FILE ($PKL_SIZE bytes)"
-                  cp "$PKL_FILE" actions-data-download/$TARGET_FILE
-                  cp "$PKL_FILE" actions-data-download/$GENERIC_FILE
+                  echo "✅ Found valid local daily pkl: $PKL_FILE ($PKL_SIZE bytes)"
+                  cp "$PKL_FILE" "actions-data-download/$TARGET_FILE"
+                  cp "$PKL_FILE" "actions-data-download/$GENERIC_FILE"
                   FILES_COPIED=$((FILES_COPIED + 1))
                   # Commit and push
                   git config user.name "github-actions[bot]"
@@ -709,15 +726,15 @@ jobs:
               fi
             done
             
-            # Also try to commit intraday from ticks.json for day period
+            # Also try to commit intraday from local ticks.json for day period
             INTRADAY_FOUND=0
-            for PKL_FILE in ../pkbrokers/kite/examples/results/Data/intraday_stock_data_*.pkl ../pkbrokers/kite/examples/results/Data/intraday_1m_candles.pkl; do
+            for PKL_FILE in $LOCAL_DATA_DIR/intraday_stock_data_*.pkl $LOCAL_DATA_DIR/intraday_1m_candles.pkl; do
               if [ -f "$PKL_FILE" ]; then
                 PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
                 if [ "$PKL_SIZE" -gt 10000 ]; then
-                  echo "✅ Found intraday: $PKL_FILE ($PKL_SIZE bytes)"
-                  cp "$PKL_FILE" actions-data-download/intraday_stock_data_${TARGET_DATE}.pkl
-                  cp "$PKL_FILE" actions-data-download/intraday_1m_candles.pkl
+                  echo "✅ Found local intraday: $PKL_FILE ($PKL_SIZE bytes)"
+                  cp "$PKL_FILE" "actions-data-download/intraday_stock_data_${TARGET_DATE}.pkl"
+                  cp "$PKL_FILE" "actions-data-download/intraday_1m_candles.pkl"
                   FILES_COPIED=$((FILES_COPIED + 1))
                   INTRADAY_FOUND=1
                   break
@@ -725,20 +742,18 @@ jobs:
               fi
             done
             
-            # If no intraday pkl, try to generate from ticks.json
+            # If no intraday pkl, try to generate from local ticks.json
             if [ "$INTRADAY_FOUND" -eq 0 ]; then
-              echo "No intraday pkl found, trying to generate from ticks.json..."
-              cd ../pkbrokers/kite/examples/
-              python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py --data-dir results/Data --verbose 2>/dev/null || true
-              cd -
+              echo "No intraday pkl found, trying to generate from local ticks.json..."
+              python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py --data-dir $LOCAL_DATA_DIR --verbose 2>/dev/null || true
               
-              for PKL_FILE in ../pkbrokers/kite/examples/results/Data/intraday_stock_data_*.pkl; do
+              for PKL_FILE in $LOCAL_DATA_DIR/intraday_stock_data_*.pkl; do
                 if [ -f "$PKL_FILE" ]; then
                   PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
                   if [ "$PKL_SIZE" -gt 10000 ]; then
-                    echo "✅ Generated intraday: $PKL_FILE ($PKL_SIZE bytes)"
-                    cp "$PKL_FILE" actions-data-download/intraday_stock_data_${TARGET_DATE}.pkl
-                    cp "$PKL_FILE" actions-data-download/intraday_1m_candles.pkl
+                    echo "✅ Generated intraday from local ticks: $PKL_FILE ($PKL_SIZE bytes)"
+                    cp "$PKL_FILE" "actions-data-download/intraday_stock_data_${TARGET_DATE}.pkl"
+                    cp "$PKL_FILE" "actions-data-download/intraday_1m_candles.pkl"
                     FILES_COPIED=$((FILES_COPIED + 1))
                     break
                   fi
@@ -746,15 +761,14 @@ jobs:
               done
             fi
         else
-            # Intraday periods (minute, 5minute, 10minute, etc.)
-            # Look for the history database file generated by pkkite
-            for PKL_FILE in ../pkbrokers/kite/examples/results/Data/*.pkl; do
+            # Intraday periods - use local files only
+            for PKL_FILE in $LOCAL_DATA_DIR/*.pkl; do
               if [ -f "$PKL_FILE" ]; then
                 PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
                 if [ "$PKL_SIZE" -gt "$MIN_SIZE" ]; then
-                  echo "✅ Found: $PKL_FILE ($PKL_SIZE bytes)"
-                  cp "$PKL_FILE" actions-data-download/$TARGET_FILE
-                  cp "$PKL_FILE" actions-data-download/$GENERIC_FILE
+                  echo "✅ Found local file: $PKL_FILE ($PKL_SIZE bytes)"
+                  cp "$PKL_FILE" "actions-data-download/$TARGET_FILE"
+                  cp "$PKL_FILE" "actions-data-download/$GENERIC_FILE"
                   FILES_COPIED=$((FILES_COPIED + 1))
                   break
                 fi
@@ -763,8 +777,8 @@ jobs:
         fi
         
         # DO NOT copy .db files - they are too large for GitHub (>100MB limit)
-        # Note: instrument_history.db is committed separately in an earlier step
-        echo "Note: SQLite .db files are not committed here (instrument_history.db committed separately)"
+        # Note: instrument_history.db is committed separately in an earlier step (as zip)
+        echo "Note: SQLite .db files are not committed here (instrument_history.db committed separately as zip)"
         
         echo "Total files copied: $FILES_COPIED"
         
