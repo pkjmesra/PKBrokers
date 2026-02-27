@@ -593,7 +593,9 @@ class PKTickBot:
             except Exception:
                 logger.error(tb_string)
 
-
+    # Sends the daily candles pkl file to the requesting instance. This 
+    # is used for inter-bot data sharing when a new instance starts and 
+    # requests the latest data from the old instance.
     def send_daily_pkl(self, update: Update, context: CallbackContext) -> None:
         """Send daily candles pkl file to requesting instance."""
         if self._shouldAvoidResponse(update):
@@ -611,6 +613,9 @@ class PKTickBot:
             success, pkl_path = data_mgr.export_daily_candles_to_pkl(candle_store)
             
             if success and pkl_path and os.path.exists(pkl_path):
+                is_fresh, data_date, missing_days, trading_date = data_mgr.validate_pkl_freshness(pkl_path)
+                if not is_fresh and missing_days > 0:
+                    warn_msg = f"Daily candles pkl is stale by {missing_days} trading days.\nData date: {data_date}, Trading date: {trading_date}\n"
                 # Zip and send
                 zip_success, zip_path = data_mgr.zip_file(pkl_path)
                 if zip_success and zip_path:
@@ -618,7 +623,7 @@ class PKTickBot:
                         update.message.reply_document(
                             document=f,
                             filename="daily_candles.pkl.zip",
-                            caption="📊 Daily candles pkl file"
+                            caption=f"📊 Daily candles pkl file\n{warn_msg if not is_fresh else ''}"
                         )
                     os.unlink(zip_path)
                     self.logger.info("Sent daily pkl to requesting instance")

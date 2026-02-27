@@ -124,10 +124,12 @@ class DataSharingManager:
         Returns:
             Path like stock_data_26122025.pkl
         """
-        if date is None:
-            date = datetime.now(KOLKATA_TZ)
-        date_str = date.strftime("%d%m%Y")
-        return os.path.join(self.data_dir, f"{base_name}_{date_str}.pkl")
+        _,date_str = Archiver.afterMarketStockDataExists()
+        if date_str is None or date_str == "":
+            if date is None:
+                date = datetime.now(KOLKATA_TZ)
+            date_str = date.strftime("%d%m%Y") + ".pkl"
+        return os.path.join(self.data_dir, f"{base_name}_{date_str}")
     
     def is_market_open(self) -> bool:
         """Check if market is currently open."""
@@ -343,7 +345,7 @@ class DataSharingManager:
                                 
                                 # Validate freshness and trigger history download if stale
                                 if validate_freshness and file_type == "daily":
-                                    is_fresh, data_date, missing_days = self.validate_pkl_freshness(output_path)
+                                    is_fresh, data_date, missing_days, trading_date = self.validate_pkl_freshness(output_path)
                                     if not is_fresh and missing_days > 0:
                                         self.logger.warning(f"Downloaded pkl is stale by {missing_days} trading days. Triggering history download...")
                                         self.trigger_history_download_workflow(missing_days)
@@ -378,13 +380,13 @@ class DataSharingManager:
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
             
             if not os.path.exists(pkl_path):
-                return False, None, 0
+                return False, None, 0, None
             
             with open(pkl_path, 'rb') as f:
                 data = pickle.load(f)
             
             if not data:
-                return False, None, 0
+                return False, None, 0, None
             
             # Find the latest date across all stocks
             latest_date = None
@@ -400,7 +402,7 @@ class DataSharingManager:
                         latest_date = stock_last_date
             
             if latest_date is None:
-                return False, None, 0
+                return False, None, 0, None
             
             # Get the last trading date using PKDateUtilities
             last_trading_date = PKDateUtilities.tradingDate()
@@ -410,17 +412,17 @@ class DataSharingManager:
             # Check if data is fresh
             if latest_date >= last_trading_date:
                 self.logger.info(f"Pkl data is fresh. Latest date: {latest_date}, Last trading date: {last_trading_date}")
-                return True, latest_date, 0
+                return True, latest_date, 0, last_trading_date
             
             # Calculate missing trading days
             missing_days = PKDateUtilities.trading_days_between(latest_date, last_trading_date)
             
             self.logger.warning(f"Pkl data is stale. Latest date: {latest_date}, Last trading date: {last_trading_date}, Missing {missing_days} trading days")
-            return False, latest_date, missing_days
+            return False, latest_date, missing_days, last_trading_date
             
         except Exception as e:
             self.logger.error(f"Error validating pkl freshness: {e}")
-            return False, None, 0
+            return False, None, 0, None
     
     def trigger_history_download_workflow(self, past_offset: int = 1) -> bool:
         """
@@ -487,7 +489,7 @@ class DataSharingManager:
             if pkl_path is None:
                 pkl_path = self.get_daily_pkl_path()
             
-            is_fresh, data_date, missing_days = self.validate_pkl_freshness(pkl_path)
+            is_fresh, data_date, missing_days, trading_date = self.validate_pkl_freshness(pkl_path)
             
             if is_fresh:
                 self.logger.info("Data is already fresh")
@@ -1065,18 +1067,3 @@ def get_data_sharing_manager() -> DataSharingManager:
     if _data_sharing_manager is None:
         _data_sharing_manager = DataSharingManager()
     return _data_sharing_manager
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
