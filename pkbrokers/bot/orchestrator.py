@@ -72,6 +72,8 @@ class PKTickOrchestrator:
         self.shutdown_requested = False
         self.token_generated_at_least_once = False
         self.test_mode = False
+        self.ws_processes = []  # Add this to track WebSocket processes
+        self.ws_stop_event = None  # Add this
 
         # Don't initialize logger or other complex objects here
         # They will be initialized in each process separately
@@ -200,11 +202,17 @@ class PKTickOrchestrator:
                     logger.error(f"Kite authentication failed: {auth_e}")
                     logger.warning("Proceeding without valid token - WebSocket will fail")
 
+            # Create a stop event for WebSocket processes
+            from multiprocessing import Manager
+            manager = Manager()
+            self.ws_stop_event = manager.Event()
+            
             from pkbrokers.kite.examples.pkkite import kite_ticks
-
+            
             logger.info("Starting kite_ticks process...")
             self.manager = multiprocessing.Manager()
-            kite_ticks(stop_queue=self.stop_queue, parent=self)
+            # Pass the stop event to kite_ticks
+            kite_ticks(stop_queue=self.stop_queue, parent=self, ws_stop_event=self.ws_stop_event)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")
         except Exception as e:
@@ -292,12 +300,18 @@ class PKTickOrchestrator:
         logger = self._get_logger()
         logger.info("Stopping processes...")
 
+        # Set WebSocket stop event if it exists
+        if self.ws_stop_event:
+            logger.info("Signaling WebSocket processes to stop...")
+            self.ws_stop_event.set()
+
         # Try to stop watcher through queue
         try:
             self.stop_queue.put("STOP")
             time.sleep(2)  # Give time to process
         except Exception as e:
             logger.error(f"Error sending stop signal to KiteTokenWatcher: {e}")
+
 
         # Force stop if still running
         if self.child_process_ref is not None:

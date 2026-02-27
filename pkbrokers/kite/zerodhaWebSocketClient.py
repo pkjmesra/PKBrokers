@@ -103,18 +103,8 @@ class WebSocketProcess:
     Individual WebSocket connection process that handles its own token batch.
     """
 
-    def __init__(
-        self,
-        enctoken,
-        user_id,
-        api_key,
-        token_batch,
-        websocket_index,
-        data_queue,
-        stop_event,
-        log_level=None,
-        watcher_queue=None,
-    ):
+    def __init__(self, enctoken, user_id, api_key, token_batch, websocket_index,
+                 data_queue, stop_event, log_level=None, watcher_queue=None, ws_stop_event=None):
         self.enctoken = enctoken
         self.user_id = user_id
         self.api_key = api_key
@@ -127,6 +117,7 @@ class WebSocketProcess:
         self.logger = None
         self.websocket = None
         self.encToken_invalidated = False
+        self.ws_stop_event = ws_stop_event
         self.multiprocessingForWindows()
 
     def _build_websocket_url(self):
@@ -220,7 +211,7 @@ class WebSocketProcess:
 
     async def _connect_websocket(self):
         """Establish and maintain WebSocket connection for this process."""
-        while not self.stop_event.is_set():
+        while not self.stop_event.is_set() and not (self.ws_stop_event and self.ws_stop_event.is_set()):
             try:
                 async with websockets.connect(
                     self._build_websocket_url(),
@@ -424,6 +415,7 @@ def websocket_process_worker(args):
         data_queue,
         stop_event,
         log_level,
+        ws_stop_event,  # Add this
     ) = args
 
     process = WebSocketProcess(
@@ -435,6 +427,7 @@ def websocket_process_worker(args):
         data_queue=data_queue,
         stop_event=stop_event,
         log_level=log_level,
+        ws_stop_event=ws_stop_event,  # Add this
     )
     try:
         process.run()
@@ -458,27 +451,17 @@ class ZerodhaWebSocketClient:
     Now uses multiprocessing to handle each WebSocket connection in separate processes.
     """
 
-    def __init__(
-        self,
-        enctoken,
-        user_id,
-        api_key="kitefront",
-        token_batches=[],
-        watcher_queue=None,
-        db_conn=None,
-    ):
+    def __init__(self, enctoken, user_id, api_key="kitefront", token_batches=[], 
+                 watcher_queue=None, db_conn=None, ws_stop_event=None):
         self.watcher_queue = watcher_queue
         self.enctoken = enctoken
         self.user_id = user_id
         self.api_key = api_key
         self.logger = default_logger()
+        self.ws_stop_event = ws_stop_event  # Add this
 
         # Use consistent multiprocessing context
-        self.mp_context = multiprocessing.get_context(
-            "spawn"
-            if sys.platform.startswith("darwin")
-            else "spawn"  # if not sys.platform.startswith("darwin") else "spawn"
-        )
+        self.mp_context = multiprocessing.get_context("spawn")
         self.manager = self.mp_context.Manager()
         self.data_queue = self.manager.Queue(maxsize=0)
         self.stop_event = self.mp_context.Event()
@@ -657,16 +640,22 @@ class ZerodhaWebSocketClient:
             traceback.print_exc()
 
     def _monitor_processes(self, process_args):
-        """Monitor and restart failed processes"""
+        """Monitor and restart failed processes - with external stop check"""
         try:
             while not self.stop_event.is_set():
+                # Check if external stop requested
+                if self.ws_stop_event and self.ws_stop_event.is_set():
+                    self.logger.info("External stop requested, shutting down WebSocket processes...")
+                    self.stop_event.set()
+                    break
+                    
                 # Check WebSocket processes
                 for i, p in enumerate(self.ws_processes):
                     if not p.is_alive():
                         self.logger.warn(f"Websocket_index:{i} died, restarting...")
                         args = process_args[i]
                         new_p = self.mp_context.Process(
-                            target=websocket_process_worker, args=(args,)
+                            target=websocket_process_worker, args=(args + (self.ws_stop_event,))
                         )
                         new_p.daemon = True
                         new_p.start()

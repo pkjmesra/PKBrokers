@@ -144,13 +144,18 @@ def validate_credentials():
     return True
 
 
-def kite_ticks(stop_queue=None, parent=None, test_mode=False):
+def kite_ticks(stop_queue=None, parent=None, test_mode=False, ws_stop_event=None):
     import signal
 
     from pkbrokers.kite.kiteTokenWatcher import KiteTokenWatcher
 
     watcher = KiteTokenWatcher()
     print("We're now ready to begin listening to ticks from Zerodha's Kite...")
+    
+    # Store the stop event in watcher for WebSocket processes
+    if ws_stop_event:
+        watcher.set_ws_stop_event(ws_stop_event)
+    
     # Store reference
     if parent is not None and hasattr(parent, "child_process_ref"):
         parent.child_process_ref = os.getpid()
@@ -161,6 +166,7 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False):
     # Start stop listener
     if stop_queue is not None:
         watcher.set_stop_queue(stop_queue)
+
 
     # Set up signal handler
     def signal_handler(signum, frame):

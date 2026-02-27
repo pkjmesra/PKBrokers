@@ -374,7 +374,12 @@ class KiteTokenWatcher:
         # Initialize in-memory candle store for high-performance candle access
         self._candle_store = get_candle_store()
         self._kite_instruments = {}
+        self.ws_stop_event = None  # Add this for WebSocket stop signal
 
+    def set_ws_stop_event(self, event):
+        """Set the stop event for WebSocket processes"""
+        self.ws_stop_event = event
+        
     def set_stop_queue(self, stop_queue):
         """
         Set a queue to listen for stop signals from parent process
@@ -594,6 +599,7 @@ class KiteTokenWatcher:
                 token_batches=self.token_batches,
                 watcher_queue=self._watcher_queue,
                 db_conn=self._db_instance,
+                ws_stop_event=self.ws_stop_event,  # Pass the stop event to WebSocket client
             )
 
         try:
@@ -1059,6 +1065,19 @@ class KiteTokenWatcher:
         """
         self.logger.info("Initiating graceful shutdown...")
         
+        # Signal WebSocket processes to stop if we have the event
+        if self.ws_stop_event:
+            self.logger.info("Signaling WebSocket processes to stop...")
+            self.ws_stop_event.set()
+        
+        # Stop WebSocket client first to stop receiving new ticks
+        if self.client:
+            try:
+                self.client.stop()
+                self.logger.info("WebSocket client stopped")
+            except Exception as e:
+                self.logger.error(f"Error stopping client: {e}")
+        
         # Save candle store data before shutdown
         try:
             self._candle_store.save_ticks_json()
@@ -1136,13 +1155,6 @@ class KiteTokenWatcher:
         # Stop JSON writer
         if self.json_writer:
             self.json_writer.stop()
-
-        # Stop WebSocket client
-        if self.client:
-            try:
-                self.client.stop()
-            except Exception as e:
-                self.logger.error(f"Error stopping client: {e}")
 
         # Signal database thread to exit
         try:
