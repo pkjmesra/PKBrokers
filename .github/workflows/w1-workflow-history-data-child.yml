@@ -659,7 +659,7 @@ jobs:
         ls -la results/Data/*.pkl 2>/dev/null || echo "No pkl files found"
 
     - name: Commit updated pkl file to PKScreener actions-data-download
-      # FIXED STEP: Use absolute path to find pkl files
+      # FIXED STEP: Handle case when pkscreener-data directory doesn't exist
       env:
         CI_PAT: ${{ secrets.CI_PAT }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -693,8 +693,18 @@ jobs:
         RESULTS_DATA_DIR="$(pwd)/results/Data"
         echo "Results data directory: $RESULTS_DATA_DIR"
         
-        # Go back to original dir and then to pkscreener-data
+        # Go back to original directory
         cd "$ORIGINAL_DIR"
+        
+        # Check if pkscreener-data directory exists, if not clone it
+        if [ ! -d "pkscreener-data" ]; then
+            echo "pkscreener-data directory not found. Cloning PKScreener actions-data-download branch..."
+            git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
+        else
+            echo "pkscreener-data directory exists."
+        fi
+        
+        # Now cd into pkscreener-data
         cd pkscreener-data
         
         PERIOD="${{ inputs.period }}"
@@ -804,10 +814,10 @@ jobs:
                 fi
               fi
             done
-
+            
             # Also try to commit intraday from local ticks.json for day period
             INTRADAY_FOUND=0
-            for PKL_FILE in $LOCAL_DATA_DIR/intraday_stock_data_*.pkl $LOCAL_DATA_DIR/intraday_1m_candles.pkl; do
+            for PKL_FILE in "$RESULTS_DATA_DIR"/intraday_stock_data_*.pkl "$RESULTS_DATA_DIR"/intraday_1m_candles.pkl; do
               if [ -f "$PKL_FILE" ]; then
                 PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
                 if [ "$PKL_SIZE" -gt 10000 ]; then
@@ -824,9 +834,9 @@ jobs:
             # If no intraday pkl, try to generate from local ticks.json
             if [ "$INTRADAY_FOUND" -eq 0 ]; then
               echo "No intraday pkl found, trying to generate from local ticks.json..."
-              python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py --data-dir $LOCAL_DATA_DIR --verbose 2>/dev/null || true
+              python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py --data-dir "$RESULTS_DATA_DIR" --verbose 2>/dev/null || true
               
-              for PKL_FILE in $LOCAL_DATA_DIR/intraday_stock_data_*.pkl; do
+              for PKL_FILE in "$RESULTS_DATA_DIR"/intraday_stock_data_*.pkl; do
                 if [ -f "$PKL_FILE" ]; then
                   PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
                   if [ "$PKL_SIZE" -gt 10000 ]; then
@@ -841,7 +851,7 @@ jobs:
             fi
         else
             # Intraday periods - use local files only
-            for PKL_FILE in $LOCAL_DATA_DIR/*.pkl; do
+            for PKL_FILE in "$RESULTS_DATA_DIR"/*.pkl; do
               if [ -f "$PKL_FILE" ]; then
                 PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
                 if [ "$PKL_SIZE" -gt "$MIN_SIZE" ]; then
