@@ -202,10 +202,10 @@ class PKTickOrchestrator:
                     logger.error(f"Kite authentication failed: {auth_e}")
                     logger.warning("Proceeding without valid token - WebSocket will fail")
 
-            # Create a stop event for WebSocket processes
+            # Create a stop event for WebSocket processes and store it as instance variable
             from multiprocessing import Manager
             manager = Manager()
-            self.ws_stop_event = manager.Event()
+            self.ws_stop_event = manager.Event()  # Store as instance variable
             
             from pkbrokers.kite.examples.pkkite import kite_ticks
             

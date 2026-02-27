@@ -250,7 +250,7 @@ class WebSocketProcess:
                     last_tick_log = time.time()
                     total_ticks_received = 0
                     tick_batch = 0
-                    while not self.stop_event.is_set():
+                    while not self.stop_event.is_set() and not (self.ws_stop_event and self.ws_stop_event.is_set()):
                         try:
                             message = await asyncio.wait_for(
                                 websocket.recv(), timeout=10
@@ -316,13 +316,15 @@ class WebSocketProcess:
 
                         except asyncio.TimeoutError:
                             await websocket.ping()
+                            # Check stop events on timeout
+                            continue
                         except Exception as e:
-                            if not self.stop_event.is_set():
+                            if not self.stop_event.is_set() and not (self.ws_stop_event and self.ws_stop_event.is_set()):
                                 self.logger.error(
                                     f"Websocket_index:{self.websocket_index}: Message processing error: {str(e)}"
                                 )
                             break
-                await self._async_cleanup()
+                    await self._async_cleanup()
             # except asyncio.CancelledError:
             #     raise  # Propagate cancellation
             except websockets.exceptions.ConnectionClosedError as e:
@@ -415,8 +417,11 @@ def websocket_process_worker(args):
         data_queue,
         stop_event,
         log_level,
-        ws_stop_event,  # Add this
+        ws_stop_event,
     ) = args
+
+    # Optional: Add debug log
+    print(f"Websocket_index:{websocket_index}: Starting with ws_stop_event={ws_stop_event}")
 
     process = WebSocketProcess(
         enctoken=enctoken,
@@ -427,7 +432,7 @@ def websocket_process_worker(args):
         data_queue=data_queue,
         stop_event=stop_event,
         log_level=log_level,
-        ws_stop_event=ws_stop_event,  # Add this
+        ws_stop_event=ws_stop_event,
     )
     try:
         process.run()
@@ -653,10 +658,12 @@ class ZerodhaWebSocketClient:
                 for i, p in enumerate(self.ws_processes):
                     if not p.is_alive():
                         self.logger.warn(f"Websocket_index:{i} died, restarting...")
-                        args = process_args[i]
+                        base_args = process_args[i]
+                        # FIX: Create full args with ws_stop_event and wrap in a single-element tuple
+                        full_args = base_args + (self.ws_stop_event,)
                         new_p = self.mp_context.Process(
                             target=websocket_process_worker, 
-                            args=(args + (self.ws_stop_event,),)  # Note the extra comma to make it a single-element tuple containing the args tuple
+                            args=(full_args,)  # Note the comma - this is a tuple containing the full_args tuple
                         )
                         new_p.daemon = True
                         new_p.start()
@@ -700,7 +707,7 @@ class ZerodhaWebSocketClient:
             token_batch = self.token_batches[i]
             self.logger.info(f"Batch {i} will handle {len(token_batch)} instruments")
             
-            # Create the base args tuple (without ws_stop_event)
+            # Create base args tuple (without ws_stop_event)
             base_args = (
                 self.enctoken,
                 self.user_id,
@@ -709,7 +716,8 @@ class ZerodhaWebSocketClient:
                 i,
                 self.data_queue,
                 self.stop_event,
-                0 if "PKDevTools_Default_Log_Level" not in os.environ.keys()
+                0
+                if "PKDevTools_Default_Log_Level" not in os.environ.keys()
                 else int(os.environ["PKDevTools_Default_Log_Level"]),
             )
             # Store the base args - we'll add ws_stop_event when starting/restarting
@@ -719,11 +727,11 @@ class ZerodhaWebSocketClient:
         self.ws_processes = []
 
         for base_args in process_args:
-            # FIX: Create the full args tuple including ws_stop_event
+            # Create full args with ws_stop_event and wrap in a single-element tuple
             full_args = base_args + (self.ws_stop_event,)
             p = self.mp_context.Process(
                 target=websocket_process_worker, 
-                args=(full_args,)  # Note: args takes a single tuple, so we wrap full_args in another tuple
+                args=(full_args,)  # Note the comma - this is a tuple containing the full_args tuple
             )
             p.daemon = True
             p.start()
