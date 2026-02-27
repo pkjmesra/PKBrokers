@@ -213,7 +213,7 @@ jobs:
             print('Checking for cache file from Archiver...', file=sys.stderr)
             try:
                 cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
-                if cache_exists and cache_file_name:
+                if cache_file_name:
                     url = f'https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/{cache_file_name}'
                     print(f'Trying Archiver cache file: {cache_file_name}', file=sys.stderr)
                     try:
@@ -380,7 +380,7 @@ jobs:
         TARGET_INFO=$(python3 -c "
         from PKDevTools.classes import Archiver
         cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
-        if cache_exists and cache_file_name:
+        if cache_file_name:
             print(f'{cache_file_name}')
         else:
             print('stock_data_$(date +%d%m%Y).pkl')
@@ -469,7 +469,7 @@ jobs:
         TARGET_INFO=$(python3 -c "
         from PKDevTools.classes import Archiver
         cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
-        if cache_exists and cache_file_name:
+        if cache_file_name:
             print(f'{cache_file_name}')
         else:
             print('stock_data_$(date +%d%m%Y).pkl')
@@ -674,7 +674,7 @@ jobs:
         CACHE_INFO=$(python3 -c "
         from PKDevTools.classes import Archiver
         cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
-        if cache_exists and cache_file_name:
+        if cache_file_name:
             print(f'{cache_file_name}')
         else:
             print('stock_data_$(date +%d%m%Y).pkl')
