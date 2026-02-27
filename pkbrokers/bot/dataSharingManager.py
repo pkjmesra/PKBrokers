@@ -519,6 +519,7 @@ class DataSharingManager:
         """
         Export daily candles from InMemoryCandleStore to pkl file.
         Merges with historical data from GitHub to create complete ~35MB+ pkl files.
+        All timestamps are stored as timezone-aware IST (Asia/Kolkata).
         
         Args:
             candle_store: InMemoryCandleStore instance
@@ -529,9 +530,40 @@ class DataSharingManager:
         """
         try:
             import pandas as pd
+            from pandas.api.types import is_datetime64_any_dtype
             
             output_path = self.get_daily_pkl_path()
             data = {}
+            
+            # Helper function to normalize timestamps to IST (timezone-aware)
+            def normalize_to_ist(df):
+                """Convert DataFrame index to timezone-aware IST."""
+                if df is None or not hasattr(df, 'index'):
+                    return df
+                
+                try:
+                    if hasattr(df.index, 'tz'):
+                        # If it has timezone, convert to IST
+                        if df.index.tz is not None:
+                            df = df.copy()
+                            df.index = df.index.tz_convert(KOLKATA_TZ)
+                        else:
+                            # If naive, assume UTC and convert to IST
+                            df = df.copy()
+                            df.index = pd.DatetimeIndex(df.index).tz_localize('UTC').tz_convert(KOLKATA_TZ)
+                    else:
+                        # Not a DatetimeIndex, try to convert
+                        df = df.copy()
+                        df.index = pd.DatetimeIndex(df.index).tz_localize('UTC').tz_convert(KOLKATA_TZ)
+                except Exception as e:
+                    self.logger.debug(f"Error normalizing timezone: {e}")
+                    # Fallback: try to set as IST directly
+                    try:
+                        df = df.copy()
+                        df.index = pd.DatetimeIndex(df.index).tz_localize(KOLKATA_TZ)
+                    except:
+                        pass
+                return df
             
             # First, try to load existing historical data from GitHub
             if merge_with_historical:
@@ -544,7 +576,7 @@ class DataSharingManager:
                         
                         self.logger.info(f"Downloaded historical pkl with {len(historical_data)} instruments")
                         
-                        # Convert historical data to proper format
+                        # Convert historical data to proper format and normalize to IST
                         for symbol, df_or_dict in historical_data.items():
                             if isinstance(df_or_dict, dict):
                                 # Convert split dict format to DataFrame
@@ -557,9 +589,12 @@ class DataSharingManager:
                                     # Rename columns to standard format
                                     col_map = {'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}
                                     df.rename(columns=col_map, inplace=True)
+                                    # Normalize to IST
+                                    df = normalize_to_ist(df)
                                     data[symbol] = df
                             elif hasattr(df_or_dict, 'index'):
-                                data[symbol] = df_or_dict
+                                # Normalize to IST for DataFrame
+                                data[symbol] = normalize_to_ist(df_or_dict)
                         
                         self.logger.info(f"Loaded {len(data)} instruments from historical pkl into merge buffer")
                     else:
@@ -582,12 +617,13 @@ class DataSharingManager:
                     if not day_candles:
                         continue
                     
-                    # Convert to DataFrame
+                    # Convert to DataFrame with IST timezone-aware timestamps
                     rows = []
                     for candle in day_candles:
-                        dt = datetime.fromtimestamp(candle.timestamp, tz=KOLKATA_TZ)
+                        # Create timezone-aware datetime in IST directly
+                        dt_ist = datetime.fromtimestamp(candle.timestamp, tz=KOLKATA_TZ)
                         rows.append({
-                            'Date': dt,
+                            'Date': dt_ist,
                             'Open': candle.open,
                             'High': candle.high,
                             'Low': candle.low if candle.low != float('inf') else candle.open,
@@ -599,12 +635,22 @@ class DataSharingManager:
                         new_df = pd.DataFrame(rows)
                         new_df.set_index('Date', inplace=True)
                         
+                        # Ensure index is timezone-aware IST
+                        if not hasattr(new_df.index, 'tz') or new_df.index.tz is None:
+                            new_df.index = new_df.index.tz_localize(KOLKATA_TZ)
+                        elif new_df.index.tz != KOLKATA_TZ:
+                            new_df.index = new_df.index.tz_convert(KOLKATA_TZ)
+                        
                         # Merge with historical data if exists
                         if symbol in data:
                             existing_df = data[symbol]
+                            # Ensure existing data is also IST-aware
+                            existing_df = normalize_to_ist(existing_df)
+                            
                             # Combine and remove duplicates (keep latest)
                             combined = pd.concat([existing_df, new_df])
                             combined = combined[~combined.index.duplicated(keep='last')]
+                            # Sort index - all timestamps are IST-aware now
                             combined.sort_index(inplace=True)
                             data[symbol] = combined
                         else:
@@ -618,9 +664,12 @@ class DataSharingManager:
                     try:
                         df = data[symbol]
                         if hasattr(df, '__len__') and len(df) > MAX_DAILY_ROWS:
-                            data[symbol] = df.sort_index().tail(MAX_DAILY_ROWS)
+                            # Ensure index is sorted before taking tail
+                            df = df.sort_index()
+                            data[symbol] = df.tail(MAX_DAILY_ROWS)
                             trimmed_count += 1
-                    except Exception:
+                    except Exception as e:
+                        self.logger.debug(f"Error trimming {symbol}: {e}")
                         continue
                 
                 if trimmed_count > 0:
@@ -631,6 +680,13 @@ class DataSharingManager:
                 
                 file_size = os.path.getsize(output_path) / (1024 * 1024)  # MB
                 self.logger.info(f"Exported {len(data)} instruments ({today_count} with today's data) to {output_path} ({file_size:.2f} MB)")
+                
+                # Verify timezone of first few symbols (debug)
+                for symbol in list(data.keys())[:3]:
+                    df = data[symbol]
+                    if hasattr(df.index, 'tz'):
+                        self.logger.debug(f"{symbol} timezone: {df.index.tz}")
+                
                 return True, output_path
             else:
                 self.logger.warning("No daily candle data to export")
@@ -638,6 +694,8 @@ class DataSharingManager:
                 
         except Exception as e:
             self.logger.error(f"Error exporting daily candles: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return False, None
     
     def export_intraday_candles_to_pkl(self, candle_store) -> Tuple[bool, Optional[str]]:
