@@ -711,9 +711,9 @@ class DataSharingManager:
         try:
             import pandas as pd
             
+            latest_date = None
             output_path = self.get_intraday_pkl_path()
             data = {}
-            
             with candle_store.lock:
                 for token, instrument in candle_store.instruments.items():
                     symbol = candle_store.instrument_symbols.get(token, str(token))
@@ -739,6 +739,8 @@ class DataSharingManager:
                             'Close': candle.close,
                             'Volume': candle.volume,
                         })
+                        if latest_date is None or dt > latest_date:
+                            latest_date = dt
                     
                     if rows:
                         df = pd.DataFrame(rows)
@@ -751,14 +753,14 @@ class DataSharingManager:
                 
                 file_size = os.path.getsize(output_path) / (1024 * 1024)  # MB
                 self.logger.info(f"Exported {len(data)} intraday instruments to {output_path} ({file_size:.2f} MB)")
-                return True, output_path
+                return True, output_path, latest_date
             else:
                 self.logger.warning("No intraday candle data to export")
-                return False, None
+                return False, None, latest_date
                 
         except Exception as e:
             self.logger.error(f"Error exporting intraday candles: {e}")
-            return False, None
+            return False, None, None
     
     def convert_ticks_json_to_pkl(self, ticks_json_path: str = None) -> Tuple[bool, Optional[str]]:
         """

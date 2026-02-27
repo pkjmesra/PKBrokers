@@ -1099,10 +1099,10 @@ class KiteTokenWatcher:
             
             # Export intraday candles to pkl
             self.logger.info("Starting intraday pkl export...")
-            success_intraday, intraday_path = data_mgr.export_intraday_candles_to_pkl(self._candle_store)
+            success_intraday, intraday_path, latest_date = data_mgr.export_intraday_candles_to_pkl(self._candle_store)
             if success_intraday and intraday_path:
                 file_size = os.path.getsize(intraday_path) / (1024 * 1024)
-                self.logger.info(f"Exported intraday candles to: {intraday_path} ({file_size:.2f} MB)")
+                self.logger.info(f"Exported intraday candles for date {latest_date} to: {intraday_path} ({file_size:.2f} MB)")
                 
                 # Also create date-suffixed copy
                 dest_intraday = os.path.join(results_dir, f"intraday_stock_data_{today_suffix}.pkl")

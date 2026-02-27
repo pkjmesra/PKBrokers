@@ -94,10 +94,11 @@ class TestPKTickBotDataFlow:
             }
             store.process_tick(tick)
             
-            success, path = data_mgr.export_intraday_candles_to_pkl(store)
+            success, path, latest_date = data_mgr.export_intraday_candles_to_pkl(store)
             
             assert isinstance(success, bool)
             assert path is None or isinstance(path, str)
+            assert latest_date is None or isinstance(latest_date, datetime)
     
     def test_github_download_urls(self):
         """Test that download_from_github tries correct URLs."""
