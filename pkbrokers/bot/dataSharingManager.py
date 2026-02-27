@@ -1014,7 +1014,7 @@ class DataSharingManager:
             files_to_commit = []
             from PKDevTools.classes import Archiver
             _ , cache_file_name = Archiver.afterMarketStockDataExists()
-            today_suffix = cache_file_name.replace(".pkl", "") #datetime.now(KOLKATA_TZ).strftime('%d%m%Y')
+            today_suffix = cache_file_name.replace(".pkl", "").replace("stock_data_", "") #datetime.now(KOLKATA_TZ).strftime('%d%m%Y')
             
             # Check for daily pkl
             daily_pkl = self.get_daily_pkl_path()
