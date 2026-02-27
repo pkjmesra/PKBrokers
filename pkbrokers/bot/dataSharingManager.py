@@ -950,7 +950,9 @@ class DataSharingManager:
                 return False
             
             files_to_commit = []
-            today_suffix = datetime.now(KOLKATA_TZ).strftime('%d%m%Y')
+            from PKDevTools.classes import Archiver
+            _ , cache_file_name = Archiver.afterMarketStockDataExists()
+            today_suffix = cache_file_name.replace(".pkl", "") #datetime.now(KOLKATA_TZ).strftime('%d%m%Y')
             
             # Check for daily pkl
             daily_pkl = self.get_daily_pkl_path()
@@ -1002,7 +1004,7 @@ class DataSharingManager:
                     
                     # Create/update file
                     put_url = f"{api_base}/contents/{remote_path}"
-                    commit_msg = f"Update {os.path.basename(remote_path)} - {PKDateUtilities.currentDateTime()}"
+                    commit_msg = f"[DataSharingManager] Update {os.path.basename(remote_path)} - {PKDateUtilities.currentDateTime()}"
                     
                     data = {
                         "message": commit_msg,
