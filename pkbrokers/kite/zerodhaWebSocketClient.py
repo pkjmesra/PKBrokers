@@ -655,7 +655,8 @@ class ZerodhaWebSocketClient:
                         self.logger.warn(f"Websocket_index:{i} died, restarting...")
                         args = process_args[i]
                         new_p = self.mp_context.Process(
-                            target=websocket_process_worker, args=(args + (self.ws_stop_event,))
+                            target=websocket_process_worker, 
+                            args=(args + (self.ws_stop_event,),)  # Note the extra comma to make it a single-element tuple containing the args tuple
                         )
                         new_p.daemon = True
                         new_p.start()
@@ -699,7 +700,8 @@ class ZerodhaWebSocketClient:
             token_batch = self.token_batches[i]
             self.logger.info(f"Batch {i} will handle {len(token_batch)} instruments")
             
-            args = (
+            # Create the base args tuple (without ws_stop_event)
+            base_args = (
                 self.enctoken,
                 self.user_id,
                 self.api_key,
@@ -707,17 +709,22 @@ class ZerodhaWebSocketClient:
                 i,
                 self.data_queue,
                 self.stop_event,
-                0
-                if "PKDevTools_Default_Log_Level" not in os.environ.keys()
+                0 if "PKDevTools_Default_Log_Level" not in os.environ.keys()
                 else int(os.environ["PKDevTools_Default_Log_Level"]),
             )
-            process_args.append(args)
+            # Store the base args - we'll add ws_stop_event when starting/restarting
+            process_args.append(base_args)
 
         # Start WebSocket processes using the same context
         self.ws_processes = []
 
-        for args in process_args:
-            p = self.mp_context.Process(target=websocket_process_worker, args=(args,))
+        for base_args in process_args:
+            # FIX: Create the full args tuple including ws_stop_event
+            full_args = base_args + (self.ws_stop_event,)
+            p = self.mp_context.Process(
+                target=websocket_process_worker, 
+                args=(full_args,)  # Note: args takes a single tuple, so we wrap full_args in another tuple
+            )
             p.daemon = True
             p.start()
             self.ws_processes.append(p)
