@@ -657,7 +657,12 @@ def orchestrate():
                 results_dir = os.path.join(os.getcwd(), "results", "Data")
                 os.makedirs(results_dir, exist_ok=True)
                 
-                today_suffix = datetime.now().strftime('%d%m%Y')
+                from PKDevTools.classes import Archiver
+                _, file_name = Archiver.afterMarketStockDataExists()
+                if file_name is not None and len(file_name) > 0:
+                    today_suffix = file_name.replace(".pkl", "").replace("stock_data_", "")
+                else:
+                    today_suffix = datetime.now().strftime('%d%m%Y')
                 
                 if success_daily and daily_path and os.path.exists(daily_path):
                     # Copy as date-specific file

@@ -582,8 +582,10 @@ for token, group in df.groupby('instrument_token'):
     stock_data[symbol] = group[['Open', 'High', 'Low', 'Close', 'Volume']]
 
 # 5. Save to pkl
-today = datetime.now().strftime('%d%m%Y')
-with open(f"stock_data_{today}.pkl", 'wb') as f:
+from PKDevTools.classes import Archiver
+_, file_name_suffix = Archiver.afterMarketStockDataExists()
+file_name_suffix = file_name_suffix.replace('.pkl','').replace('stock_data_','')
+with open(f"stock_data_{file_name_suffix}.pkl", 'wb') as f:
     pickle.dump(stock_data, f, protocol=pickle.HIGHEST_PROTOCOL)
 ```
 

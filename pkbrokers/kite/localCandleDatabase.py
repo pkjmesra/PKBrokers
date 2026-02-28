@@ -88,8 +88,12 @@ class LocalCandleDatabase:
         self.base_path.mkdir(parents=True, exist_ok=True)
         
         # Get current date for file naming
-        self.current_date = datetime.now(self.timezone).date()
-        self.date_suffix = self.current_date.strftime('%d%m%Y')
+        _, file_name = Archiver.afterMarketStockDataExists()
+        if file_name is not None and len(file_name) > 0:
+            self.date_suffix = file_name.replace(".pkl", "").replace("stock_data_", "")
+        else:
+            self.current_date = datetime.now(self.timezone).date()
+            self.date_suffix = self.current_date.strftime('%d%m%Y')
         
         # Database file paths
         self.daily_db_path = self.base_path / f"candles_daily_{self.date_suffix}.db"

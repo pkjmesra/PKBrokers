@@ -124,12 +124,14 @@ class DataSharingManager:
         Returns:
             Path like stock_data_26122025.pkl
         """
-        _,date_str = Archiver.afterMarketStockDataExists()
-        if date_str is None or date_str == "":
+        _, file_name = Archiver.afterMarketStockDataExists()
+        if file_name is not None and len(file_name) > 0:
+            date_str = file_name.replace(".pkl", "").replace("stock_data_", "")
+        else:
             if date is None:
                 date = datetime.now(KOLKATA_TZ)
-            date_str = date.strftime("%d%m%Y") + ".pkl"
-        return os.path.join(self.data_dir, f"{base_name}_{date_str}")
+            date_str = date.strftime("%d%m%Y")
+        return os.path.join(self.data_dir, f"{base_name}_{date_str}.pkl")
     
     def is_market_open(self) -> bool:
         """Check if market is currently open."""
@@ -841,7 +843,7 @@ class DataSharingManager:
                 self.logger.info(f"Converted {len(data)} instruments from ticks.json to {output_path} ({file_size:.2f} MB)")
                 
                 # Also create dated copy
-                today_suffix = datetime.now(KOLKATA_TZ).strftime('%d%m%Y')
+                _, today_suffix = Archiver.afterMarketStockDataExists()
                 dated_path = os.path.join(self.data_dir, f"intraday_stock_data_{today_suffix}.pkl")
                 with open(dated_path, 'wb') as f:
                     pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)

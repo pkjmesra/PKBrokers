@@ -958,10 +958,15 @@ def save_pkl_files(data: Dict, data_dir: str, verbose: bool = True) -> Tuple[str
     
     Daily data is trimmed to 251 rows per stock before saving.
     """
-    
     os.makedirs(data_dir, exist_ok=True)
-    
-    today = datetime.now().strftime('%d%m%Y')
+
+    from PKDevTools.classes import Archiver
+    exists, file_name = Archiver.afterMarketStockDataExists()
+    if exists:
+        today = file_name.replace('.pkl','').replace('stock_data_','')
+    else:
+        # Fallback
+        today = datetime.now().strftime('%d%m%Y')
     
     # Trim daily data to 251 rows per stock before saving
     data = trim_daily_data_to_251_rows(data, verbose)
@@ -987,8 +992,14 @@ def save_intraday_pkl(ticks_candles: Dict, data_dir: str, verbose: bool = True) 
     
     os.makedirs(data_dir, exist_ok=True)
     
-    today = datetime.now().strftime('%d%m%Y')
-    
+    from PKDevTools.classes import Archiver
+    _, file_name = Archiver.afterMarketStockDataExists()
+    if file_name is not None and len(file_name) > 0:
+        today = file_name.replace('.pkl','').replace('stock_data_','')
+    else:
+        # Fallback
+        today = datetime.now().strftime('%d%m%Y')
+
     intraday_path = os.path.join(data_dir, f"intraday_stock_data_{today}.pkl")
     with open(intraday_path, 'wb') as f:
         pickle.dump(ticks_candles, f, protocol=pickle.HIGHEST_PROTOCOL)

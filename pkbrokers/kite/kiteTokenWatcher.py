@@ -1104,7 +1104,11 @@ class KiteTokenWatcher:
             # Export daily candles to pkl (with historical merge)
             self.logger.info("Starting daily pkl export with historical merge...")
             success_daily, daily_path = data_mgr.export_daily_candles_to_pkl(self._candle_store, merge_with_historical=True)
-            today_suffix = datetime.now().strftime('%d%m%Y')
+            _, file_name = Archiver.afterMarketStockDataExists()
+            if file_name is not None and len(file_name) > 0:
+                today_suffix = file_name.replace('.pkl','').replace('stock_data_','')
+            else:
+                today_suffix = datetime.now().strftime('%d%m%Y')
             
             if success_daily and daily_path:
                 file_size = os.path.getsize(daily_path) / (1024 * 1024)

@@ -204,6 +204,11 @@ jobs:
         
         cd ../../..
 
+    - name: Get Archive Date String
+      id: get_date
+      run: |
+        python .github/workflows/get_archive_date.py
+
     - name: Push ticks and pkl files to PKScreener
       if: always()
       env:
@@ -218,7 +223,6 @@ jobs:
         TICKS_PATH_2="pkbrokers/kite/examples/ticks.json"
         DATA_DIR_1="pkbrokers/kite/examples/results/Data"
         DATA_DIR_2="pkbrokers/kite/examples"
-        DATE_SUFFIX=$(date +%d%m%Y)
         
         # Find ticks.json
         if [ -f "$TICKS_PATH_1" ] && [ -s "$TICKS_PATH_1" ]; then
@@ -261,35 +265,43 @@ jobs:
           fi
         fi
         
+        # Define specific file names
+        DAILY_CANDLES_FILE="$DATA_DIR/daily_candles.pkl"
+        STOCK_DATA_FILE="$DATA_DIR/stock_data_$ARCHIVE_DATE_STR.pkl"
+        INTRADAY_CANDLES_FILE="$DATA_DIR/intraday_1m_candles.pkl"
+        INTRADAY_STOCK_DATA_FILE="$DATA_DIR/intraday_stock_data_$ARCHIVE_DATE_STR.pkl"
+        CANDLES_DB_FILE="$DATA_DIR/candles_$ARCHIVE_DATE_STR.db"
+        
         # Copy daily pkl files
-        for PKL_FILE in "$DATA_DIR"/daily_candles.pkl "$DATA_DIR"/stock_data_*.pkl; do
-          if [ -f "$PKL_FILE" ]; then
-            PKL_NAME=$(basename "$PKL_FILE")
-            echo "Found $PKL_NAME"
-            cp "$PKL_FILE" pkscreener-data/actions-data-download/
+        if [ -f "$DAILY_CANDLES_FILE" ]; then
+            echo "Found daily_candles.pkl"
+            cp "$DAILY_CANDLES_FILE" pkscreener-data/actions-data-download/
             FILES_COPIED=$((FILES_COPIED + 1))
-          fi
-        done
+        fi
+        if [ -f "$STOCK_DATA_FILE" ]; then
+            echo "Found stock_data_$ARCHIVE_DATE_STR.pkl"
+            cp "$STOCK_DATA_FILE" pkscreener-data/actions-data-download/
+            FILES_COPIED=$((FILES_COPIED + 1))
+        fi
         
         # Copy intraday pkl files
-        for PKL_FILE in "$DATA_DIR"/intraday_1m_candles.pkl "$DATA_DIR"/intraday_stock_data_*.pkl; do
-          if [ -f "$PKL_FILE" ]; then
-            PKL_NAME=$(basename "$PKL_FILE")
-            echo "Found $PKL_NAME"
-            cp "$PKL_FILE" pkscreener-data/actions-data-download/
+        if [ -f "$INTRADAY_CANDLES_FILE" ]; then
+            echo "Found intraday_1m_candles.pkl"
+            cp "$INTRADAY_CANDLES_FILE" pkscreener-data/actions-data-download/
             FILES_COPIED=$((FILES_COPIED + 1))
-          fi
-        done
-        
+        fi
+        if [ -f "$INTRADAY_STOCK_DATA_FILE" ]; then
+            echo "Found intraday_stock_data_$ARCHIVE_DATE_STR.pkl"
+            cp "$INTRADAY_STOCK_DATA_FILE" pkscreener-data/actions-data-download/
+            FILES_COPIED=$((FILES_COPIED + 1))
+        fi
+
         # Copy SQLite DB files
-        for DB_FILE in "$DATA_DIR"/candles_*.db; do
-          if [ -f "$DB_FILE" ]; then
-            DB_NAME=$(basename "$DB_FILE")
-            echo "Found $DB_NAME"
-            cp "$DB_FILE" pkscreener-data/actions-data-download/
+        if [ -f "$CANDLES_DB_FILE" ]; then
+            echo "Found candles_$ARCHIVE_DATE_STR.db"
+            cp "$CANDLES_DB_FILE" pkscreener-data/actions-data-download/
             FILES_COPIED=$((FILES_COPIED + 1))
-          fi
-        done
+        fi
         
         if [ "$FILES_COPIED" -gt 0 ]; then
           # Create metadata
@@ -299,7 +311,7 @@ jobs:
           "synced_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
           "workflow": "w0-workflow-ticks-update.yml",
           "files_copied": $FILES_COPIED,
-          "date_suffix": "$DATE_SUFFIX"
+          "date_suffix": "$ARCHIVE_DATE_STR"
         }
         EOF
           

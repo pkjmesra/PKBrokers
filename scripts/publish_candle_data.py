@@ -197,7 +197,19 @@ def publish_data(
         bool: True if successful
     """
     try:
-        today = datetime.now().strftime("%Y-%m-%d")
+        from PKDevTools.classes import Archiver
+        from datetime import datetime
+
+        _, file_name = Archiver.afterMarketStockDataExists()
+        if file_name is not None and len(file_name) > 0:
+            date_part = file_name.replace(".pkl", "").replace("stock_data_", "")
+            # date_part is DDMMYYYY
+            dt_object = datetime.strptime(date_part, '%d%m%Y')
+            today = dt_object.strftime('%Y-%m-%d')
+        else:
+            # fallback
+            today = datetime.now().strftime("%Y-%m-%d")
+            
         current_time = datetime.now().strftime("%H%M")
         
         if data_type == "candles":
