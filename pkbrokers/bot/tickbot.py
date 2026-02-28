@@ -122,12 +122,13 @@ class PKTickBot:
             "/token - Sends the most recent saved token from environment\n"
             "/refresh_token - Generates, saves and sends the token\n"
             "/restart - Refresh token AND restart tick watcher\n"
-            "/db - Get the most recent local SQLite DB file\n"
+            "/db - Get the most recent local SQLite DB file (ticks.db)\n"
+            "/instrument_history - Get instrument history database file\n"  # NEW
             "/test_ticks - Starts ticks for 3 minutes (test mode)\n"
             "/candles - Get aggregated candle data for all timeframes\n"
             "/daily_pkl - Get daily candles pkl file\n"
             "/intraday_pkl - Get 1-minute candles pkl file\n"
-            "/request_data - Request all pkl/db files\n"
+            "/request_data - Request all pkl/db files (includes instrument_history.db)\n"  # UPDATED
             "/help - Show this help message\n\n"
             "📦 Files are automatically compressed to reduce size. "
             "If the file is too large, it will be split into multiple parts.\n\n"
@@ -326,6 +327,37 @@ class PKTickBot:
         """Send zipped ticks.db file to user with size handling"""
         self.send_zipped("ticks.db", self.ticks_db_path, update)
 
+    def send_zipped_instrument_history(self, update: Update, context: CallbackContext) -> None:
+        """Send zipped instrument_history.db file to user with size handling"""
+        if self._shouldAvoidResponse(update):
+            if update is not None:
+                update.message.reply_text(APOLOGY_TEXT)
+            return
+        
+        # Find instrument_history.db in common locations
+        from PKDevTools.classes import Archiver
+        possible_paths = [
+            os.path.join(Archiver.get_user_data_dir(), "instrument_history.db"),
+            os.path.join(os.getcwd(), "instrument_history.db"),
+            os.path.join(os.getcwd(), "results", "Data", "instrument_history.db"),
+            os.path.join(os.path.dirname(self.ticks_file_path), "instrument_history.db"),
+        ]
+        
+        db_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                db_path = path
+                break
+        
+        if db_path:
+            self.send_zipped("instrument_history.db", db_path, update)
+        else:
+            if update and update.message:
+                update.message.reply_text(
+                    "❌ instrument_history.db file not found. Please wait for data to be collected."
+                )
+            self.logger.warning("instrument_history.db not found in any standard location")
+            
     def find_part_files(self, base_path: str) -> list:
         """Find any existing part files for a given base path"""
         import glob
@@ -468,6 +500,15 @@ class PKTickBot:
                 "ticks.json", self.ticks_file_path, status_msg
             )
             status_msg = self._update_stats("ticks.db", self.ticks_db_path, status_msg)
+            
+            # Add instrument_history.db status
+            from PKDevTools.classes import Archiver
+            instrument_history_path = os.path.join(Archiver.get_user_data_dir(), "instrument_history.db")
+            if os.path.exists(instrument_history_path):
+                status_msg = self._update_stats("instrument_history.db", instrument_history_path, status_msg)
+            else:
+                status_msg += "❌ instrument_history.db: Not found\n"
+            
             update.message.reply_text(status_msg)
 
         except Exception as e:
@@ -697,6 +738,9 @@ class PKTickBot:
             
             # Send db file
             self.send_zipped_db(update, context)
+
+            # Send instrument_history.db file (NEW)
+            self.send_zipped_instrument_history(update, context)
             
             update.message.reply_text("✅ Data transfer complete!")
             self.logger.info("Data sent to requesting instance")
@@ -787,6 +831,7 @@ class PKTickBot:
                 update.message.reply_text("❌ No candle data available. Try /ticks first.")
         except Exception as e:
             update.message.reply_text(f"❌ Error getting candles: {str(e)}")
+
     def run_bot(self):
         """Run the telegram bot - synchronous version for v13.4"""
         try:
@@ -797,6 +842,7 @@ class PKTickBot:
             dispatcher.add_handler(CommandHandler("start", self.start))
             dispatcher.add_handler(CommandHandler("ticks", self.send_zipped_ticks))
             dispatcher.add_handler(CommandHandler("db", self.send_zipped_db))
+            dispatcher.add_handler(CommandHandler("instrument_history", self.send_zipped_instrument_history))  # NEW
             dispatcher.add_handler(CommandHandler("test_ticks", self.test_ticks))
             dispatcher.add_handler(CommandHandler("restart", self.restart_watcher))
             dispatcher.add_handler(CommandHandler("status", self.status))

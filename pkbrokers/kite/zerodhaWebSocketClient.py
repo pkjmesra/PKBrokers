@@ -118,6 +118,7 @@ class WebSocketProcess:
         self.websocket = None
         self.encToken_invalidated = False
         self.ws_stop_event = ws_stop_event
+        print(f"Websocket_index:{websocket_index}: ws_stop_event in process = {ws_stop_event}")
         self.multiprocessingForWindows()
 
     def _build_websocket_url(self):
@@ -464,6 +465,7 @@ class ZerodhaWebSocketClient:
         self.api_key = api_key
         self.logger = default_logger()
         self.ws_stop_event = ws_stop_event  # Add this
+        self.logger.info(f"ZerodhaWebSocketClient initialized with ws_stop_event: {ws_stop_event}")
 
         # Use consistent multiprocessing context
         self.mp_context = multiprocessing.get_context("spawn")
@@ -680,6 +682,7 @@ class ZerodhaWebSocketClient:
     def start(self):
         """Start WebSocket client with multiprocessing."""
         self.logger.debug("Starting Zerodha WebSocket client with multiprocessing")
+        self.logger.info(f"ws_stop_event in start(): {self.ws_stop_event}")
 
         # Build tokens if not provided
         if len(self.token_batches) == 0:
@@ -729,6 +732,7 @@ class ZerodhaWebSocketClient:
         for base_args in process_args:
             # Create full args with ws_stop_event and wrap in a single-element tuple
             full_args = base_args + (self.ws_stop_event,)
+            self.logger.info(f"Creating process with ws_stop_event: {self.ws_stop_event}")
             p = self.mp_context.Process(
                 target=websocket_process_worker, 
                 args=(full_args,)  # Note the comma - this is a tuple containing the full_args tuple

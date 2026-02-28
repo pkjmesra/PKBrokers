@@ -206,10 +206,12 @@ class PKTickOrchestrator:
             from multiprocessing import Manager
             manager = Manager()
             self.ws_stop_event = manager.Event()  # Store as instance variable
-            
+            self.ws_stop_event.clear()
+            logger.info(f"Created ws_stop_event: {self.ws_stop_event}")
+
             from pkbrokers.kite.examples.pkkite import kite_ticks
             
-            logger.info("Starting kite_ticks process...")
+            logger.info(f"Starting kite_ticks process with ws_stop_event: {self.ws_stop_event}")
             self.manager = multiprocessing.Manager()
             # Pass the stop event to kite_ticks
             kite_ticks(stop_queue=self.stop_queue, parent=self, ws_stop_event=self.ws_stop_event)

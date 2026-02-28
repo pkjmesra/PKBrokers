@@ -149,11 +149,13 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False, ws_stop_event=None
 
     from pkbrokers.kite.kiteTokenWatcher import KiteTokenWatcher
 
+    print(f"kite_ticks received ws_stop_event: {ws_stop_event}")
     watcher = KiteTokenWatcher()
     print("We're now ready to begin listening to ticks from Zerodha's Kite...")
     
     # Store the stop event in watcher for WebSocket processes
     if ws_stop_event:
+        print(f"Setting ws_stop_event in watcher: {ws_stop_event}")
         watcher.set_ws_stop_event(ws_stop_event)
     
     # Store reference

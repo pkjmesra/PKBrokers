@@ -379,6 +379,7 @@ class KiteTokenWatcher:
     def set_ws_stop_event(self, event):
         """Set the stop event for WebSocket processes"""
         self.ws_stop_event = event
+        self.logger.info(f"ws_stop_event set to: {event}")
         
     def set_stop_queue(self, stop_queue):
         """
@@ -589,6 +590,7 @@ class KiteTokenWatcher:
 
         # Initialize WebSocket client if not provided
         if self.client is None:
+            self.logger.info(f"Creating WebSocket client with ws_stop_event: {self.ws_stop_event}")
             self.client = ZerodhaWebSocketClient(
                 enctoken=os.environ.get(
                     "KTOKEN", local_secrets.get("KTOKEN", "You need your Kite token")
