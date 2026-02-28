@@ -646,16 +646,20 @@ class PKTickBot:
         
         try:
             data_mgr = get_data_sharing_manager()
-            
-            # First, export current candle data to pkl
             from pkbrokers.kite.inMemoryCandleStore import get_candle_store
             candle_store = get_candle_store()
+
+            # Ensure the daily PKL is fresh before sending
+            if not data_mgr.prepare_daily_pkl_for_sending(candle_store):
+                update.message.reply_text("❌ Failed to prepare daily pkl file with latest data. Please try again.")
+                return
+
+            pkl_path = data_mgr.get_daily_pkl_path()
             
-            success, pkl_path = data_mgr.export_daily_candles_to_pkl(candle_store)
-            
-            if success and pkl_path and os.path.exists(pkl_path):
+            if pkl_path and os.path.exists(pkl_path):
                 is_fresh, data_date, missing_days, trading_date = data_mgr.validate_pkl_freshness(pkl_path)
                 comparison_date_msg = f"Data date: {data_date}, Trading date: {trading_date}\n"
+                warn_msg = ""
                 if not is_fresh and missing_days > 0:
                     warn_msg = f"Daily candles pkl is stale by {missing_days} trading days.\n"
                 # Zip and send
@@ -665,7 +669,7 @@ class PKTickBot:
                         update.message.reply_document(
                             document=f,
                             filename="daily_candles.pkl.zip",
-                            caption=f"📊 Daily candles pkl file\n{warn_msg if not is_fresh else ''}{comparison_date_msg}"
+                            caption=f"📊 Daily candles pkl file\n{warn_msg}{comparison_date_msg}"
                         )
                     os.unlink(zip_path)
                     self.logger.info("Sent daily pkl to requesting instance")
@@ -729,9 +733,17 @@ class PKTickBot:
         
         try:
             update.message.reply_text("📤 Sending available data files...")
+            data_mgr = get_data_sharing_manager()
+            from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+            candle_store = get_candle_store()
             
-            # Send daily pkl
-            self.send_daily_pkl(update, context)
+            # Ensure the daily PKL is fresh before sending
+            if not data_mgr.prepare_daily_pkl_for_sending(candle_store):
+                update.message.reply_text("❌ Failed to prepare daily pkl file with latest data. Aborting daily pkl send.")
+                # Continue with other data types if possible, or return
+            else:
+                # Send daily pkl
+                self.send_daily_pkl(update, context)
             
             # Send intraday pkl
             self.send_intraday_pkl(update, context)

@@ -165,7 +165,7 @@ class KiteInstruments:
         api_key: str,
         access_token: str,
         db_path: str = os.path.join(DEFAULT_PATH, "instruments.db"),
-        local=PKEnvironment().DB_TYPE.lower() != "turso" if PKEnvironment().DB_TYPE else False,
+        local=(PKEnvironment().DB_TYPE or "local").lower() != "turso",
         recreate_schema=False,
     ):
         """

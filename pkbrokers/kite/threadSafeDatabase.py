@@ -465,7 +465,7 @@ class HighPerformanceTursoWriter:
 class ThreadSafeDatabase:
     def __init__(
         self,
-        db_type: str = PKEnvironment().DB_TYPE,  # "local" or "turso"
+        db_type: str = PKEnvironment().DB_TYPE or "local",  # "local" or "turso"
         db_path: Optional[str] = None,
         turso_url: Optional[str] = PKEnvironment().TDU,
         turso_auth_token: Optional[str] = PKEnvironment().TAT,

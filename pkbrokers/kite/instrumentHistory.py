@@ -216,7 +216,7 @@ class KiteTickerHistory:
         )
         
         # Check if local SQLite is preferred (for faster batch operations)
-        db_type = os.environ.get("DB_TYPE", "").lower()
+        db_type = os.environ.get("DB_TYPE", "local").lower()
         force_local = db_type == "local" or db_type == "sqlite"
         
         if force_local:

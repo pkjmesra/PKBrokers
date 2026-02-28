@@ -114,7 +114,7 @@ class InstrumentDataManager:
         
         self.db_conn = None
         self.pickle_data = None
-        self.db_type = "turso" or PKEnvironment().DB_TYPE
+        self.db_type = (PKEnvironment().DB_TYPE or "local").lower()
         self.logger = default_logger()
         self._pickle_data_loaded = False
         self._pickle_data = None

@@ -517,6 +517,37 @@ class DataSharingManager:
             self.logger.error(f"Error ensuring data freshness: {e}")
             return False
     
+    def prepare_daily_pkl_for_sending(self, candle_store) -> bool:
+        """
+        Ensures the daily_candles.pkl file is fresh, updating it if necessary.
+        
+        Args:
+            candle_store: InMemoryCandleStore instance
+            
+        Returns:
+            True if the PKL is fresh or was successfully updated, False otherwise.
+        """
+        pkl_path = self.get_daily_pkl_path()
+        
+        # Check freshness of the existing daily_candles.pkl
+        is_fresh, _, _, _ = self.validate_pkl_freshness(pkl_path)
+        
+        if is_fresh and os.path.exists(pkl_path):
+            self.logger.info("daily_candles.pkl is already fresh.")
+            return True
+        
+        self.logger.info("daily_candles.pkl is not fresh or does not exist, regenerating...")
+        
+        # Regenerate/update the daily PKL with current data from candle_store
+        success, _ = self.export_daily_candles_to_pkl(candle_store, merge_with_historical=True)
+        
+        if success:
+            self.logger.info("Successfully regenerated daily_candles.pkl.")
+            return True
+        else:
+            self.logger.error("Failed to regenerate daily_candles.pkl.")
+            return False
+
     def export_daily_candles_to_pkl(self, candle_store, merge_with_historical: bool = True) -> Tuple[bool, Optional[str]]:
         """
         Export daily candles from InMemoryCandleStore to pkl file.
@@ -533,9 +564,11 @@ class DataSharingManager:
         try:
             import pandas as pd
             from pandas.api.types import is_datetime64_any_dtype
+            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
             
             output_path = self.get_daily_pkl_path()
             data = {}
+            today_trading_date = PKDateUtilities.tradingDate()
             
             # Helper function to normalize timestamps to IST (timezone-aware)
             def normalize_to_ist(df):
@@ -624,14 +657,17 @@ class DataSharingManager:
                     for candle in day_candles:
                         # Create timezone-aware datetime in IST directly
                         dt_ist = datetime.fromtimestamp(candle.timestamp, tz=KOLKATA_TZ)
-                        rows.append({
-                            'Date': dt_ist,
-                            'Open': candle.open,
-                            'High': candle.high,
-                            'Low': candle.low if candle.low != float('inf') else candle.open,
-                            'Close': candle.close,
-                            'Volume': candle.volume,
-                        })
+                        
+                        # Only include today's data from InMemoryCandleStore
+                        if dt_ist.date() == today_trading_date:
+                            rows.append({
+                                'Date': dt_ist,
+                                'Open': candle.open,
+                                'High': candle.high,
+                                'Low': candle.low if candle.low != float('inf') else candle.open,
+                                'Close': candle.close,
+                                'Volume': candle.volume,
+                            })
                     
                     if rows:
                         new_df = pd.DataFrame(rows)
@@ -648,6 +684,9 @@ class DataSharingManager:
                             existing_df = data[symbol]
                             # Ensure existing data is also IST-aware
                             existing_df = normalize_to_ist(existing_df)
+                            
+                            # Remove today's data from historical_data if present (we'll replace it with fresh candle_store data)
+                            existing_df = existing_df[existing_df.index.date != today_trading_date]
                             
                             # Combine and remove duplicates (keep latest)
                             combined = pd.concat([existing_df, new_df])

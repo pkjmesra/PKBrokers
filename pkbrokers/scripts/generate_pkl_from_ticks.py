@@ -1037,10 +1037,31 @@ def main():
     
     new_candles = {}
     
+    from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
+    from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+    from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+
+    data_mgr = get_data_sharing_manager()
+    candle_store = get_candle_store()
+    today_trading_date = PKDateUtilities.tradingDate()
+
     # Step 1: Always download historical pkl first (this is our base)
     log("\n[Step 1] Downloading historical pkl from GitHub...", verbose)
     historical_data, missing_trading_days = download_historical_pkl(verbose, past_offset=past_offset+1)
     
+    # Step 1.5: Get current day's data from InMemoryCandleStore if available
+    current_day_data_from_store = None
+    if candle_store.get_all_instruments_ohlcv(interval='day'): # Check if store has any daily data
+        log("Retrieving current day's aggregated data from InMemoryCandleStore...", verbose)
+        # Export only today's candles from store, do not merge with other historical data here
+        success, current_day_pkl_path = data_mgr.export_daily_candles_to_pkl(candle_store, merge_with_historical=False)
+        if success and os.path.exists(current_day_pkl_path):
+            with open(current_day_pkl_path, 'rb') as f:
+                current_day_data_from_store = pickle.load(f)
+            log(f"Retrieved {len(current_day_data_from_store)} symbols for today from InMemoryCandleStore.", verbose)
+        else:
+            log("No current day's aggregated data found in InMemoryCandleStore.", verbose)
+
     if historical_data:
         log(f"Historical data: {len(historical_data)} instruments", verbose)
         if missing_trading_days > 0:
@@ -1051,9 +1072,9 @@ def main():
                 trigger_history_download(missing_trading_days, verbose)
         else:
             log("✅ Historical data date is current", verbose)
-            # NOTE: Even when the date is current, we should still try to merge with DB data
-            # because the pkl might have partial day data (e.g., 10:24 AM) while DB has
-            # complete day data (e.g., 3:30 PM market close). Continue to Step 2.
+            # NOTE: Even when the date is current, the data might be from early morning (e.g., 10:24 AM)
+            # and missing market close data (3:30 PM). We return 0 but the caller should still
+            # try to merge with DB data to get the complete day's data.
     else:
         log("⚠️ No historical pkl found on GitHub", verbose)
         missing_trading_days = 0
@@ -1062,9 +1083,21 @@ def main():
         if args.trigger_history:
             trigger_history_download(10, verbose)
     
+    # Merge current_day_data_from_store with historical_data
+    if current_day_data_from_store:
+        log("Merging current day's aggregated data with historical data...", verbose)
+        if historical_data:
+            historical_data = merge_candles(historical_data, current_day_data_from_store, verbose)
+        else:
+            historical_data = current_day_data_from_store # If no historical, current day is the only data
+    
     # Step 2: Load new data based on mode
     log("\n[Step 2] Loading new data...", verbose)
     
+    # The subsequent logic should now merge with the potentially updated `historical_data`
+    # or save `new_candles` if `historical_data` is still empty.
+    # The core change is ensuring `historical_data` already contains current day's ticks if available.
+
     if args.from_db:
         # Load from SQLite database
         db_path = args.db_path if args.db_path else find_sqlite_database(verbose)
