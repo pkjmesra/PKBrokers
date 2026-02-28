@@ -118,6 +118,12 @@ class PKTickOrchestrator:
                 Archiver.get_user_data_dir(), "ticks.json"
             )
 
+    def set_child_pid(self, pid):
+        """Method to set the child process PID from the child process"""
+        self.child_process_ref = pid
+        logger = self._get_logger()
+        logger.info(f"Child process PID set to: {pid}")
+
     def is_market_hours(self):
         """Check if current time is within NSE market hours (9:15 AM to 3:30 PM IST)"""
         try:
@@ -211,9 +217,9 @@ class PKTickOrchestrator:
 
             from pkbrokers.kite.examples.pkkite import kite_ticks
             
-            logger.info(f"Starting kite_ticks process with ws_stop_event: {self.ws_stop_event}")
+            logger.info(f"Starting kite_ticks process with ws_stop_event: {self.ws_stop_event} and parent reference:{self}")
             self.manager = multiprocessing.Manager()
-            # Pass the stop event to kite_ticks
+            # Pass the stop event to kite_ticks - IMPORTANT: pass 'self' as parent
             kite_ticks(stop_queue=self.stop_queue, parent=self, ws_stop_event=self.ws_stop_event)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")
@@ -317,21 +323,27 @@ class PKTickOrchestrator:
 
         # Force stop if still running
         if self.child_process_ref is not None:
-            logger.info("Child processes is being requested to be stopped")
+            logger.info(f"Child process (PID: {self.child_process_ref}) is being requested to stop")
             watcher_pid = self.child_process_ref
             if watcher_pid:
                 try:
                     os.kill(watcher_pid, signal.SIGTERM)
                     time.sleep(2)
-                    logger.info("Sent stop signal to watcher process")
+                    logger.info(f"Sent stop signal to watcher process (PID: {watcher_pid})")
+                    # Check if process still exists
+                    try:
+                        os.kill(watcher_pid, 0)  # Signal 0 just checks existence
+                        logger.warning(f"Watcher process (PID: {watcher_pid}) still alive after SIGTERM")
+                    except OSError:
+                        logger.info(f"Watcher process (PID: {watcher_pid}) terminated successfully")
                 except ProcessLookupError:
-                    logger.info("Watcher process already terminated")
+                    logger.info(f"Watcher process (PID: {watcher_pid}) already terminated")
                 except Exception as e:
                     logger.error(f"Error signaling watcher: {e}")
             else:
-                logger.warn("No child processes exists in the dict!")
+                logger.warn("No child process PID stored!")
         else:
-            logger.warn("No child processes was found!")
+            logger.warn("No child process reference was set by kite_ticks!")
 
         # Stop processes with proper cleanup
         processes = (
@@ -343,7 +355,7 @@ class PKTickOrchestrator:
         for process, name in processes:
             if process and process.is_alive():
                 try:
-                    logger.info(f"Stopping {name}...")
+                    logger.info(f"Stopping {name} (PID: {process.pid})...")
                     process.terminate()
                     process.join(timeout=3)
 

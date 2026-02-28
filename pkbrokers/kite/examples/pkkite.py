@@ -159,8 +159,20 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False, ws_stop_event=None
         watcher.set_ws_stop_event(ws_stop_event)
     
     # Store reference
-    if parent is not None and hasattr(parent, "child_process_ref"):
-        parent.child_process_ref = os.getpid()
+    if parent is not None: # Get the current process ID
+        current_pid = os.getpid()
+        print(f"Setting child_process_ref to PID: {current_pid}")
+        
+        # Check if parent has the attribute and set it
+        if hasattr(parent, "child_process_ref"):
+            parent.child_process_ref = current_pid
+        else:
+            # If the attribute doesn't exist, create it
+            parent.child_process_ref = current_pid
+            
+        # Also try to set it via the provided method if it exists
+        if hasattr(parent, "set_child_pid"):
+            parent.set_child_pid(current_pid)
 
     if stop_queue is None:
         mp_context = multiprocessing.get_context("spawn")
@@ -176,6 +188,7 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False, ws_stop_event=None
         if watcher:
             watcher.stop()
         sys.exit(0)
+        
     try:
         if __name__ == "__main__":
             signal.signal(signal.SIGTERM, signal_handler)
@@ -553,3 +566,4 @@ if __name__ == "__main__":
         except BaseException:
             pass
     pkkite()
+    exit(0)
