@@ -163,12 +163,12 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False, ws_stop_event=None
         current_pid = os.getpid()
         print(f"Setting child_process_ref to PID: {current_pid}")
         
-        # Check if parent has the attribute and set it
-        if hasattr(parent, "child_process_ref"):
-            parent.child_process_ref = current_pid
-        else:
-            # If the attribute doesn't exist, create it
-            parent.child_process_ref = current_pid
+        # # Check if parent has the attribute and set it
+        # if hasattr(parent, "child_process_ref"):
+        #     parent.child_process_ref = current_pid
+        # else:
+        #     # If the attribute doesn't exist, create it
+        #     parent.child_process_ref = current_pid
             
         # Also try to set it via the provided method if it exists
         if hasattr(parent, "set_child_pid"):
@@ -190,8 +190,8 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False, ws_stop_event=None
         sys.exit(0)
         
     try:
-        if __name__ == "__main__":
-            signal.signal(signal.SIGTERM, signal_handler)
+        # if __name__ == "__main__":
+        signal.signal(signal.SIGTERM, signal_handler)
     except Exception as e:
         print(e)
         pass

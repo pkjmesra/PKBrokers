@@ -886,7 +886,11 @@ class PKTickBot:
                 self.logger.info("Bot stopped gracefully")
             # If conflict was detected, stop the updater
             if self.conflict_detected:
-                os._exit(1)  # Use os._exit to bypass finally blocks
+                # Let's NOT use os._exit to bypass finally blocks 
+                # because it mnight prevent cleanup. Instead, we 
+                # will just exit normally and rely on the main process 
+                # to handle shutdown.
+                sys.exit(1)
 
     def _shouldAvoidResponse(self, update):
         chat_idADMIN = PKEnvironment().chat_idADMIN

@@ -67,7 +67,7 @@ class PKTickOrchestrator:
         self.kite_process = None
         self.mp_context = multiprocessing.get_context("spawn")
         self.manager = None
-        self.child_process_ref = None
+        self.child_process_ref = self.mp_context.Value("i", 0)
         self.stop_queue = self.mp_context.Queue()
         self.shutdown_requested = False
         self.token_generated_at_least_once = False
@@ -120,7 +120,7 @@ class PKTickOrchestrator:
 
     def set_child_pid(self, pid):
         """Method to set the child process PID from the child process"""
-        self.child_process_ref = pid
+        self.child_process_ref.value = pid
         logger = self._get_logger()
         logger.info(f"Child process PID set to: {pid}")
 
@@ -313,37 +313,36 @@ class PKTickOrchestrator:
             logger.info("Signaling WebSocket processes to stop...")
             self.ws_stop_event.set()
 
-        # Try to stop watcher through queue
+        # Try to stop watcher through queue for a graceful shutdown
         try:
             self.stop_queue.put("STOP")
             time.sleep(2)  # Give time to process
         except Exception as e:
             logger.error(f"Error sending stop signal to KiteTokenWatcher: {e}")
 
-
-        # Force stop if still running
-        if self.child_process_ref is not None:
-            logger.info(f"Child process (PID: {self.child_process_ref}) is being requested to stop")
-            watcher_pid = self.child_process_ref
-            if watcher_pid:
-                try:
-                    os.kill(watcher_pid, signal.SIGTERM)
-                    time.sleep(2)
-                    logger.info(f"Sent stop signal to watcher process (PID: {watcher_pid})")
-                    # Check if process still exists
-                    try:
-                        os.kill(watcher_pid, 0)  # Signal 0 just checks existence
-                        logger.warning(f"Watcher process (PID: {watcher_pid}) still alive after SIGTERM")
-                    except OSError:
-                        logger.info(f"Watcher process (PID: {watcher_pid}) terminated successfully")
-                except ProcessLookupError:
-                    logger.info(f"Watcher process (PID: {watcher_pid}) already terminated")
-                except Exception as e:
-                    logger.error(f"Error signaling watcher: {e}")
-            else:
-                logger.warn("No child process PID stored!")
-        else:
-            logger.warn("No child process reference was set by kite_ticks!")
+        # # Force stop if still running
+        # if self.child_process_ref is not None:
+        #     logger.info(f"Child process (PID: {self.child_process_ref}) is being requested to stop")
+        #     watcher_pid = self.child_process_ref
+        #     if watcher_pid:
+        #         try:
+        #             os.kill(watcher_pid, signal.SIGTERM)
+        #             time.sleep(2)
+        #             logger.info(f"Sent stop signal to watcher process (PID: {watcher_pid})")
+        #             # Check if process still exists
+        #             try:
+        #                 os.kill(watcher_pid, 0)  # Signal 0 just checks existence
+        #                 logger.warning(f"Watcher process (PID: {watcher_pid}) still alive after SIGTERM")
+        #             except OSError:
+        #                 logger.info(f"Watcher process (PID: {watcher_pid}) terminated successfully")
+        #         except ProcessLookupError:
+        #             logger.info(f"Watcher process (PID: {watcher_pid}) already terminated")
+        #         except Exception as e:
+        #             logger.error(f"Error signaling watcher: {e}")
+        #     else:
+        #         logger.warn("No child process PID stored!")
+        # else:
+        #     logger.warn("No child process reference was set by kite_ticks!")
 
         # Stop processes with proper cleanup
         processes = (
@@ -356,15 +355,19 @@ class PKTickOrchestrator:
             if process and process.is_alive():
                 try:
                     logger.info(f"Stopping {name} (PID: {process.pid})...")
-                    process.terminate()
-                    process.join(timeout=3)
+                    # Give more time for kite_process to shutdown gracefully
+                    join_timeout = 120 if name == "kite process" else 10
+                    kill_timeout = 5
+                    
+                    process.terminate()  # Sends SIGTERM
+                    process.join(timeout=join_timeout)
 
                     if process.is_alive():
                         logger.warning(
-                            f"{name} did not terminate gracefully, forcing..."
+                            f"{name} did not terminate gracefully after {join_timeout}s, forcing..."
                         )
-                        process.kill()
-                        process.join(timeout=2)
+                        process.kill() # Sends SIGKILL
+                        process.join(timeout=kill_timeout)
 
                     # Close to release resources
                     process.close()
