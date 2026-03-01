@@ -29,6 +29,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple
 
 import pandas as pd
+import pytz
 import requests
 
 from pkbrokers.kite.examples.pkkite import kite_ticks
@@ -37,6 +38,10 @@ from pkbrokers.kite.examples.pkkite import kite_ticks
 def log(msg: str, verbose: bool = True):
     if verbose:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+
+
+KOLKATA_TZ = pytz.timezone("Asia/Kolkata")
+
 
 
 # Global cache for token-to-symbol mapping
@@ -247,7 +252,7 @@ def calculate_missing_trading_days(data: Dict, verbose: bool = True) -> int:
                     index_values = sym_data['index']
                     if index_values:
                         # Get the max date from the index
-                        dates = pd.to_datetime(index_values, format='mixed', errors='coerce')
+                        dates = pd.to_datetime(index_values, errors='coerce')
                         valid_dates = dates.dropna()
                         if len(valid_dates) > 0:
                             symbol_max = valid_dates.max()
@@ -750,12 +755,14 @@ def load_from_sqlite(db_path: str, verbose: bool = True) -> Dict:
             
             cols_to_use = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
             group_df = group[cols_to_use].copy()
-            # Parse timestamps and ensure tz-naive for consistent merging
+            # Parse timestamps and ensure tz-aware for consistent merging
             group_df['timestamp'] = pd.to_datetime(group_df['timestamp'], format='mixed', utc=True)
             group_df.set_index('timestamp', inplace=True)
-            # Convert to tz-naive
+            # Convert to Kolkata timezone
             if hasattr(group_df.index, 'tz') and group_df.index.tz is not None:
-                group_df.index = group_df.index.tz_localize(None)
+                group_df.index = group_df.index.tz_convert(KOLKATA_TZ)
+            else:
+                group_df.index = group_df.index.tz_localize(KOLKATA_TZ)
             group_df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
             candles[symbol] = group_df
         
@@ -785,20 +792,17 @@ def convert_ticks_to_candles(ticks_data: Dict, verbose: bool = True) -> Dict:
             if close <= 0:
                 continue
             
-            # Parse timestamp and ensure tz-naive
+            # Parse timestamp and ensure tz-aware
             timestamp_str = ohlcv.get('timestamp', '')
             if timestamp_str:
                 try:
-                    dt = pd.to_datetime(timestamp_str, utc=True)
-                    # Convert to tz-naive
-                    if hasattr(dt, 'tz') and dt.tz is not None:
-                        dt = dt.tz_localize(None)
+                    dt = pd.to_datetime(timestamp_str, utc=True).tz_convert(KOLKATA_TZ)
                 except:
-                    dt = datetime.now()
+                    dt = datetime.now(KOLKATA_TZ)
             else:
-                dt = datetime.now()
+                dt = datetime.now(KOLKATA_TZ)
             
-            # Create DataFrame with tz-naive index
+            # Create DataFrame with tz-aware index
             df = pd.DataFrame([{
                 'Open': float(ohlcv.get('open', close)),
                 'High': float(ohlcv.get('high', close)),
@@ -807,9 +811,8 @@ def convert_ticks_to_candles(ticks_data: Dict, verbose: bool = True) -> Dict:
                 'Volume': int(ohlcv.get('volume', 0)),
             }], index=[dt])
             
-            # Ensure index is tz-naive
-            if hasattr(df.index, 'tz') and df.index.tz is not None:
-                df.index = df.index.tz_localize(None)
+            # Ensure index is tz-aware in Kolkata timezone
+            df = _normalize_index_tz(df)
             
             candles[symbol] = df
             
@@ -821,18 +824,22 @@ def convert_ticks_to_candles(ticks_data: Dict, verbose: bool = True) -> Dict:
 
 
 def _normalize_index_tz(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize DataFrame index to timezone-naive for consistent merging."""
+    """Normalize DataFrame index to timezone-aware IST for consistent merging."""
     if df is None or not hasattr(df, 'index'):
         return df
-    
+
     try:
         if hasattr(df.index, 'tz') and df.index.tz is not None:
-            # Convert tz-aware to tz-naive (UTC first, then remove tz)
+            # If timezone-aware, convert to Kolkata timezone
             df = df.copy()
-            df.index = df.index.tz_convert('UTC').tz_localize(None)
+            df.index = df.index.tz_convert(KOLKATA_TZ)
+        else:
+            # If timezone-naive, localize to Kolkata timezone
+            df = df.copy()
+            df.index = df.index.tz_localize(KOLKATA_TZ)
     except Exception:
         pass
-    
+
     return df
 
 
@@ -862,13 +869,10 @@ def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
             if 'data' in hist_df and 'columns' in hist_df:
                 hist_df = pd.DataFrame(hist_df['data'], columns=hist_df['columns'])
                 if 'index' in historical[symbol]:
-                    # Use format='mixed' to handle various ISO8601 formats with timezone/microseconds
-                    hist_df.index = pd.to_datetime(historical[symbol]['index'], format='mixed', utc=True)
-                    # Convert to timezone-naive for consistency
-                    hist_df.index = hist_df.index.tz_localize(None)
+                    hist_df.index = pd.to_datetime(historical[symbol]['index'], format='mixed')
         
         if hasattr(hist_df, 'index'):
-            # Ensure timezone-naive
+            # Ensure timezone-aware
             hist_df = _normalize_index_tz(hist_df)
             merged[symbol] = hist_df.copy()
     
@@ -883,14 +887,13 @@ def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
             skipped_tokens += 1
             continue
             
-        # Ensure today's data is also timezone-naive
+        # Ensure today's data is also timezone-aware
         today_df = _normalize_index_tz(today_df)
         
         if symbol in merged:
             # Append today's data, removing duplicates
             existing = merged[symbol]
-            # Ensure both are tz-naive before concatenation
-            existing = _normalize_index_tz(existing)
+            # Ensure both are tz-aware before concatenation
             combined = pd.concat([existing, today_df])
             combined = combined[~combined.index.duplicated(keep='last')]
             combined = combined.sort_index()
