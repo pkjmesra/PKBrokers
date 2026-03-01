@@ -1103,37 +1103,27 @@ def main():
         db_path = args.db_path if args.db_path else find_sqlite_database(verbose)
         if db_path:
             new_candles = load_from_sqlite(db_path, verbose)
-            
-            # FIX: Merge database data with historical data
-            if historical_data and new_candles:
-                log("Merging database data with historical data...", verbose)
-                merged_data = merge_candles(historical_data, new_candles, verbose)
-                # Save merged data instead of just database data
-                log("\n[Step 4] Saving merged pkl files from database + historical...", verbose)
-                save_pkl_files(merged_data, data_dir, verbose)
-            elif new_candles:
-                log("No historical data to merge with, saving database data only", verbose)
-                save_pkl_files(new_candles, data_dir, verbose)
-            else:
-                log("⚠️ No data from database, trying ticks.json as fallback...", verbose)
-                ticks_data = load_local_ticks_json(data_dir, verbose)
-                if ticks_data:
-                    new_candles = convert_ticks_to_candles(ticks_data, verbose)
-                    if historical_data:
-                        merged_data = merge_candles(historical_data, new_candles, verbose)
-                        save_pkl_files(merged_data, data_dir, verbose)
-                    else:
-                        save_pkl_files(new_candles, data_dir, verbose)
         else:
             log("⚠️ No database found, trying ticks.json as fallback...", verbose)
             ticks_data = load_local_ticks_json(data_dir, verbose)
             if ticks_data:
                 new_candles = convert_ticks_to_candles(ticks_data, verbose)
-                if historical_data:
-                    merged_data = merge_candles(historical_data, new_candles, verbose)
-                    save_pkl_files(merged_data, data_dir, verbose)
-                else:
-                    save_pkl_files(new_candles, data_dir, verbose)
+
+        # Merge with historical data
+        if historical_data and new_candles:
+            log("Merging database/ticks data with historical data...", verbose)
+            merged_data = merge_candles(historical_data, new_candles, verbose)
+            log("\n[Step 4] Saving merged pkl files...", verbose)
+            save_pkl_files(merged_data, data_dir, verbose)
+        elif new_candles:
+            log("No historical data to merge with, saving new_candles data only", verbose)
+            save_pkl_files(new_candles, data_dir, verbose)
+        elif historical_data:
+            log("No new data from database, saving historical data only", verbose)
+            save_pkl_files(historical_data, data_dir, verbose)
+        else:
+            log("❌ FAILED: No data available (neither historical nor new)", verbose)
+            sys.exit(1)
     else:
         # Load from ticks.json
         ticks_data = load_local_ticks_json(data_dir, verbose)
