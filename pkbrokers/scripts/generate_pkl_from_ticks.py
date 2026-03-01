@@ -32,6 +32,8 @@ import pandas as pd
 import pytz
 import requests
 
+from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+
 from pkbrokers.kite.examples.pkkite import kite_ticks
 
 
@@ -413,7 +415,17 @@ def is_data_fresh(data: Dict, verbose: bool = True) -> bool:
             latest_date = datetime.fromisoformat(latest_timestamp_str.split('.')[0]).date()
         
         log(f"Latest data date: {latest_date}, Today's trading date: {today_trading_date}", verbose)
-        return latest_date == today_trading_date
+
+        # If the latest date in ticks.json is GREATER than today's trading date,
+        # it means ticks.json contains data for a future or non-trading day that should be treated as fresh.
+        # If the latest date in ticks.json is EQUAL to today's trading date, it's fresh.
+        if latest_date >= today_trading_date:
+            log(f"✅ Ticks.json latest date ({latest_date}) is on or after today's trading date ({today_trading_date}). Considered fresh.", verbose)
+            return True
+        
+        # If latest_date is OLDER than today_trading_date, it's stale.
+        log(f"⚠️ Ticks.json latest date ({latest_date}) is older than today's trading date ({today_trading_date}). Considered stale.", verbose)
+        return False
     
     return False
 
@@ -964,18 +976,14 @@ def save_pkl_files(data: Dict, data_dir: str, verbose: bool = True) -> Tuple[str
     os.makedirs(data_dir, exist_ok=True)
 
     from PKDevTools.classes import Archiver
-    exists, file_name = Archiver.afterMarketStockDataExists()
-    if exists:
-        today = file_name.replace('.pkl','').replace('stock_data_','')
-    else:
-        # Fallback
-        today = datetime.now().strftime('%d%m%Y')
+    _, file_name = Archiver.afterMarketStockDataExists()
+    today_str = file_name.replace('.pkl','').replace('stock_data_','')
     
     # Trim daily data to 251 rows per stock before saving
     data = trim_daily_data_to_251_rows(data, verbose)
     
     # Save daily pkl
-    daily_path = os.path.join(data_dir, f"stock_data_{today}.pkl")
+    daily_path = os.path.join(data_dir, f"stock_data_{today_str}.pkl")
     with open(daily_path, 'wb') as f:
         pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
     
@@ -1078,6 +1086,30 @@ def main():
             # NOTE: Even when the date is current, the data might be from early morning (e.g., 10:24 AM)
             # and missing market close data (3:30 PM). We return 0 but the caller should still
             # try to merge with DB data to get the complete day's data.
+            
+            # Optimization: If historical data is current, and it's a non-trading day or outside market hours,
+            # we can skip loading new data entirely for daily candles.
+            should_load_new_data = True
+            current_system_date = datetime.now().date()
+            
+            is_today_system_date_a_trading_day = (PKDateUtilities.currentDateTime().date() == today_trading_date)
+
+            if not is_today_system_date_a_trading_day: # It's a non-trading day (weekend/holiday)
+                log("✅ Historical data is current and today is a non-trading day. Skipping loading new ticks/DB data.", verbose)
+                should_load_new_data = False
+            elif not PKDateUtilities.isTradingTime(): # It's a trading day, but not market hours
+                log("✅ Historical data is current, it's a trading day, but outside market hours. Skipping loading new ticks/DB data.", verbose)
+                should_load_new_data = False
+            
+            if not should_load_new_data:
+                # Skip Step 2 and just save the historical data (which is already current)
+                log("\n[Step 2] Skipping loading new data.", verbose)
+                log("\n[Step 4] Saving historical pkl files (already current).", verbose)
+                save_pkl_files(historical_data, data_dir, verbose)
+                log("=" * 60, verbose)
+                log("✅ SUCCESS: PKL files generated (from current historical data)", verbose)
+                log("=" * 60, verbose)
+                sys.exit(0) # Exit early, as nothing new needs to be processed
     else:
         log("⚠️ No historical pkl found on GitHub", verbose)
         missing_trading_days = 0
