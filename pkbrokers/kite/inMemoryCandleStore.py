@@ -297,18 +297,34 @@ class InMemoryCandleStore:
         load_existing: bool = True,
         shared_stats: dict = None,
     ):
-        """
-        Initialize the in-memory candle store.
+        """Initialize the in-memory candle store."""
+        # Check if already initialized
+        already_initialized = hasattr(self, '_initialized') and self._initialized
         
-        Args:
-            auto_persist: Whether to automatically persist data to disk
-            persist_interval: Interval between persists in seconds
-            load_existing: Whether to load existing data from disk on startup
-        """
-        # Prevent re-initialization in singleton
-        if hasattr(self, '_initialized') and self._initialized:
+        # Store shared_stats reference even if already initialized
+        if shared_stats is not None:
+            self.shared_stats = shared_stats
+            # If stats exists, update the shared stats reference
+            if hasattr(self, 'stats') and self.stats is not None:
+                # Copy existing stats to the new shared_stats
+                for key, value in self.stats.items():
+                    self.shared_stats[key] = value
+            else:
+                # Initialize stats in shared_stats
+                self.stats = self.shared_stats
+                self.stats.update({
+                    'ticks_processed': 0,
+                    'candles_created': 0,
+                    'candles_completed': 0,
+                    'last_tick_time': 0,
+                    'start_time': time.time(),
+                })
+        
+        # If already initialized, just update the reference and return
+        if already_initialized:
             return
         
+        # Rest of initialization for first-time setup
         self._initialized = True
         self.instruments: Dict[int, InstrumentCandles] = {}
         self.instrument_symbols: Dict[int, str] = {}
@@ -320,10 +336,8 @@ class InMemoryCandleStore:
         self.persist_interval = persist_interval
         self.last_persist_time = time.time()
         
-        # Statistics
-        if shared_stats is not None:
-            self.stats = shared_stats
-        else:
+        # If shared_stats wasn't provided, create our own
+        if not hasattr(self, 'stats') or self.stats is None:
             self.stats = {
                 'ticks_processed': 0,
                 'candles_created': 0,
@@ -447,6 +461,9 @@ class InMemoryCandleStore:
                 
                 self.stats['ticks_processed'] += 1
                 self.stats['last_tick_time'] = timestamp
+                if hasattr(self, 'shared_stats') and self.shared_stats is not None:
+                    self.shared_stats['ticks_processed'] = self.stats['ticks_processed']
+                    self.shared_stats['last_tick_time'] = timestamp
             
             # Auto-persist check
             if self.auto_persist and (time.time() - self.last_persist_time) > self.persist_interval:
@@ -927,9 +944,17 @@ class InMemoryCandleStore:
                 'uptime_seconds': time.time() - self.stats.get('start_time', time.time()),
                 'memory_mb': self._estimate_memory_usage() / (1024 * 1024),
             }
+            
+            # Update both internal and shared stats
             for key, value in stats.items():
                 self.stats[key] = value
-            return self.stats
+            
+            # If we have a shared_stats reference, update it too
+            if hasattr(self, 'shared_stats') and self.shared_stats is not None:
+                for key, value in stats.items():
+                    self.shared_stats[key] = value
+                    
+            return stats
     
     def get_diagnostic_info(self) -> str:
         """Get diagnostic information for troubleshooting empty ticks."""

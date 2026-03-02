@@ -377,6 +377,12 @@ class KiteTokenWatcher:
         self._kite_instruments = {}
         self.ws_stop_event = None  # Add this for WebSocket stop signal
         self.shared_stats = shared_stats if shared_stats is not None else {}
+        # Also update the shared_stats dictionary with initial values
+        if self.shared_stats is not None:
+            self.shared_stats['instrument_count'] = 0
+            self.shared_stats['instruments_with_ticks'] = 0
+            self.shared_stats['ticks_processed'] = 0
+            self.shared_stats['uptime_seconds'] = 0
 
     def set_ws_stop_event(self, event):
         """Set the stop event for WebSocket processes"""
