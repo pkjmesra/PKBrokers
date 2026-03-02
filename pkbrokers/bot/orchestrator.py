@@ -96,28 +96,9 @@ class PKTickOrchestrator:
         self.kite_process = None
         self.shutdown_requested = False
 
-    def _get_logger(self):
-        """Get logger instance - initialized separately in each process"""
-        from PKDevTools.classes import log
 
-        from pkbrokers.kite.examples.pkkite import setupLogger
 
-        setupLogger()
-        return log.default_logger()
 
-    def _initialize_environment(self):
-        """Initialize environment variables if not provided"""
-        if not self.bot_token or not self.chat_id or not self.ticks_file_path:
-            from PKDevTools.classes import Archiver
-            from PKDevTools.classes.Environment import PKEnvironment
-
-            env = PKEnvironment()
-            self.bot_token = self.bot_token or env.TBTOKEN
-            self.bridge_bot_token = self.bridge_bot_token or env.BBTOKEN
-            self.chat_id = self.chat_id or env.CHAT_ID
-            self.ticks_file_path = self.ticks_file_path or os.path.join(
-                Archiver.get_user_data_dir(), "ticks.json"
-            )
 
     def set_child_pid(self, pid):
         """Method to set the child process PID from the child process"""
@@ -189,15 +170,28 @@ class PKTickOrchestrator:
 
         return True
 
-    def run_kite_ticks(self, shared_stats: dict, child_process_ref):
+    @staticmethod
+    def run_kite_ticks(bot_token: Optional[str], ticks_file_path: Optional[str], chat_id: Optional[str], shared_stats: dict, child_process_ref, ws_stop_event, stop_queue):
         """Run kite_ticks in a separate process"""
+        # Initialize logger in this process
+        from PKDevTools.classes import log
+        from pkbrokers.kite.examples.pkkite import setupLogger
+        setupLogger()
+        logger = log.default_logger()
+
+        # Initialize environment variables
+        from PKDevTools.classes import Archiver
+        from PKDevTools.classes.Environment import PKEnvironment
+
+        env = PKEnvironment()
+        bot_token = bot_token or env.TBTOKEN # this is not used here but for consistency
+        chat_id = chat_id or env.CHAT_ID # this is not used here but for consistency
+        ticks_file_path = ticks_file_path or os.path.join(
+            Archiver.get_user_data_dir(), "ticks.json"
+        )
+        
         try:
-            # Initialize environment and logger in this process
-            self._initialize_environment()
-            logger = self._get_logger()
-            
             # Ensure we have a valid token before starting kite_ticks
-            from PKDevTools.classes.Environment import PKEnvironment
             token = PKEnvironment().KTOKEN
             if not token or token == "None" or len(str(token).strip()) < 10:
                 logger.info("No valid KTOKEN found, authenticating with Kite...")
@@ -208,36 +202,43 @@ class PKTickOrchestrator:
                 except Exception as auth_e:
                     logger.error(f"Kite authentication failed: {auth_e}")
                     logger.warning("Proceeding without valid token - WebSocket will fail")
-
-            # Create a stop event for WebSocket processes and store it as instance variable
-            from multiprocessing import Manager
-            manager = Manager()
-            self.ws_stop_event = manager.Event()  # Store as instance variable
-            self.ws_stop_event.clear()
-            logger.info(f"Created ws_stop_event: {self.ws_stop_event}")
-
+            
             from pkbrokers.kite.examples.pkkite import kite_ticks
             
-            logger.info(f"Starting kite_ticks process with ws_stop_event: {self.ws_stop_event} and parent reference:{self}")
-            kite_ticks(stop_queue=self.stop_queue, ws_stop_event=self.ws_stop_event, shared_stats=shared_stats, child_process_ref=child_process_ref)
+            logger.info(f"Starting kite_ticks process with ws_stop_event: {ws_stop_event}")
+            kite_ticks(stop_queue=stop_queue, ws_stop_event=ws_stop_event, shared_stats=shared_stats, child_process_ref=child_process_ref)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")
         except Exception as e:
             logger.error(f"kite_ticks error: {e}")
 
-    def run_telegram_bot(self, shared_stats: dict):
+    @staticmethod
+    def run_telegram_bot(bot_token: Optional[str], ticks_file_path: Optional[str], chat_id: Optional[str], shared_stats: dict):
         """Run Telegram bot in a separate process"""
-        try:
-            # Initialize environment and logger in this process
-            self._initialize_environment()
-            logger = self._get_logger()
+        # Initialize logger in this process
+        from PKDevTools.classes import log
+        from pkbrokers.kite.examples.pkkite import setupLogger
+        setupLogger()
+        logger = log.default_logger()
 
+        # Initialize environment variables
+        from PKDevTools.classes import Archiver
+        from PKDevTools.classes.Environment import PKEnvironment
+
+        env = PKEnvironment()
+        bot_token = bot_token or env.TBTOKEN
+        chat_id = chat_id or env.CHAT_ID
+        ticks_file_path = ticks_file_path or os.path.join(
+            Archiver.get_user_data_dir(), "ticks.json"
+        )
+        
+        try:
             from pkbrokers.bot.tickbot import PKTickBot
 
             logger.info("Starting PKTickBot process...")
 
             # Create and run the bot
-            bot = PKTickBot(self.bot_token, self.ticks_file_path, self.chat_id, shared_stats=shared_stats)
+            bot = PKTickBot(bot_token, ticks_file_path, chat_id, shared_stats=shared_stats)
             bot.run()
 
         except Exception as e:
@@ -255,7 +256,9 @@ class PKTickOrchestrator:
 
         # Always start Telegram bot process
         self.bot_process = self.mp_context.Process(
-            target=self.run_telegram_bot, args=(self.shared_stats,), name="PKTickBotProcess"
+            target=PKTickOrchestrator.run_telegram_bot, 
+            args=(self.bot_token, self.ticks_file_path, self.chat_id, self.shared_stats,), 
+            name="PKTickBotProcess"
         )
         self.bot_process.daemon = False
         self.bot_process.start()
@@ -272,9 +275,10 @@ class PKTickOrchestrator:
 
         # Start kite_ticks process only during market hours and non-holidays
         if self.should_run_kite_process():
-            time.sleep(WAIT_TIME_SEC_CLOSING_ANOTHER_RUNNING_INSTANCE)
             self.kite_process = self.mp_context.Process(
-                target=self.run_kite_ticks, args=(self.shared_stats, self.child_process_ref,), name="KiteTicksProcess"
+                target=PKTickOrchestrator.run_kite_ticks, 
+                args=(self.bot_token, self.ticks_file_path, self.chat_id, self.shared_stats, self.child_process_ref, self.ws_stop_event, self.stop_queue), 
+                name="KiteTicksProcess"
             )
             self.kite_process.daemon = False
             self.kite_process.start()
@@ -415,7 +419,9 @@ class PKTickOrchestrator:
         if current_should_run and not kite_running:
             logger.info("Market hours started - starting kite process")
             self.kite_process = self.mp_context.Process(
-                target=self.run_kite_ticks, args=(self.shared_stats, self.child_process_ref,), name="KiteTicksProcess"
+                target=PKTickOrchestrator.run_kite_ticks, 
+                args=(self.bot_token, self.ticks_file_path, self.chat_id, self.shared_stats, self.child_process_ref, self.ws_stop_event, self.stop_queue), 
+                name="KiteTicksProcess"
             )
             self.kite_process.daemon = False
             self.kite_process.start()
@@ -464,7 +470,9 @@ class PKTickOrchestrator:
                     else:
                         logger.warn("Bot process died, restarting...")
                         self.bot_process = self.mp_context.Process(
-                            target=self.run_telegram_bot, args=(self.shared_stats,), name="PKTickBotProcess"
+                            target=PKTickOrchestrator.run_telegram_bot, 
+                            args=(self.bot_token, self.ticks_file_path, self.chat_id, self.shared_stats,), 
+                            name="PKTickBotProcess"
                         )
                         self.bot_process.daemon = False
                         self.bot_process.start()

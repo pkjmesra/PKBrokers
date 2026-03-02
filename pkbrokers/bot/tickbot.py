@@ -165,8 +165,7 @@ class PKTickBot:
             if update is not None:
                 update.message.reply_text(APOLOGY_TEXT)
             return
-        if self.parent and hasattr(self.parent,"bot_callback"):
-            self.parent.bot_callback()
+
         if self.shared_stats is not None:
             self.shared_stats['test_mode_requested'] = True
 
@@ -204,8 +203,7 @@ class PKTickBot:
             
             # Step 2: Start tick watcher
             update.message.reply_text("🔄 Step 2/2: Starting tick watcher...")
-            if self.parent and hasattr(self.parent, "bot_callback"):
-                self.parent.bot_callback()
+
             if self.shared_stats is not None:
                 self.shared_stats['test_mode_requested'] = True
             
