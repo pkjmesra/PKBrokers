@@ -66,7 +66,8 @@ class PKTickOrchestrator:
         self.bot_process = None
         self.kite_process = None
         self.mp_context = multiprocessing.get_context("spawn")
-        self.manager = None
+        self.manager = multiprocessing.Manager()
+        self.shared_stats = self.manager.dict()
         self.child_process_ref = self.mp_context.Value("i", 0)
         self.stop_queue = self.mp_context.Queue()
         self.shutdown_requested = False
@@ -188,7 +189,7 @@ class PKTickOrchestrator:
 
         return True
 
-    def run_kite_ticks(self):
+    def run_kite_ticks(self, shared_stats: dict):
         """Run kite_ticks in a separate process"""
         try:
             # Initialize environment and logger in this process
@@ -218,15 +219,13 @@ class PKTickOrchestrator:
             from pkbrokers.kite.examples.pkkite import kite_ticks
             
             logger.info(f"Starting kite_ticks process with ws_stop_event: {self.ws_stop_event} and parent reference:{self}")
-            self.manager = multiprocessing.Manager()
-            # Pass the stop event to kite_ticks - IMPORTANT: pass 'self' as parent
-            kite_ticks(stop_queue=self.stop_queue, parent=self, ws_stop_event=self.ws_stop_event)
+            kite_ticks(stop_queue=self.stop_queue, parent=self, ws_stop_event=self.ws_stop_event, shared_stats=shared_stats)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")
         except Exception as e:
             logger.error(f"kite_ticks error: {e}")
 
-    def run_telegram_bot(self):
+    def run_telegram_bot(self, shared_stats: dict):
         """Run Telegram bot in a separate process"""
         try:
             # Initialize environment and logger in this process
@@ -238,7 +237,7 @@ class PKTickOrchestrator:
             logger.info("Starting PKTickBot process...")
 
             # Create and run the bot
-            bot = PKTickBot(self.bot_token, self.ticks_file_path, self.chat_id)
+            bot = PKTickBot(self.bot_token, self.ticks_file_path, self.chat_id, shared_stats=shared_stats)
             bot.run(parent=self)
 
         except Exception as e:
@@ -256,7 +255,7 @@ class PKTickOrchestrator:
 
         # Always start Telegram bot process
         self.bot_process = self.mp_context.Process(
-            target=self.run_telegram_bot, name="PKTickBotProcess"
+            target=self.run_telegram_bot, args=(self.shared_stats,), name="PKTickBotProcess"
         )
         self.bot_process.daemon = False
         self.bot_process.start()
@@ -275,7 +274,7 @@ class PKTickOrchestrator:
         if self.should_run_kite_process():
             time.sleep(WAIT_TIME_SEC_CLOSING_ANOTHER_RUNNING_INSTANCE)
             self.kite_process = self.mp_context.Process(
-                target=self.run_kite_ticks, name="KiteTicksProcess"
+                target=self.run_kite_ticks, args=(self.shared_stats,), name="KiteTicksProcess"
             )
             self.kite_process.daemon = False
             self.kite_process.start()
@@ -416,7 +415,7 @@ class PKTickOrchestrator:
         if current_should_run and not kite_running:
             logger.info("Market hours started - starting kite process")
             self.kite_process = self.mp_context.Process(
-                target=self.run_kite_ticks, name="KiteTicksProcess"
+                target=self.run_kite_ticks, args=(self.shared_stats,), name="KiteTicksProcess"
             )
             self.kite_process.daemon = False
             self.kite_process.start()
@@ -465,7 +464,7 @@ class PKTickOrchestrator:
                     else:
                         logger.warn("Bot process died, restarting...")
                         self.bot_process = self.mp_context.Process(
-                            target=self.run_telegram_bot, name="PKTickBotProcess"
+                            target=self.run_telegram_bot, args=(self.shared_stats,), name="PKTickBotProcess"
                         )
                         self.bot_process.daemon = False
                         self.bot_process.start()

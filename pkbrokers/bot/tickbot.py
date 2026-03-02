@@ -72,7 +72,7 @@ class PKTickBot:
     MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
     def __init__(
-        self, bot_token: str, ticks_file_path: str, chat_id: Optional[str] = None
+        self, bot_token: str, ticks_file_path: str, chat_id: Optional[str] = None, shared_stats: dict = None
     ):
         self.bot_token = bot_token
         self.ticks_file_path = ticks_file_path
@@ -87,6 +87,7 @@ class PKTickBot:
         self.logger = logging.getLogger(__name__)
         self.conflict_detected = False
         self.parent = None
+        self.shared_stats = shared_stats if shared_stats is not None else {}
 
     def start(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
@@ -485,9 +486,12 @@ class PKTickBot:
             
             # Add candle store diagnostics
             try:
-                from pkbrokers.kite.inMemoryCandleStore import get_candle_store
-                candle_store = get_candle_store()
-                stats = candle_store.get_stats()
+                # Read from shared_stats instead of calling get_candle_store directly
+                if self.shared_stats:
+                    stats = self.shared_stats
+                else:
+                    stats = {} # Default to empty if shared_stats is not populated yet
+
                 status_msg += "📊 Candle Store Status:\n"
                 status_msg += f"  • Registered instruments: {stats.get('instrument_count', 0)}\n"
                 status_msg += f"  • Instruments with ticks: {stats.get('instruments_with_ticks', 0)}\n"

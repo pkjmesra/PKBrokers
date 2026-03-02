@@ -318,7 +318,7 @@ class KiteTokenWatcher:
     """
 
     def __init__(
-        self, tokens=[], watcher_queue=None, client=None, json_output_path=None
+        self, tokens=[], watcher_queue=None, client=None, json_output_path=None, shared_stats: dict = None
     ):
         """
         Initialize the KiteTokenWatcher instance.
@@ -375,6 +375,7 @@ class KiteTokenWatcher:
         self._candle_store = get_candle_store()
         self._kite_instruments = {}
         self.ws_stop_event = None  # Add this for WebSocket stop signal
+        self.shared_stats = shared_stats if shared_stats is not None else {}
 
     def set_ws_stop_event(self, event):
         """Set the stop event for WebSocket processes"""
@@ -713,6 +714,10 @@ class KiteTokenWatcher:
                     'type': 'tick',
                 }
                 self._candle_store.process_tick(tick_for_candle)
+                if self.shared_stats: # Update shared stats only if it's been initialized
+                    current_stats = self._candle_store.get_stats()
+                    for key, value in current_stats.items():
+                        self.shared_stats[key] = value
             except Exception as e:
                 self.logger.debug(f"Error updating candle store: {e}")
 
