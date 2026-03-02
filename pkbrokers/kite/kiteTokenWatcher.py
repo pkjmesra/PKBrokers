@@ -371,6 +371,7 @@ class KiteTokenWatcher:
 
         self._next_process_time = None
         self._last_processed_instruments = []
+        self._next_process_log_time = None
         # Initialize in-memory candle store for high-performance candle access
         self._candle_store = get_candle_store()
         self._kite_instruments = {}
@@ -753,7 +754,11 @@ class KiteTokenWatcher:
         self._next_process_time = datetime.now() + timedelta(
             seconds=OPTIMAL_BATCH_TICK_WAIT_TIME_SEC
         )
+        self._next_process_log_time = datetime.now() + timedelta(
+            seconds=12*OPTIMAL_BATCH_TICK_WAIT_TIME_SEC
+        )
         self.logger.debug(f"Initial processing time set to: {self._next_process_time}")
+        self.logger.debug(f"Initial log time set to: {self._next_process_log_time}")
 
         while not self._shutdown_event.is_set():
             try:
@@ -782,12 +787,7 @@ class KiteTokenWatcher:
                             f"Queued {len(self._tick_batch)} instruments for processing"
                         )
                         self._tick_batch.clear()
-
-                    if isinstance(tick, Tick):
-                        self.logger.debug(
-                            f"Updated latest tick for instruments {','.join(self._last_processed_instruments)}"
-                        )
-                        self._last_processed_instruments.clear()
+                        
                     # CRITICAL: Reset timer to current time + 30 seconds for exact interval
                     self._next_process_time = datetime.now() + timedelta(
                         seconds=OPTIMAL_BATCH_TICK_WAIT_TIME_SEC
@@ -810,7 +810,15 @@ class KiteTokenWatcher:
                     # Older ticks for same instrument are automatically replaced
                     self._tick_batch[tick.instrument_token] = tick
                     self._watcher_queue.task_done()
-                    self._last_processed_instruments.append(tick.instrument_token)
+                    self._last_processed_instruments.append(str(tick.instrument_token))
+                    if current_time >= self._next_process_log_time:
+                        self._next_process_log_time = datetime.now() + timedelta(
+                            seconds=12*OPTIMAL_BATCH_TICK_WAIT_TIME_SEC
+                        )
+                        self.logger.debug(
+                            f"Updated latest tick for instruments {','.join(self._last_processed_instruments)}"
+                        )
+                        self._last_processed_instruments.clear()
 
             except KeyboardInterrupt:
                 self.logger.warn("Keyboard interrupt received in processing thread")
