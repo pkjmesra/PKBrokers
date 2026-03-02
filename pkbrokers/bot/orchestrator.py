@@ -81,21 +81,48 @@ class PKTickOrchestrator:
         # They will be initialized in each process separately
 
     def __getstate__(self):
-        """Control what gets pickled - only include primitive data"""
-        state = self.__dict__.copy()
-        # Remove unpickleable objects
-        for key in ["bot_process", "kite_process", "mp_context", "logger"]:
-            state.pop(key, None)
+        """Control what gets pickled - explicitly define only known pickleable attributes"""
+        state = {}
+        # Primitive attributes
+        state['bot_token'] = self.bot_token
+        state['bridge_bot_token'] = self.bridge_bot_token
+        state['ticks_file_path'] = self.ticks_file_path
+        state['chat_id'] = self.chat_id
+        state['shutdown_requested'] = self.shutdown_requested
+        state['token_generated_at_least_once'] = self.token_generated_at_least_once
+        state['test_mode'] = self.test_mode
+        state['ws_processes'] = self.ws_processes # Should be an empty list
+
+        # Multiprocessing objects managed by Manager - these are pickleable by reference
+        state['manager'] = self.manager
+        state['shared_stats'] = self.shared_stats
+        state['child_process_ref'] = self.child_process_ref
+        state['stop_queue'] = self.stop_queue
+        state['ws_stop_event'] = self.ws_stop_event
+        
         return state
 
     def __setstate__(self, state):
         """Restore state after unpickling"""
-        self.__dict__.update(state)
-        # Reinitialize multiprocessing context
+        self.bot_token = state['bot_token']
+        self.bridge_bot_token = state['bridge_bot_token']
+        self.ticks_file_path = state['ticks_file_path']
+        self.chat_id = state['chat_id']
+        self.shutdown_requested = state['shutdown_requested']
+        self.token_generated_at_least_once = state['token_generated_at_least_once']
+        self.test_mode = state['test_mode']
+        self.ws_processes = state['ws_processes']
+
+        self.manager = state['manager']
+        self.shared_stats = state['shared_stats']
+        self.child_process_ref = state['child_process_ref']
+        self.stop_queue = state['stop_queue']
+        self.ws_stop_event = state['ws_stop_event']
+
+        # Re-initialize multiprocessing context and processes as they are not pickled
         self.mp_context = multiprocessing.get_context("spawn")
         self.bot_process = None
         self.kite_process = None
-        self.shutdown_requested = False
 
 
 
@@ -258,16 +285,6 @@ class PKTickOrchestrator:
         from PKDevTools.classes.log import default_logger
         logger = default_logger()
         logger.info("Starting PKTick Orchestrator...")
-
-        # Temporary debug block to test pickling
-        import pickle
-        try:
-            logger.info(f"PKTickOrchestrator attributes: {self.__dict__.keys()}")
-            pickle.dumps(self)
-            logger.info("PKTickOrchestrator instance is pickleable.")
-        except Exception as e:
-            logger.error(f"Pickling PKTickOrchestrator failed: {e}")
-            raise # Re-raise to stop execution and show the specific error
 
         # Always start Telegram bot process
         self.bot_process = self.mp_context.Process(
