@@ -373,7 +373,7 @@ class KiteTokenWatcher:
         self._last_processed_instruments = []
         self._next_process_log_time = None
         # Initialize in-memory candle store for high-performance candle access
-        self._candle_store = get_candle_store()
+        self._candle_store = get_candle_store(shared_stats=shared_stats)
         self._kite_instruments = {}
         self.ws_stop_event = None  # Add this for WebSocket stop signal
         self.shared_stats = shared_stats if shared_stats is not None else {}
@@ -715,11 +715,6 @@ class KiteTokenWatcher:
                     'type': 'tick',
                 }
                 self._candle_store.process_tick(tick_for_candle)
-                if self.shared_stats: # Update shared stats only if it's been initialized
-                    current_stats = self._candle_store.get_stats()
-                    for key, value in current_stats.items():
-                        self.shared_stats[key] = value
-                    self.logger.debug(f"KiteTokenWatcher: shared_stats type={type(self.shared_stats)}, content={dict(self.shared_stats)}")
             except Exception as e:
                 self.logger.debug(f"Error updating candle store: {e}")
 

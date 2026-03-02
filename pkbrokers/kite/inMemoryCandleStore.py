@@ -295,6 +295,7 @@ class InMemoryCandleStore:
         auto_persist: bool = True,
         persist_interval: int = 300,  # 5 minutes
         load_existing: bool = True,
+        shared_stats: dict = None,
     ):
         """
         Initialize the in-memory candle store.
@@ -320,13 +321,16 @@ class InMemoryCandleStore:
         self.last_persist_time = time.time()
         
         # Statistics
-        self.stats = {
-            'ticks_processed': 0,
-            'candles_created': 0,
-            'candles_completed': 0,
-            'last_tick_time': 0,
-            'start_time': time.time(),
-        }
+        if shared_stats is not None:
+            self.stats = shared_stats
+        else:
+            self.stats = {
+                'ticks_processed': 0,
+                'candles_created': 0,
+                'candles_completed': 0,
+                'last_tick_time': 0,
+                'start_time': time.time(),
+            }
         
         # Load existing data if available
         if load_existing:
@@ -915,14 +919,17 @@ class InMemoryCandleStore:
                 if current and current.tick_count > 0:
                     instruments_with_ticks += 1
             
-            return {
+            stats = {
                 **self.stats,
                 'instrument_count': len(self.instruments),
                 'instruments_with_ticks': instruments_with_ticks,
                 'registered_symbols': len(self.instrument_symbols),
-                'uptime_seconds': time.time() - self.stats['start_time'],
+                'uptime_seconds': time.time() - self.stats.get('start_time', time.time()),
                 'memory_mb': self._estimate_memory_usage() / (1024 * 1024),
             }
+            for key, value in stats.items():
+                self.stats[key] = value
+            return self.stats
     
     def get_diagnostic_info(self) -> str:
         """Get diagnostic information for troubleshooting empty ticks."""
@@ -1000,6 +1007,6 @@ class InMemoryCandleStore:
 
 
 # Singleton accessor
-def get_candle_store() -> InMemoryCandleStore:
+def get_candle_store(shared_stats: dict = None) -> InMemoryCandleStore:
     """Get the global candle store instance."""
-    return InMemoryCandleStore()
+    return InMemoryCandleStore(shared_stats=shared_stats)
