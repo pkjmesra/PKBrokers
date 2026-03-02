@@ -103,7 +103,8 @@ class PKTickOrchestrator:
     def set_child_pid(self, pid):
         """Method to set the child process PID from the child process"""
         self.child_process_ref.value = pid
-        logger = self._get_logger()
+        from PKDevTools.classes.log import default_logger
+        logger = default_logger()
         logger.info(f"Child process PID set to: {pid}")
 
     def is_market_hours(self):
@@ -128,7 +129,8 @@ class PKTickOrchestrator:
 
         except Exception as e:
             from PKDevTools.classes.log import default_logger
-            default_logger().debug(f"Error checking market hours: {e}")
+            logger = default_logger()
+            logger.debug(f"Error checking market hours: {e}")
             return False
 
     def is_trading_holiday(self):
@@ -155,7 +157,8 @@ class PKTickOrchestrator:
 
         except Exception as e:
             from PKDevTools.classes.log import default_logger
-            default_logger().debug(f"Error checking trading holidays: {e}")
+            logger = default_logger()
+            logger.debug(f"Error checking trading holidays: {e}")
             return False  # Assume not holiday if we can't check
 
     def should_run_kite_process(self):
@@ -251,7 +254,8 @@ class PKTickOrchestrator:
     def start(self):
         """Start both processes based on market conditions"""
         # Initialize logger in main process
-        logger = self._get_logger()
+        from PKDevTools.classes.log import default_logger
+        logger = default_logger()
         logger.info("Starting PKTick Orchestrator...")
 
         # Always start Telegram bot process
@@ -308,7 +312,8 @@ class PKTickOrchestrator:
 
     def stop(self, processes=[]):
         """Stop both processes gracefully with proper resource cleanup"""
-        logger = self._get_logger()
+        from PKDevTools.classes.log import default_logger
+        logger = default_logger()
         logger.info("Stopping processes...")
 
         # Set WebSocket stop event if it exists
@@ -404,11 +409,14 @@ class PKTickOrchestrator:
                     except BaseException:
                         pass
         except Exception as e:
-            self._get_logger().debug(f"Resource cleanup note: {e}")
+            from PKDevTools.classes.log import default_logger
+            logger = default_logger()
+            logger.debug(f"Resource cleanup note: {e}")
 
     def restart_kite_process_if_needed(self):
         """Restart kite process if market conditions change"""
-        logger = self._get_logger()
+        from PKDevTools.classes.log import default_logger
+        logger = default_logger()
         if self.test_mode:
             logger.warn("Running in TEST mode! Skipping test to re-run/stop Kite process!")
             return
@@ -436,13 +444,14 @@ class PKTickOrchestrator:
     def run(self):
         """Main run method with graceful shutdown handling"""
         try:
-            logger = self._get_logger()
+            from PKDevTools.classes.log import default_logger
+            logger = default_logger()
             signal.signal(signal.SIGINT, self.signal_handler)
             signal.signal(signal.SIGTERM, self.signal_handler)
             self.start()
 
             # Keep main process alive and monitor child processes
-            logger = self._get_logger()
+            logger = default_logger()            
             last_market_check = time.time()
             from PKDevTools.classes.GitHubSecrets import PKGitHubSecretsManager
 
@@ -603,18 +612,26 @@ class PKTickOrchestrator:
 
     def signal_handler(self, signum, frame):
         """Handle shutdown signals"""
-        logger = self._get_logger()
+        from PKDevTools.classes.log import default_logger
+        logger = default_logger()
         logger.info(f"Received signal {signum}. Shutting down gracefully...")
         self.shutdown_requested = True
 
     def get_consumer(self):
         """Get a consumer instance to interact with the bot"""
-        self._initialize_environment()
+        from PKDevTools.classes import Archiver
+        from PKDevTools.classes.Environment import PKEnvironment
+
+        env = PKEnvironment()
+        bot_token = self.bot_token or env.TBTOKEN
+        bridge_bot_token = self.bridge_bot_token or env.BBTOKEN
+        chat_id = self.chat_id or env.CHAT_ID
+        
         from pkbrokers.bot.consumer import PKTickBotConsumer
 
-        if not self.chat_id:
+        if not chat_id:
             raise ValueError("chat_id is required for consumer functionality")
-        return PKTickBotConsumer(self.bot_token, self.bridge_bot_token, self.chat_id)
+        return PKTickBotConsumer(bot_token, bridge_bot_token, chat_id)
 
 
 def orchestrate():
@@ -622,7 +639,10 @@ def orchestrate():
     orchestrator = PKTickOrchestrator(None, None, None, None)
     
     # Try to get data from running instance before starting
-    logger = orchestrator._get_logger()
+    from PKDevTools.classes.log import default_logger
+    from pkbrokers.kite.examples.pkkite import setupLogger
+    setupLogger() # Ensure logger is set up before using default_logger
+    logger = default_logger()
     logger.info("Attempting to request data from running PKTickBot instance...")
     
     try:
