@@ -370,7 +370,8 @@ class HighPerformanceTursoWriter:
             with conn:
                 cursor = conn.cursor()
 
-                # Batch insert ticks
+                # Batch insert ticks - commented out because it will cause 
+                # GBs of data every hour because of huge number of ticks.
                 # if tick_data:
                 #     cursor.executemany(TICK_INSERT_SQL, tick_data)
 

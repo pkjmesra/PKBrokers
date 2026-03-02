@@ -167,6 +167,8 @@ class PKTickBot:
             return
         if self.parent and hasattr(self.parent,"bot_callback"):
             self.parent.bot_callback()
+        if self.shared_stats is not None:
+            self.shared_stats['test_mode_requested'] = True
 
         def kite_trigger():
             from pkbrokers.kite.examples.pkkite import kite_ticks
@@ -202,9 +204,10 @@ class PKTickBot:
             
             # Step 2: Start tick watcher
             update.message.reply_text("🔄 Step 2/2: Starting tick watcher...")
-            
             if self.parent and hasattr(self.parent, "bot_callback"):
                 self.parent.bot_callback()
+            if self.shared_stats is not None:
+                self.shared_stats['test_mode_requested'] = True
             
             def start_watcher():
                 from pkbrokers.kite.examples.pkkite import kite_ticks

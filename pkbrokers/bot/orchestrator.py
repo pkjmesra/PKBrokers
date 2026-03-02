@@ -189,7 +189,7 @@ class PKTickOrchestrator:
 
         return True
 
-    def run_kite_ticks(self, shared_stats: dict):
+    def run_kite_ticks(self, shared_stats: dict, child_process_ref):
         """Run kite_ticks in a separate process"""
         try:
             # Initialize environment and logger in this process
@@ -219,7 +219,7 @@ class PKTickOrchestrator:
             from pkbrokers.kite.examples.pkkite import kite_ticks
             
             logger.info(f"Starting kite_ticks process with ws_stop_event: {self.ws_stop_event} and parent reference:{self}")
-            kite_ticks(stop_queue=self.stop_queue, parent=self, ws_stop_event=self.ws_stop_event, shared_stats=shared_stats)
+            kite_ticks(stop_queue=self.stop_queue, ws_stop_event=self.ws_stop_event, shared_stats=shared_stats, child_process_ref=child_process_ref)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")
         except Exception as e:
@@ -238,7 +238,7 @@ class PKTickOrchestrator:
 
             # Create and run the bot
             bot = PKTickBot(self.bot_token, self.ticks_file_path, self.chat_id, shared_stats=shared_stats)
-            bot.run(parent=self)
+            bot.run()
 
         except Exception as e:
             logger.error(f"Telegram bot error: {e}")
@@ -274,7 +274,7 @@ class PKTickOrchestrator:
         if self.should_run_kite_process():
             time.sleep(WAIT_TIME_SEC_CLOSING_ANOTHER_RUNNING_INSTANCE)
             self.kite_process = self.mp_context.Process(
-                target=self.run_kite_ticks, args=(self.shared_stats,), name="KiteTicksProcess"
+                target=self.run_kite_ticks, args=(self.shared_stats, self.child_process_ref,), name="KiteTicksProcess"
             )
             self.kite_process.daemon = False
             self.kite_process.start()
@@ -415,7 +415,7 @@ class PKTickOrchestrator:
         if current_should_run and not kite_running:
             logger.info("Market hours started - starting kite process")
             self.kite_process = self.mp_context.Process(
-                target=self.run_kite_ticks, args=(self.shared_stats,), name="KiteTicksProcess"
+                target=self.run_kite_ticks, args=(self.shared_stats, self.child_process_ref,), name="KiteTicksProcess"
             )
             self.kite_process.daemon = False
             self.kite_process.start()
@@ -468,6 +468,12 @@ class PKTickOrchestrator:
                         )
                         self.bot_process.daemon = False
                         self.bot_process.start()
+
+                # Check for test mode request from bot
+                if 'test_mode_requested' in self.shared_stats and self.shared_stats['test_mode_requested']:
+                    logger.info("Test mode requested by bot")
+                    self.test_mode = True
+                    self.shared_stats['test_mode_requested'] = False # Reset the flag
 
                 # Check market conditions every 30 seconds for kite process
                 current_time = time.time()

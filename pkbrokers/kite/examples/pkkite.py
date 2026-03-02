@@ -144,7 +144,7 @@ def validate_credentials():
     return True
 
 
-def kite_ticks(stop_queue=None, parent=None, test_mode=False, ws_stop_event=None, shared_stats=None):
+def kite_ticks(stop_queue=None, parent=None, test_mode=False, ws_stop_event=None, shared_stats=None, child_process_ref=None):
     import signal
 
     from pkbrokers.kite.kiteTokenWatcher import KiteTokenWatcher
@@ -159,20 +159,10 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False, ws_stop_event=None
         watcher.set_ws_stop_event(ws_stop_event)
     
     # Store reference
-    if parent is not None: # Get the current process ID
+    if child_process_ref is not None:
         current_pid = os.getpid()
         print(f"Setting child_process_ref to PID: {current_pid}")
-        
-        # # Check if parent has the attribute and set it
-        # if hasattr(parent, "child_process_ref"):
-        #     parent.child_process_ref = current_pid
-        # else:
-        #     # If the attribute doesn't exist, create it
-        #     parent.child_process_ref = current_pid
-            
-        # Also try to set it via the provided method if it exists
-        if hasattr(parent, "set_child_pid"):
-            parent.set_child_pid(current_pid)
+        child_process_ref.value = current_pid
 
     if stop_queue is None:
         mp_context = multiprocessing.get_context("spawn")
