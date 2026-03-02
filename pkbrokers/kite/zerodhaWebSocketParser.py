@@ -263,7 +263,7 @@ class ZerodhaWebSocketParser:
             # Unpack mandatory fields
             instrument_token, last_price = struct.unpack(">ii", packet[:8])
             last_price /= 100  # Convert from paise to rupees
-            logger.debug(f"Tick:{instrument_token}")
+            # logger.debug(f"Tick:{instrument_token}")
             # Initialize with default values
             data = {
                 "instrument_token": instrument_token,

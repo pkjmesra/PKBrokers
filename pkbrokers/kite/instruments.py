@@ -609,9 +609,9 @@ class KiteInstruments:
                     instrument.tradingsymbol.replace("-BE", "").replace("-BZ", "")
                 )
                 self.kite_instruments[instrument.instrument_token] = instrument
-            else:
-                # if basic_conditions:
-                self.logger.debug(f"Filtered Out:{instrument.tradingsymbol}")
+            # else:
+            #     # if basic_conditions:
+            #     self.logger.debug(f"Filtered Out:{instrument.tradingsymbol}")
             return in_nse_symbols_or_indices
 
         else:

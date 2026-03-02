@@ -258,6 +258,15 @@ class PKTickOrchestrator:
         logger = default_logger()
         logger.info("Starting PKTick Orchestrator...")
 
+        # Temporary debug block to test pickling
+        import pickle
+        try:
+            pickle.dumps(self)
+            logger.info("PKTickOrchestrator instance is pickleable.")
+        except Exception as e:
+            logger.error(f"Pickling PKTickOrchestrator failed: {e}")
+            raise # Re-raise to stop execution and show the specific error
+
         # Always start Telegram bot process
         self.bot_process = self.mp_context.Process(
             target=PKTickOrchestrator.run_telegram_bot, 
