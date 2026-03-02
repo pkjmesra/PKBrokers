@@ -69,12 +69,13 @@ class PKTickOrchestrator:
         self.manager = multiprocessing.Manager()
         self.shared_stats = self.manager.dict()
         self.child_process_ref = self.mp_context.Value("i", 0)
-        self.stop_queue = self.mp_context.Queue()
+        self.stop_queue = self.manager.Queue()
+        self.ws_stop_event = self.manager.Event()
+
         self.shutdown_requested = False
         self.token_generated_at_least_once = False
         self.test_mode = False
-        self.ws_processes = []  # Add this to track WebSocket processes
-        self.ws_stop_event = None  # Add this
+        self.ws_processes = []
 
         # Don't initialize logger or other complex objects here
         # They will be initialized in each process separately
@@ -261,6 +262,7 @@ class PKTickOrchestrator:
         # Temporary debug block to test pickling
         import pickle
         try:
+            logger.info(f"PKTickOrchestrator attributes: {self.__dict__.keys()}")
             pickle.dumps(self)
             logger.info("PKTickOrchestrator instance is pickleable.")
         except Exception as e:
