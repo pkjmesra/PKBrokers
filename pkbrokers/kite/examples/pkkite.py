@@ -158,12 +158,6 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False, ws_stop_event=None
         print(f"Setting ws_stop_event in watcher: {ws_stop_event}")
         watcher.set_ws_stop_event(ws_stop_event)
     
-    # Store reference
-    if child_process_ref is not None:
-        current_pid = os.getpid()
-        print(f"Setting child_process_ref to PID: {current_pid}")
-        child_process_ref.value = current_pid
-
     if stop_queue is None:
         mp_context = multiprocessing.get_context("spawn")
         stop_queue = mp_context.Queue()

@@ -356,30 +356,6 @@ class PKTickOrchestrator:
         except Exception as e:
             logger.error(f"Error sending stop signal to KiteTokenWatcher: {e}")
 
-        # # Force stop if still running
-        # if self.child_process_ref is not None:
-        #     logger.info(f"Child process (PID: {self.child_process_ref}) is being requested to stop")
-        #     watcher_pid = self.child_process_ref
-        #     if watcher_pid:
-        #         try:
-        #             os.kill(watcher_pid, signal.SIGTERM)
-        #             time.sleep(2)
-        #             logger.info(f"Sent stop signal to watcher process (PID: {watcher_pid})")
-        #             # Check if process still exists
-        #             try:
-        #                 os.kill(watcher_pid, 0)  # Signal 0 just checks existence
-        #                 logger.warning(f"Watcher process (PID: {watcher_pid}) still alive after SIGTERM")
-        #             except OSError:
-        #                 logger.info(f"Watcher process (PID: {watcher_pid}) terminated successfully")
-        #         except ProcessLookupError:
-        #             logger.info(f"Watcher process (PID: {watcher_pid}) already terminated")
-        #         except Exception as e:
-        #             logger.error(f"Error signaling watcher: {e}")
-        #     else:
-        #         logger.warn("No child process PID stored!")
-        # else:
-        #     logger.warn("No child process reference was set by kite_ticks!")
-
         # Stop processes with proper cleanup
         processes = (
             [(self.kite_process, "kite process"), (self.bot_process, "bot process")]
@@ -392,7 +368,7 @@ class PKTickOrchestrator:
                 try:
                     logger.info(f"Stopping {name} (PID: {process.pid})...")
                     # Give more time for kite_process to shutdown gracefully
-                    join_timeout = 120 if name == "kite process" else 10
+                    join_timeout = 10
                     kill_timeout = 5
                     
                     process.terminate()  # Sends SIGTERM
