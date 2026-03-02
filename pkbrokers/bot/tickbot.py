@@ -487,6 +487,7 @@ class PKTickBot:
             
             # Add candle store diagnostics
             try:
+                self.logger.debug(f"PKTickBot: shared_stats type={type(self.shared_stats)}, content={dict(self.shared_stats)}")
                 # Read from shared_stats instead of calling get_candle_store directly
                 if self.shared_stats:
                     stats = self.shared_stats

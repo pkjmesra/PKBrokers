@@ -718,6 +718,7 @@ class KiteTokenWatcher:
                     current_stats = self._candle_store.get_stats()
                     for key, value in current_stats.items():
                         self.shared_stats[key] = value
+                    self.logger.debug(f"KiteTokenWatcher: shared_stats type={type(self.shared_stats)}, content={dict(self.shared_stats)}")
             except Exception as e:
                 self.logger.debug(f"Error updating candle store: {e}")
 
