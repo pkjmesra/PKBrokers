@@ -529,8 +529,6 @@ class PKTickBot:
 
         Channel_Id = PKEnvironment().CHAT_ID
         """Log the error and send a telegram message to notify the developer."""
-        # Log the error before we do anything else, so we can see it even if something breaks.
-        logger.error("Exception while handling an update:", exc_info=context.error)
 
         # traceback.format_exception returns the usual python message about an exception, but as a
         # list of strings rather than a single string, so we have to join them together.
@@ -549,7 +547,7 @@ class PKTickBot:
             global conflict_detected
             conflict_detected = True
             self.conflict_detected = True
-            logger.error(
+            logger.warning(
                 "Conflict detected: Another instance is running. Longer running instance should shut down gracefully."
             )
 
@@ -557,7 +555,7 @@ class PKTickBot:
                 timeSinceStarted.total_seconds() >= MINUTES_2_IN_SECONDS
             ):  # shutdown only if we have been running for over 2 minutes.
                 warn_msg = f"❌ This instance is stopping due to conflict after running for {timeSinceStarted.total_seconds()/60} minutes."
-                logger.warn(warn_msg)
+                logger.warning(warn_msg)
                 context.bot.send_message(
                     chat_id=int(f"-{Channel_Id}"), text=warn_msg, parse_mode="HTML"
                 )
@@ -601,6 +599,9 @@ class PKTickBot:
                 context.bot.send_message(
                     chat_id=int(f"-{Channel_Id}"), text=info_msg, parse_mode="HTML"
                 )
+        else:
+            # Log the error before we do anything else, so we can see it even if something breaks.
+            logger.error("Exception while handling an update:", exc_info=context.error)
 
         # Build the message with some markup and additional information about what happened.
         update_str = update.to_dict() if isinstance(update, Update) else str(update)
