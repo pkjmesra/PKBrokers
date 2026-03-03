@@ -77,6 +77,10 @@ class PKTickOrchestrator:
         self.shared_stats['instruments_with_ticks'] = 0
         self.shared_stats['ticks_processed'] = 0
         self.shared_stats['uptime_seconds'] = 0
+        self.shared_stats['candles_created'] = 0
+        self.shared_stats['candles_completed'] = 0
+        self.shared_stats['last_tick_time'] = 0
+        self.shared_stats['start_time'] = time.time()
         
         logger = default_logger()
         logger.info(f"Orchestrator shared_stats created: {dict(self.shared_stats)}")
@@ -262,6 +266,10 @@ class PKTickOrchestrator:
                 shared_stats['instruments_with_ticks'] = 0
                 shared_stats['ticks_processed'] = 0
                 shared_stats['uptime_seconds'] = 0
+                shared_stats['candles_created'] = 0
+                shared_stats['candles_completed'] = 0
+                shared_stats['last_tick_time'] = 0
+                shared_stats['start_time'] = time.time()
             kite_ticks(stop_queue=stop_queue, ws_stop_event=ws_stop_event, shared_stats=shared_stats, child_process_ref=child_process_ref)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")

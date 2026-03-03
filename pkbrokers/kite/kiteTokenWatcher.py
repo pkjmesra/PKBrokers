@@ -385,6 +385,11 @@ class KiteTokenWatcher:
             self.shared_stats['instruments_with_ticks'] = 0
             self.shared_stats['ticks_processed'] = 0
             self.shared_stats['uptime_seconds'] = 0
+            self.shared_stats['candles_created'] = 0
+            self.shared_stats['candles_completed'] = 0
+            self.shared_stats['last_tick_time'] = 0
+            self.shared_stats['start_time'] = time.time()
+            
             try:
                 self.shared_stats['watcher_initialized'] = True
                 self.logger.info(f"Updated shared_stats in watcher: {dict(self.shared_stats)}")
