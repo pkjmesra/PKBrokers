@@ -92,6 +92,7 @@ class PKTickOrchestrator:
         self.token_generated_at_least_once = False
         self.test_mode = False
         self.ws_processes = []
+        self.stats_queue = self.manager.Queue()
 
         # Don't initialize logger or other complex objects here
         # They will be initialized in each process separately
@@ -218,10 +219,11 @@ class PKTickOrchestrator:
         return True
 
     @staticmethod
-    def run_kite_ticks(bot_token: Optional[str], ticks_file_path: Optional[str], chat_id: Optional[str], shared_stats: dict, child_process_ref, ws_stop_event, stop_queue):
+    def run_kite_ticks(bot_token: Optional[str], ticks_file_path: Optional[str], chat_id: Optional[str], shared_stats: dict, stats_queue, child_process_ref, ws_stop_event, stop_queue):
         """Run kite_ticks in a separate process"""
         # Initialize logger in this process
         from PKDevTools.classes import log
+        import threading
         from pkbrokers.kite.examples.pkkite import setupLogger
         setupLogger()
         logger = log.default_logger()
@@ -270,6 +272,19 @@ class PKTickOrchestrator:
                 shared_stats['candles_completed'] = 0
                 shared_stats['last_tick_time'] = 0
                 shared_stats['start_time'] = time.time()
+                # Start a thread to send stats updates to the queue
+                def stats_sender():
+                    last_send = time.time()
+                    while True:
+                        time.sleep(2)  # Send updates every 2 seconds
+                        try:
+                            # Only send if stats have changed
+                            if time.time() - last_send >= 30:
+                                stats_queue.put(shared_stats.copy())
+                                last_send = time.time()
+                        except Exception as e:
+                            logger.error(f"Error sending stats: {e}")
+                threading.Thread(target=stats_sender, daemon=True).start()
             kite_ticks(stop_queue=stop_queue, ws_stop_event=ws_stop_event, shared_stats=shared_stats, child_process_ref=child_process_ref)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")
@@ -342,7 +357,9 @@ class PKTickOrchestrator:
         if self.should_run_kite_process():
             self.kite_process = self.mp_context.Process(
                 target=PKTickOrchestrator.run_kite_ticks, 
-                args=(self.bot_token, self.ticks_file_path, self.chat_id, self.shared_stats, self.child_process_ref, self.ws_stop_event, self.stop_queue), 
+                args=(self.bot_token, self.ticks_file_path, self.chat_id, 
+                      self.shared_stats, self.stats_queue, self.child_process_ref, 
+                      self.ws_stop_event, self.stop_queue), 
                 name="KiteTicksProcess"
             )
             logger.info(f"start: Orchestrator shared_stats id: {id(self.shared_stats)}")
@@ -486,7 +503,25 @@ class PKTickOrchestrator:
         """Main run method with graceful shutdown handling"""
         try:
             from PKDevTools.classes.log import default_logger
+            import threading
+            import queue
             logger = default_logger()
+            # Start a thread to read from stats_queue and update shared_stats
+            def stats_reader():
+                logger = default_logger()
+                while not self.shutdown_requested:
+                    try:
+                        stats_update = self.stats_queue.get(timeout=1)
+                        # Update the shared_stats with values from the child process
+                        for key, value in stats_update.items():
+                            self.shared_stats[key] = value
+                        logger.debug(f"Updated shared_stats from queue: {stats_update}")
+                    except queue.Empty:
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error in stats reader: {e}")
+            
+            threading.Thread(target=stats_reader, daemon=True).start()
             signal.signal(signal.SIGINT, self.signal_handler)
             signal.signal(signal.SIGTERM, self.signal_handler)
             self.start()
