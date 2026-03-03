@@ -301,27 +301,15 @@ class InMemoryCandleStore:
         # Check if already initialized
         already_initialized = hasattr(self, '_initialized') and self._initialized
         
-        # Store shared_stats reference even if already initialized
-        if shared_stats is not None:
-            self.shared_stats = shared_stats
-            # If stats exists, update the shared stats reference
-            if hasattr(self, 'stats') and self.stats is not None:
+        # Store shared_stats reference
+        self.shared_stats = shared_stats
+        
+        # If already initialized, just update the stats reference
+        if already_initialized:
+            if shared_stats is not None and hasattr(self, 'stats'):
                 # Copy existing stats to the new shared_stats
                 for key, value in self.stats.items():
                     self.shared_stats[key] = value
-            else:
-                # Initialize stats in shared_stats
-                self.stats = self.shared_stats
-                self.stats.update({
-                    'ticks_processed': 0,
-                    'candles_created': 0,
-                    'candles_completed': 0,
-                    'last_tick_time': 0,
-                    'start_time': time.time(),
-                })
-        
-        # If already initialized, just update the reference and return
-        if already_initialized:
             return
         
         # Rest of initialization for first-time setup
@@ -336,7 +324,9 @@ class InMemoryCandleStore:
         self.persist_interval = persist_interval
         self.last_persist_time = time.time()
         
-        # If shared_stats wasn't provided, create our own
+        # Statistics
+        if shared_stats is not None:
+            self.stats = shared_stats
         if not hasattr(self, 'stats') or self.stats is None:
             self.stats = {
                 'ticks_processed': 0,
@@ -1035,43 +1025,46 @@ class InMemoryCandleStore:
         with self.lock:
             return list(self.instruments.keys())
 
+    # Add this method to InMemoryCandleStore class
+    def update_shared_stats(self, shared_stats: dict):
+        """Update the shared stats reference."""
+        from PKDevTools.classes.log import default_logger
+        logger = default_logger()
+        
+        logger.info(f"update_shared_stats called with: {shared_stats}")
+        self.shared_stats = shared_stats
+        
+        # If we have existing stats, copy them to the new shared_stats
+        if hasattr(self, 'stats') and self.stats is not None:
+            try:
+                for key, value in self.stats.items():
+                    self.shared_stats[key] = value
+                logger.info(f"Copied existing stats to new shared_stats: {dict(self.shared_stats)}")
+            except Exception as e:
+                logger.error(f"Error copying stats: {e}")
+
 
 # Singleton accessor
 # In inMemoryCandleStore.py - modify the singleton accessor
+# Add a module-level variable to store the instance
+_candle_store_instance = None
+
 def get_candle_store(shared_stats: dict = None) -> InMemoryCandleStore:
     """Get the global candle store instance."""
     global _candle_store_instance
     
-    # If instance doesn't exist, create it
-    if not hasattr(get_candle_store, "_instance") or get_candle_store._instance is None:
-        from PKDevTools.classes.log import default_logger
-        logger = default_logger()
-        logger.info(f"Creating new candle store instance with shared_stats: {shared_stats}")
-        get_candle_store._instance = InMemoryCandleStore(shared_stats=shared_stats)
-    else:
-        # If instance exists but we have new shared_stats, update it
-        if shared_stats is not None:
-            from PKDevTools.classes.log import default_logger
-            logger = default_logger()
-            logger.info(f"Updating existing candle store with new shared_stats")
-            get_candle_store._instance.update_shared_stats(shared_stats)
-    
-    return get_candle_store._instance
-
-# Add this method to InMemoryCandleStore class
-def update_shared_stats(self, shared_stats: dict):
-    """Update the shared stats reference."""
     from PKDevTools.classes.log import default_logger
     logger = default_logger()
     
-    logger.info(f"update_shared_stats called with: {shared_stats}")
-    self.shared_stats = shared_stats
+    # If instance doesn't exist, create it
+    if _candle_store_instance is None:
+        logger.info(f"Creating new candle store instance with shared_stats: {shared_stats}")
+        _candle_store_instance = InMemoryCandleStore(shared_stats=shared_stats)
+    else:
+        # If instance exists but we have new shared_stats, update it
+        if shared_stats is not None:
+            logger.info(f"Updating existing candle store with new shared_stats")
+            _candle_store_instance.update_shared_stats(shared_stats)
     
-    # If we have existing stats, copy them to the new shared_stats
-    if hasattr(self, 'stats') and self.stats is not None:
-        try:
-            for key, value in self.stats.items():
-                self.shared_stats[key] = value
-            logger.info(f"Copied existing stats to new shared_stats: {dict(self.shared_stats)}")
-        except Exception as e:
-            logger.error(f"Error copying stats: {e}")
+    return _candle_store_instance
+
