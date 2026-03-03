@@ -154,12 +154,20 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False, ws_stop_event=None
     logger.info(f"kite_ticks received shared_stats: {dict(shared_stats) if shared_stats else 'None'}")
     logger.info(f"shared_stats type: {type(shared_stats)}")
     print(f"kite_ticks received ws_stop_event: {ws_stop_event}")
-    watcher = KiteTokenWatcher(shared_stats=shared_stats)
-    print("We're now ready to begin listening to ticks from Zerodha's Kite...")
     # Test if we can modify it
     if shared_stats is not None:
         shared_stats['kite_ticks_received'] = True
         logger.info(f"Updated shared_stats in kite_ticks: {dict(shared_stats)}")
+    else:
+        logger.warning("shared_stats is None, creating local dict")
+        shared_stats = {
+            'instrument_count': 0,
+            'instruments_with_ticks': 0,
+            'ticks_processed': 0,
+            'uptime_seconds': 0,
+        }
+    watcher = KiteTokenWatcher(shared_stats=shared_stats)
+    print("We're now ready to begin listening to ticks from Zerodha's Kite...")
     
     # Store the stop event in watcher for WebSocket processes
     if ws_stop_event:

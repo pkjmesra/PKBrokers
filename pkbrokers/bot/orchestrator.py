@@ -252,6 +252,16 @@ class PKTickOrchestrator:
             from pkbrokers.kite.examples.pkkite import kite_ticks
             
             logger.info(f"Starting kite_ticks process with ws_stop_event: {ws_stop_event}")
+            # If shared_stats is None, try to recreate it
+            if shared_stats is None:
+                logger.warning("shared_stats is None, creating new manager dict")
+                from multiprocessing import Manager
+                manager = Manager()
+                shared_stats = manager.dict()
+                shared_stats['instrument_count'] = 0
+                shared_stats['instruments_with_ticks'] = 0
+                shared_stats['ticks_processed'] = 0
+                shared_stats['uptime_seconds'] = 0
             kite_ticks(stop_queue=stop_queue, ws_stop_event=ws_stop_event, shared_stats=shared_stats, child_process_ref=child_process_ref)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")
