@@ -23,6 +23,7 @@ SOFTWARE.
 
 """
 
+from asyncio.log import logger
 import multiprocessing
 import os
 import signal
@@ -33,6 +34,7 @@ from datetime import time as dt_time
 from typing import Optional
 
 import requests
+from PKDevTools.classes.log import default_logger
 
 # macOS fork safety
 if sys.platform.startswith("darwin"):
@@ -68,6 +70,16 @@ class PKTickOrchestrator:
         self.mp_context = multiprocessing.get_context("spawn")
         self.manager = multiprocessing.Manager()
         self.shared_stats = self.manager.dict()
+        # Initialize with some values to verify
+        self.shared_stats['orchestrator_created'] = True
+        self.shared_stats['orchestrator_pid'] = os.getpid()
+        self.shared_stats['instrument_count'] = 0
+        self.shared_stats['instruments_with_ticks'] = 0
+        self.shared_stats['ticks_processed'] = 0
+        self.shared_stats['uptime_seconds'] = 0
+        
+        logger = default_logger()
+        logger.info(f"Orchestrator shared_stats created: {dict(self.shared_stats)}")
         self.child_process_ref = self.mp_context.Value("i", 0)
         self.stop_queue = self.manager.Queue()
         self.ws_stop_event = self.manager.Event()
@@ -209,6 +221,9 @@ class PKTickOrchestrator:
         from pkbrokers.kite.examples.pkkite import setupLogger
         setupLogger()
         logger = log.default_logger()
+        # Debug - log the shared_stats at entry
+        logger.info(f"run_kite_ticks received shared_stats: {dict(shared_stats) if shared_stats else 'None'}")
+        logger.info(f"shared_stats type: {type(shared_stats)}")
 
         # Initialize environment variables
         from PKDevTools.classes import Archiver
@@ -312,6 +327,8 @@ class PKTickOrchestrator:
                 args=(self.bot_token, self.ticks_file_path, self.chat_id, self.shared_stats, self.child_process_ref, self.ws_stop_event, self.stop_queue), 
                 name="KiteTicksProcess"
             )
+            logger.info(f"start: Orchestrator shared_stats id: {id(self.shared_stats)}")
+            logger.info(f"start: Orchestrator shared_stats type: {type(self.shared_stats)}")
             self.kite_process.daemon = False
             self.kite_process.start()
             logger.info("Kite ticks process started (market hours)")
@@ -435,6 +452,8 @@ class PKTickOrchestrator:
                 args=(self.bot_token, self.ticks_file_path, self.chat_id, self.shared_stats, self.child_process_ref, self.ws_stop_event, self.stop_queue), 
                 name="KiteTicksProcess"
             )
+            logger.info(f"restart_kite_process_if_needed: Orchestrator shared_stats id: {id(self.shared_stats)}")
+            logger.info(f"restart_kite_process_if_needed: Orchestrator shared_stats type: {type(self.shared_stats)}")
             self.kite_process.daemon = False
             self.kite_process.start()
 

@@ -461,6 +461,11 @@ class InMemoryCandleStore:
                 
                 self.stats['ticks_processed'] += 1
                 self.stats['last_tick_time'] = timestamp
+                # Debug - log every 1000 ticks
+                if self.stats['ticks_processed'] % 1000 == 0:
+                    self.logger.info(f"Candle store processed {self.stats['ticks_processed']} ticks")
+                    if hasattr(self, 'shared_stats') and self.shared_stats is not None:
+                        self.logger.info(f"Shared stats after update: {dict(self.shared_stats)}")
                 if hasattr(self, 'shared_stats') and self.shared_stats is not None:
                     self.shared_stats['ticks_processed'] = self.stats['ticks_processed']
                     self.shared_stats['last_tick_time'] = timestamp
@@ -1032,6 +1037,41 @@ class InMemoryCandleStore:
 
 
 # Singleton accessor
+# In inMemoryCandleStore.py - modify the singleton accessor
 def get_candle_store(shared_stats: dict = None) -> InMemoryCandleStore:
     """Get the global candle store instance."""
-    return InMemoryCandleStore(shared_stats=shared_stats)
+    global _candle_store_instance
+    
+    # If instance doesn't exist, create it
+    if not hasattr(get_candle_store, "_instance") or get_candle_store._instance is None:
+        from PKDevTools.classes.log import default_logger
+        logger = default_logger()
+        logger.info(f"Creating new candle store instance with shared_stats: {shared_stats}")
+        get_candle_store._instance = InMemoryCandleStore(shared_stats=shared_stats)
+    else:
+        # If instance exists but we have new shared_stats, update it
+        if shared_stats is not None:
+            from PKDevTools.classes.log import default_logger
+            logger = default_logger()
+            logger.info(f"Updating existing candle store with new shared_stats")
+            get_candle_store._instance.update_shared_stats(shared_stats)
+    
+    return get_candle_store._instance
+
+# Add this method to InMemoryCandleStore class
+def update_shared_stats(self, shared_stats: dict):
+    """Update the shared stats reference."""
+    from PKDevTools.classes.log import default_logger
+    logger = default_logger()
+    
+    logger.info(f"update_shared_stats called with: {shared_stats}")
+    self.shared_stats = shared_stats
+    
+    # If we have existing stats, copy them to the new shared_stats
+    if hasattr(self, 'stats') and self.stats is not None:
+        try:
+            for key, value in self.stats.items():
+                self.shared_stats[key] = value
+            logger.info(f"Copied existing stats to new shared_stats: {dict(self.shared_stats)}")
+        except Exception as e:
+            logger.error(f"Error copying stats: {e}")

@@ -487,12 +487,14 @@ class PKTickBot:
             
             # Add candle store diagnostics
             try:
-                self.logger.debug(f"PKTickBot: shared_stats type={type(self.shared_stats)}, content={dict(self.shared_stats)}")
+                # Add debug logging
+                self.logger.debug(f"PKTickBot: shared_stats type={type(self.shared_stats)}, content={dict(self.shared_stats) if self.shared_stats else 'None'}")
                 # Read from shared_stats instead of calling get_candle_store directly
                 if self.shared_stats:
                     stats = self.shared_stats
                 else:
                     stats = {} # Default to empty if shared_stats is not populated yet
+                    self.logger.warning("shared_stats is None in status command!")
 
                 status_msg += "📊 Candle Store Status:\n"
                 status_msg += f"  • Registered instruments: {stats.get('instrument_count', 0)}\n"

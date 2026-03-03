@@ -354,6 +354,8 @@ class KiteTokenWatcher:
         self.client = client
         self.logger = default_logger()
         self._db_instance = None
+        self.logger.info(f"KiteTokenWatcher.__init__ received shared_stats: {dict(shared_stats) if shared_stats else 'None'}")
+        self.logger.info(f"shared_stats type: {type(shared_stats)}")
 
         # JSON file writer
         self.json_output_path = json_output_path or os.path.join(
@@ -383,6 +385,11 @@ class KiteTokenWatcher:
             self.shared_stats['instruments_with_ticks'] = 0
             self.shared_stats['ticks_processed'] = 0
             self.shared_stats['uptime_seconds'] = 0
+            try:
+                self.shared_stats['watcher_initialized'] = True
+                self.logger.info(f"Updated shared_stats in watcher: {dict(self.shared_stats)}")
+            except Exception as e:
+                self.logger.error(f"Could not update shared_stats: {e}")
 
     def set_ws_stop_event(self, event):
         """Set the stop event for WebSocket processes"""
