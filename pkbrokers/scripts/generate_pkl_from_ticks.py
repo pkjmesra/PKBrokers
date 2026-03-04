@@ -327,7 +327,8 @@ def download_historical_pkl(verbose: bool = True, past_offset: int = 30) -> Tupl
     today = datetime.now()
     # Look back up to 30 days to find a valid pkl file with quality data
     for days_back in range(past_offset if past_offset > 0 else 30):
-        check_date = today - timedelta(days=days_back)
+        date_string = PKDateUtilities.nthPastTradingDateStringFromFutureDate(n=days_back, d1=today)
+        check_date = datetime.strptime(date_string, "%Y-%m-%d").date()
         
         # Try different date formats
         date_formats = [
