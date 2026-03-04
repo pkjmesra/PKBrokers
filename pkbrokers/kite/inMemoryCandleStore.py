@@ -927,8 +927,9 @@ class InMemoryCandleStore:
             # Count instruments with ticks
             instruments_with_ticks = 0
             for instrument in self.instruments.values():
-                current = instrument.current_candle.get('day')
-                if current and current.tick_count > 0:
+                current_day = instrument.current_candle.get('day')
+                current_1m = instrument.current_candle.get('1m')
+                if (current_day and current_day.tick_count > 0) or (current_1m and current_1m.tick_count > 0):
                     instruments_with_ticks += 1
             
             stats = {
