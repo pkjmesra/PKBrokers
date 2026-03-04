@@ -498,12 +498,16 @@ class PKTickBot:
                     stats = {} # Default to empty if shared_stats is not populated yet
                     self.logger.warning("shared_stats is None in status command!")
 
+                import pytz
+                ist = pytz.timezone('Asia/Kolkata')
                 status_msg += "📊 Candle Store Status:\n"
                 status_msg += f"  • Registered instruments: {stats.get('instrument_count', candle_store.get_stats().get('instrument_count', 0))}\n"
                 status_msg += f"  • Instruments with ticks: {stats.get('instruments_with_ticks', candle_store.get_stats().get('instruments_with_ticks', 0))}\n"
                 status_msg += f"  • Total ticks processed: {stats.get('ticks_processed', 0)}\n"
                 status_msg += f"  • Uptime: {stats.get('uptime_seconds', candle_store.get_stats().get('uptime_seconds', 0)):.0f}s\n"
-                status_msg += f"  • Last Tick: {stats.get('last_tick_time', candle_store.get_stats().get('last_tick_time', None))}\n\n"
+                timestamp = stats.get('last_tick_time', candle_store.get_stats().get('last_tick_time', None))
+                status_msg += f"  • Last Tick: {datetime.fromtimestamp(timestamp, tz=ist) if (timestamp and timestamp > 0) else timestamp}\n\n"
+                
             except Exception as e:
                 status_msg += f"📊 Candle Store: Error - {e}\n\n"
             
