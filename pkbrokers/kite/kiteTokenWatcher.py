@@ -94,6 +94,36 @@ OTHER_INDICES = [
 if sys.platform.startswith("darwin"):
     os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
 
+def ensure_ist_datetime(dt_value):
+        """
+        Convert any datetime input to IST timezone-aware datetime
+        """
+        if dt_value is None:
+            return datetime.now(IST)
+        
+        # If it's already a datetime object
+        if hasattr(dt_value, 'tzinfo'):
+            # If it has timezone, convert to IST
+            if dt_value.tzinfo is not None:
+                return dt_value.astimezone(IST)
+            else:
+                # If naive, assume UTC and convert to IST
+                return pytz.UTC.localize(dt_value).astimezone(IST)
+        
+        # If it's a string, try to parse it
+        if isinstance(dt_value, str):
+            try:
+                # Try parsing with fromisoformat
+                dt_parsed = datetime.fromisoformat(dt_value.replace('Z', '+00:00'))
+                if dt_parsed.tzinfo is None:
+                    dt_parsed = pytz.UTC.localize(dt_parsed)
+                return dt_parsed.astimezone(IST)
+            except (ValueError, TypeError):
+                # If parsing fails, return current IST time
+                return datetime.now(IST)
+        
+        # Default fallback
+        return datetime.now(IST)
 class JSONFileWriter:
     """Multiprocessing process to write ticks to JSON file with instrument_token as primary key"""
 
@@ -189,37 +219,6 @@ class JSONFileWriter:
         self._save_to_file(data)
         self.logger.warn("JSON writer process stopped")
 
-    def ensure_ist_datetime(self, dt_value):
-        """
-        Convert any datetime input to IST timezone-aware datetime
-        """
-        if dt_value is None:
-            return datetime.now(IST)
-        
-        # If it's already a datetime object
-        if hasattr(dt_value, 'tzinfo'):
-            # If it has timezone, convert to IST
-            if dt_value.tzinfo is not None:
-                return dt_value.astimezone(IST)
-            else:
-                # If naive, assume UTC and convert to IST
-                return pytz.UTC.localize(dt_value).astimezone(IST)
-        
-        # If it's a string, try to parse it
-        if isinstance(dt_value, str):
-            try:
-                # Try parsing with fromisoformat
-                dt_parsed = datetime.fromisoformat(dt_value.replace('Z', '+00:00'))
-                if dt_parsed.tzinfo is None:
-                    dt_parsed = pytz.UTC.localize(dt_parsed)
-                return dt_parsed.astimezone(IST)
-            except (ValueError, TypeError):
-                # If parsing fails, return current IST time
-                return datetime.now(IST)
-        
-        # Default fallback
-        return datetime.now(IST)
-
     def _update_instrument_data(self, data, tick_data):
         """Update instrument data with latest tick information"""
         instrument_token = tick_data["instrument_token"]
@@ -244,7 +243,7 @@ class JSONFileWriter:
                     "low": tick_data["low_price"],
                     "close": tick_data["last_price"],
                     "volume": tick_data.get("day_volume", 0),
-                    "timestamp": self.ensure_ist_datetime(tick_data["timestamp"]).isoformat(),
+                    "timestamp": ensure_ist_datetime(tick_data["timestamp"]).isoformat(),
                 },
                 "prev_day_close": tick_data["prev_day_close"],
                 "buy_quantity": tick_data["buy_quantity"],
@@ -269,7 +268,7 @@ class JSONFileWriter:
         current_ohlcv["close"] = current_price
         current_ohlcv["volume"] = tick_data.get("day_volume", 0)
         current_ohlcv["timestamp"] = (
-            self.ensure_ist_datetime(tick_data["timestamp"]).isoformat()
+            ensure_ist_datetime(tick_data["timestamp"]).isoformat()
         )
 
         # Update OI, buy_quantity, sell_quantity, prev_day_close
@@ -732,7 +731,7 @@ class KiteTokenWatcher:
 
             processed = {
                 "instrument_token": latest_tick.instrument_token,
-                "timestamp": timestamp,
+                "timestamp": ensure_ist_datetime(timestamp),
                 "last_price": latest_tick.last_price or 0,
                 "day_volume": latest_tick.day_volume or 0,
                 "oi": latest_tick.oi or 0,
@@ -968,7 +967,7 @@ class KiteTokenWatcher:
 
             processed = {
                 "instrument_token": latest_tick.instrument_token,
-                "timestamp": timestamp,
+                "timestamp": ensure_ist_datetime(timestamp),
                 "last_price": latest_tick.last_price or 0,
                 "day_volume": latest_tick.day_volume or 0,
                 "oi": latest_tick.oi or 0,
