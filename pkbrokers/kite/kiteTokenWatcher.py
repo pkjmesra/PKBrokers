@@ -30,6 +30,14 @@ import os
 import sys
 import threading
 import time
+import pytz
+from zoneinfo import ZoneInfo  # Python 3.9+
+
+# Define IST timezone once
+IST = pytz.timezone('Asia/Kolkata')  # Using pytz
+# OR for Python 3.9+:
+# IST = ZoneInfo('Asia/Kolkata')
+
 from collections import defaultdict
 from datetime import datetime, timedelta
 from queue import Empty, Queue
@@ -181,6 +189,37 @@ class JSONFileWriter:
         self._save_to_file(data)
         self.logger.warn("JSON writer process stopped")
 
+    def ensure_ist_datetime(self, dt_value):
+        """
+        Convert any datetime input to IST timezone-aware datetime
+        """
+        if dt_value is None:
+            return datetime.now(IST)
+        
+        # If it's already a datetime object
+        if hasattr(dt_value, 'tzinfo'):
+            # If it has timezone, convert to IST
+            if dt_value.tzinfo is not None:
+                return dt_value.astimezone(IST)
+            else:
+                # If naive, assume UTC and convert to IST
+                return pytz.UTC.localize(dt_value).astimezone(IST)
+        
+        # If it's a string, try to parse it
+        if isinstance(dt_value, str):
+            try:
+                # Try parsing with fromisoformat
+                dt_parsed = datetime.fromisoformat(dt_value.replace('Z', '+00:00'))
+                if dt_parsed.tzinfo is None:
+                    dt_parsed = pytz.UTC.localize(dt_parsed)
+                return dt_parsed.astimezone(IST)
+            except (ValueError, TypeError):
+                # If parsing fails, return current IST time
+                return datetime.now(IST)
+        
+        # Default fallback
+        return datetime.now(IST)
+
     def _update_instrument_data(self, data, tick_data):
         """Update instrument data with latest tick information"""
         instrument_token = tick_data["instrument_token"]
@@ -205,16 +244,14 @@ class JSONFileWriter:
                     "low": tick_data["low_price"],
                     "close": tick_data["last_price"],
                     "volume": tick_data.get("day_volume", 0),
-                    "timestamp": tick_data["timestamp"].isoformat()
-                    if hasattr(tick_data["timestamp"], "isoformat")
-                    else (tick_data["timestamp"] if "+" in tick_data["timestamp"] else f'{tick_data["timestamp"]}+05:30'),
+                    "timestamp": self.ensure_ist_datetime(tick_data["timestamp"]).isoformat(),
                 },
                 "prev_day_close": tick_data["prev_day_close"],
                 "buy_quantity": tick_data["buy_quantity"],
                 "sell_quantity": tick_data["sell_quantity"],
                 "oi": tick_data["oi"],
                 "market_depth": tick_data.get("depth", {"bid": [], "ask": []}),
-                "last_updated": datetime.now().isoformat(),
+                "last_updated": datetime.now(IST).isoformat(),  # Direct IST now
                 "tick_count": 0,
             }
 
@@ -248,7 +285,7 @@ class JSONFileWriter:
             data[instrument_token]["market_depth"] = tick_data["depth"]
 
         # Update metadata
-        data[instrument_token]["last_updated"] = datetime.now().isoformat()
+        data[instrument_token]["last_updated"] = datetime.now(IST).isoformat()
         data[instrument_token]["tick_count"] += 1
 
     def _save_to_file(self, data):
@@ -832,7 +869,7 @@ class KiteTokenWatcher:
                             f"Updated latest tick for instruments {','.join(self._last_processed_instruments)}"
                         )
                         self._last_processed_instruments.clear()
-
+                
             except KeyboardInterrupt:
                 self.logger.warn("Keyboard interrupt received in processing thread")
                 break

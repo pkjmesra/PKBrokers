@@ -379,10 +379,16 @@ class PKTickBot:
         # Since each symbol appears only once in your JSON, we just need to sort by both criteria
         
         # Sort by timestamp (latest first) and then by tick count (highest first)
+        import pytz
+
+        KOLKATA_TZ = pytz.timezone("Asia/Kolkata")
         top_limit = sorted(
             instruments,
             key=lambda x: (
-                datetime.fromisoformat(x.get("last_updated", "1970-01-01T00:00:00")),
+                # Parse the ISO string and ensure it's timezone-aware for comparison
+                datetime.fromisoformat(x.get("last_updated", "1970-01-01T00:00:00+05:30"))
+                if x.get("last_updated") 
+                else datetime(1970, 1, 1, tzinfo=KOLKATA_TZ),
                 x.get("tick_count", 0)
             ),
             reverse=True  # This will give us latest timestamp and highest tick count first
