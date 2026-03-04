@@ -961,6 +961,7 @@ class InMemoryCandleStore:
             f"Instruments with ticks: {stats.get('instruments_with_ticks', 0)}",
             f"Total ticks processed: {stats.get('ticks_processed', 0)}",
             f"Uptime: {stats.get('uptime_seconds', 0):.1f} seconds",
+            f"Tick Time: {stats.get('last_tick_time', None)}",
         ]
         
         with self.lock:

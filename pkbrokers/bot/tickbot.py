@@ -490,6 +490,8 @@ class PKTickBot:
                 # Add debug logging
                 self.logger.debug(f"PKTickBot: shared_stats type={type(self.shared_stats)}, content={dict(self.shared_stats) if self.shared_stats else 'None'}")
                 # Read from shared_stats instead of calling get_candle_store directly
+                from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+                candle_store = get_candle_store()
                 if self.shared_stats:
                     stats = self.shared_stats
                 else:
@@ -497,10 +499,11 @@ class PKTickBot:
                     self.logger.warning("shared_stats is None in status command!")
 
                 status_msg += "📊 Candle Store Status:\n"
-                status_msg += f"  • Registered instruments: {stats.get('instrument_count', 0)}\n"
-                status_msg += f"  • Instruments with ticks: {stats.get('instruments_with_ticks', 0)}\n"
+                status_msg += f"  • Registered instruments: {stats.get('instrument_count', candle_store.get_stats().get('instrument_count', 0))}\n"
+                status_msg += f"  • Instruments with ticks: {stats.get('instruments_with_ticks', candle_store.get_stats().get('instruments_with_ticks', 0))}\n"
                 status_msg += f"  • Total ticks processed: {stats.get('ticks_processed', 0)}\n"
-                status_msg += f"  • Uptime: {stats.get('uptime_seconds', 0):.0f}s\n\n"
+                status_msg += f"  • Uptime: {stats.get('uptime_seconds', candle_store.get_stats().get('uptime_seconds', 0)):.0f}s\n"
+                status_msg += f"  • Last Tick: {stats.get('last_tick_time', candle_store.get_stats().get('last_tick_time', None))}\n\n"
             except Exception as e:
                 status_msg += f"📊 Candle Store: Error - {e}\n\n"
             
