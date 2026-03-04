@@ -250,7 +250,7 @@ class JSONFileWriter:
                 "sell_quantity": tick_data["sell_quantity"],
                 "oi": tick_data["oi"],
                 "market_depth": tick_data.get("depth", {"bid": [], "ask": []}),
-                "last_updated": datetime.now(IST).isoformat(),  # Direct IST now
+                "last_updated": ensure_ist_datetime(tick_data["last_trade_timestamp"]).isoformat(),  #datetime.now(IST).isoformat(),  # Direct IST now
                 "tick_count": 0,
             }
 
@@ -282,7 +282,7 @@ class JSONFileWriter:
             data[instrument_token]["market_depth"] = tick_data["depth"]
 
         # Update metadata
-        data[instrument_token]["last_updated"] = datetime.now(IST).isoformat()
+        data[instrument_token]["last_updated"] = ensure_ist_datetime(tick_data["last_trade_timestamp"]).isoformat() #datetime.now(IST).isoformat()
         data[instrument_token]["tick_count"] += 1
 
     def _save_to_file(self, data):
@@ -724,7 +724,7 @@ class KiteTokenWatcher:
 
             # CRITICAL: We only have one tick per instrument (the latest)
             latest_tick = ticks[0]  # Single tick in list format
-            timestamp = datetime.fromtimestamp(latest_tick.exchange_timestamp)
+            timestamp = datetime.fromtimestamp(latest_tick.last_trade_timestamp) if latest_tick.last_trade_timestamp else latest_tick.exchange_timestamp
 
             # Process market depth data
             depth_data = self._extract_depth(latest_tick)
