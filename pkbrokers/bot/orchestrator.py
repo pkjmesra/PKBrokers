@@ -46,6 +46,69 @@ if __name__ == "__main__":
 
 WAIT_TIME_SEC_CLOSING_ANOTHER_RUNNING_INSTANCE = 10
 
+class StatsCollector:
+    """Dedicated process to collect and serve stats"""
+    
+    def __init__(self):
+        self.manager = multiprocessing.Manager()
+        self.stats = self.manager.dict({
+            'instrument_count': 0,
+            'instruments_with_ticks': 0,
+            'ticks_processed': 0,
+            'uptime_seconds': 0,
+            'candles_created': 0,
+            'candles_completed': 0,
+            'last_update': time.time()
+        })
+        self.update_queue = self.manager.Queue()
+        self.stop_event = self.manager.Event()
+        self.process = None
+    
+    def start(self):
+        """Start the stats collector process"""
+        self.process = multiprocessing.Process(target=self._run)
+        self.process.daemon = True
+        self.process.start()
+    
+    def _run(self):
+        """Main collector loop"""
+        logger = default_logger()
+        logger.info("Stats collector started")
+        
+        while not self.stop_event.is_set():
+            try:
+                # Process any updates from the queue
+                while not self.update_queue.empty():
+                    update = self.update_queue.get_nowait()
+                    if isinstance(update, dict):
+                        for key, value in update.items():
+                            if key in self.stats:
+                                self.stats[key] = value
+                
+                # Update uptime
+                self.stats['uptime_seconds'] = time.time() - self.stats.get('start_time', time.time())
+                
+                time.sleep(1)
+                
+            except Exception as e:
+                logger.error(f"Stats collector error: {e}")
+    
+    def get_stats(self):
+        """Get current stats (safe to call from any process)"""
+        return dict(self.stats)
+    
+    def update(self, updates: dict):
+        """Send updates to the collector"""
+        try:
+            self.update_queue.put(updates)
+        except Exception:
+            pass
+    
+    def stop(self):
+        """Stop the collector"""
+        self.stop_event.set()
+        if self.process:
+            self.process.join(timeout=5)
 
 class PKTickOrchestrator:
     """Orchestrates PKTickBot and kite_ticks in separate processes"""
@@ -67,6 +130,8 @@ class PKTickOrchestrator:
         self.chat_id = chat_id
         self.bot_process = None
         self.kite_process = None
+        # Create stats collector
+        self.stats_collector = StatsCollector()
         self.mp_context = multiprocessing.get_context("spawn")
         self.manager = multiprocessing.Manager()
         self.shared_stats = self.manager.dict()
@@ -81,6 +146,8 @@ class PKTickOrchestrator:
         self.shared_stats['candles_completed'] = 0
         self.shared_stats['last_tick_time'] = 0
         self.shared_stats['start_time'] = time.time()
+        # For backward compatibility, provide a dict-like interface
+        self.shared_stats = self.stats_collector.stats
         
         logger = default_logger()
         logger.info(f"Orchestrator shared_stats created: {dict(self.shared_stats)}")
@@ -333,7 +400,7 @@ class PKTickOrchestrator:
         from PKDevTools.classes.log import default_logger
         logger = default_logger()
         logger.info("Starting PKTick Orchestrator...")
-
+        self.stats_collector.start()
         # Always start Telegram bot process
         self.bot_process = self.mp_context.Process(
             target=PKTickOrchestrator.run_telegram_bot, 
@@ -358,7 +425,7 @@ class PKTickOrchestrator:
             self.kite_process = self.mp_context.Process(
                 target=PKTickOrchestrator.run_kite_ticks, 
                 args=(self.bot_token, self.ticks_file_path, self.chat_id, 
-                      self.shared_stats, self.stats_queue, self.child_process_ref, 
+                      self.shared_stats, self.stats_collector.update_queue, self.child_process_ref, 
                       self.ws_stop_event, self.stop_queue), 
                 name="KiteTicksProcess"
             )
@@ -395,7 +462,7 @@ class PKTickOrchestrator:
         from PKDevTools.classes.log import default_logger
         logger = default_logger()
         logger.info("Stopping processes...")
-
+        self.stats_collector.stop()
         # Set WebSocket stop event if it exists
         if self.ws_stop_event:
             logger.info("Signaling WebSocket processes to stop...")
