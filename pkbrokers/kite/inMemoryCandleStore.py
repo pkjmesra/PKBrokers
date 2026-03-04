@@ -449,6 +449,7 @@ class InMemoryCandleStore:
                     else:
                         self._update_candle(instrument, interval, timestamp, price, incremental_volume, oi, is_daily=False)
                 
+                self.stats = self.get_stats()
                 self.stats['ticks_processed'] += 1
                 self.stats['last_tick_time'] = timestamp
                 # Debug - log every 1000 ticks
@@ -460,7 +461,7 @@ class InMemoryCandleStore:
                     self.shared_stats['ticks_processed'] = self.stats['ticks_processed']
                     self.shared_stats['last_tick_time'] = timestamp
                     self.shared_stats['instruments_with_ticks'] = self.stats.get('instruments_with_ticks', 0)
-                    self.shared_stats['instrument_count'] = self.stats.get('instrument_count', 0)
+                    self.shared_stats['instrument_count'] = len(self.instruments)
                     self.shared_stats['uptime_seconds'] = self.stats.get('uptime_seconds', 0)
             
             # Auto-persist check
