@@ -269,9 +269,7 @@ class JSONFileWriter:
         current_ohlcv["close"] = current_price
         current_ohlcv["volume"] = tick_data.get("day_volume", 0)
         current_ohlcv["timestamp"] = (
-            tick_data["timestamp"].isoformat()
-            if hasattr(tick_data["timestamp"], "isoformat")
-            else tick_data["timestamp"]
+            self.ensure_ist_datetime(tick_data["timestamp"]).isoformat()
         )
 
         # Update OI, buy_quantity, sell_quantity, prev_day_close
