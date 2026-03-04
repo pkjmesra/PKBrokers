@@ -459,6 +459,9 @@ class InMemoryCandleStore:
                 if hasattr(self, 'shared_stats') and self.shared_stats is not None:
                     self.shared_stats['ticks_processed'] = self.stats['ticks_processed']
                     self.shared_stats['last_tick_time'] = timestamp
+                    self.shared_stats['instruments_with_ticks'] = self.stats.get('instruments_with_ticks', 0)
+                    self.shared_stats['instrument_count'] = self.stats.get('instrument_count', 0)
+                    self.shared_stats['uptime_seconds'] = self.stats.get('uptime_seconds', 0)
             
             # Auto-persist check
             if self.auto_persist and (time.time() - self.last_persist_time) > self.persist_interval:
