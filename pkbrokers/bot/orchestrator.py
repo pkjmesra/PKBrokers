@@ -131,7 +131,7 @@ class PKTickOrchestrator:
         self.bot_process = None
         self.kite_process = None
         # Create stats collector
-        self.stats_collector = StatsCollector()
+        # self.stats_collector = StatsCollector()
         self.mp_context = multiprocessing.get_context("spawn")
         self.manager = multiprocessing.Manager()
         self.shared_stats = self.manager.dict()
@@ -146,8 +146,8 @@ class PKTickOrchestrator:
         self.shared_stats['candles_completed'] = 0
         self.shared_stats['last_tick_time'] = 0
         self.shared_stats['start_time'] = time.time()
-        # For backward compatibility, provide a dict-like interface
-        self.shared_stats = self.stats_collector.stats
+        # # For backward compatibility, provide a dict-like interface
+        # self.shared_stats = self.stats_collector.stats
         
         logger = default_logger()
         logger.info(f"Orchestrator shared_stats created: {dict(self.shared_stats)}")
@@ -400,7 +400,7 @@ class PKTickOrchestrator:
         from PKDevTools.classes.log import default_logger
         logger = default_logger()
         logger.info("Starting PKTick Orchestrator...")
-        self.stats_collector.start()
+        # self.stats_collector.start()
         # Always start Telegram bot process
         self.bot_process = self.mp_context.Process(
             target=PKTickOrchestrator.run_telegram_bot, 
@@ -425,7 +425,7 @@ class PKTickOrchestrator:
             self.kite_process = self.mp_context.Process(
                 target=PKTickOrchestrator.run_kite_ticks, 
                 args=(self.bot_token, self.ticks_file_path, self.chat_id, 
-                      self.shared_stats, self.stats_collector.update_queue, self.child_process_ref, 
+                      self.shared_stats, self.stats_queue, self.child_process_ref, 
                       self.ws_stop_event, self.stop_queue), 
                 name="KiteTicksProcess"
             )
@@ -462,7 +462,7 @@ class PKTickOrchestrator:
         from PKDevTools.classes.log import default_logger
         logger = default_logger()
         logger.info("Stopping processes...")
-        self.stats_collector.stop()
+        # self.stats_collector.stop()
         # Set WebSocket stop event if it exists
         if self.ws_stop_event:
             logger.info("Signaling WebSocket processes to stop...")
