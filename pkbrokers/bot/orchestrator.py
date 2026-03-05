@@ -343,6 +343,7 @@ class PKTickOrchestrator:
             def stats_sender():
                 last_send = time.time()
                 last_ticks_commit = time.time()
+                logger.info("stats_sender started successfully!")
                 while True:
                     time.sleep(30)  # Send updates every n seconds
                     try:
@@ -359,9 +360,12 @@ class PKTickOrchestrator:
                                 and (cur_ist.hour <= 9 and cur_ist.minute < 15)
                                 or PKDateUtilities.isTodayHoliday()
                             )
+                            logger.info(f"Checking if we should commit ticks: is_non_market_hour={is_non_market_hour}")
                             if not is_non_market_hour:
                                 last_ticks_commit = time.time()
                                 commit_ticks(file_name="ticks.json")
+                            else:
+                                break
                     except Exception as e:
                         logger.error(f"Error sending stats: {e}")
             threading.Thread(target=stats_sender, daemon=True).start()
