@@ -31,14 +31,12 @@ import sys
 import threading
 import time
 import pytz
-from zoneinfo import ZoneInfo  # Python 3.9+
+import fcntl
 
 # Define IST timezone once
-IST = pytz.timezone('Asia/Kolkata')  # Using pytz
-# OR for Python 3.9+:
-# IST = ZoneInfo('Asia/Kolkata')
+IST = pytz.timezone('Asia/Kolkata')
 
-from collections import defaultdict
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from queue import Empty, Queue
 
@@ -128,13 +126,15 @@ class JSONFileWriter:
     """Multiprocessing process to write ticks to JSON file with instrument_token as primary key"""
 
     def __init__(
-        self, json_file_path, max_queue_size=OPTIMAL_MAX_QUEUE_SIZE, log_level=0
+        self, json_file_path, max_queue_size=OPTIMAL_MAX_QUEUE_SIZE, log_level=0, writer_id=None
     ):
         # Set spawn context globally
         multiprocessing.set_start_method(
             "spawn" if sys.platform.startswith("darwin") else "spawn", force=True
         )
         self.json_file_path = json_file_path
+        self.writer_id = writer_id or f"writer_{os.getpid()}"
+        self.lock_file = json_file_path + ".lock"
         self.mp_context = multiprocessing.get_context(
             "spawn" if sys.platform.startswith("darwin") else "spawn"
         )
@@ -143,15 +143,82 @@ class JSONFileWriter:
         self.process = None
         self.kite_instruments = {}
         self.log_level = log_level
+        self._started = False
         self.setupLogger()
         self.logger = default_logger()
 
+    @contextmanager
+    def _file_lock(self):
+        """
+        Context manager for file locking using flock
+        Ensures only one process writes to the file at a time
+        """
+        lock_fd = None
+        try:
+            # Open lock file for writing (creates if doesn't exist)
+            lock_fd = open(self.lock_file, 'w')
+            # Acquire exclusive lock (blocks until acquired)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            self.logger.debug(f"Lock acquired by {self.writer_id}")
+            yield
+        except Exception as e:
+            self.logger.error(f"Error acquiring lock: {e}")
+            raise
+        finally:
+            if lock_fd:
+                try:
+                    # Release lock
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                    lock_fd.close()
+                    self.logger.debug(f"Lock released by {self.writer_id}")
+                except Exception as e:
+                    self.logger.error(f"Error releasing lock: {e}")
+
+    def _check_already_running(self):
+        """Check if another writer process is already running using PID file"""
+        pid_file = self.json_file_path + ".pid"
+        if os.path.exists(pid_file):
+            try:
+                with open(pid_file, 'r') as f:
+                    pid = int(f.read().strip())
+                # Check if process with this PID is still running
+                try:
+                    os.kill(pid, 0)  # Signal 0 just checks if process exists
+                    self.logger.warning(f"Another JSON writer process (PID: {pid}) is already running!")
+                    return True
+                except OSError:
+                    # Process not running, safe to start
+                    self.logger.info(f"Stale PID file found for PID {pid}, cleaning up")
+                    os.unlink(pid_file)
+            except (ValueError, IOError) as e:
+                self.logger.error(f"Error reading PID file: {e}")
+        return False
+
     def start(self, kite_instruments={}):
-        """Start the JSON writer process"""
+        """Start the JSON writer process only once"""
+        if self._started:
+            self.logger.warning("JSON writer already started, ignoring duplicate start")
+            return
+        
+        # Check if another instance is already running
+        if self._check_already_running():
+            self.logger.error("Cannot start - another JSON writer instance is running")
+            return
+        
+        self._started = True
         self.process = self.mp_context.Process(target=self._writer_loop)
         self.process.daemon = True
         self.kite_instruments = kite_instruments
         self.process.start()
+        
+        # Write PID file
+        try:
+            with open(self.json_file_path + ".pid", 'w') as f:
+                f.write(str(self.process.pid))
+        except Exception as e:
+            self.logger.error(f"Error writing PID file: {e}")
+        
+        self.logger.info(f"JSON writer started with PID: {self.process.pid}")
 
     def setupLogger(self):
         if self.log_level > 0:
@@ -164,21 +231,195 @@ class JSONFileWriter:
             filter=None,
         )
 
+    def _deduplicate_data(self, data):
+        """
+        Deduplicate data by keeping the latest entry for each instrument_token
+        based on last_updated timestamp
+        """
+        clean_data = {}
+        
+        for token, instrument_data in data.items():
+            token_str = str(token)
+            
+            if token_str in clean_data:
+                # Compare last_updated timestamps
+                existing = clean_data[token_str].get('last_updated', '1970-01-01T00:00:00+00:00')
+                new = instrument_data.get('last_updated', '1970-01-01T00:00:00+00:00')
+                
+                # Parse and compare timestamps
+                try:
+                    # Handle ISO format with timezone
+                    existing_dt = datetime.fromisoformat(existing.replace('Z', '+00:00'))
+                    new_dt = datetime.fromisoformat(new.replace('Z', '+00:00'))
+                    
+                    if new_dt > existing_dt:
+                        clean_data[token_str] = instrument_data
+                        self.logger.debug(f"Updated {token_str} with newer data")
+                except (ValueError, TypeError) as e:
+                    self.logger.debug(f"Error comparing timestamps for {token_str}: {e}")
+                    # If can't parse, keep the existing one
+                    pass
+            else:
+                clean_data[token_str] = instrument_data
+        
+        return clean_data
+
+    def _validate_json_structure(self, data):
+        """
+        Validate that data can be properly serialized to JSON and has no structural issues
+        
+        Returns:
+            tuple: (is_valid, validated_data, error_message)
+        """
+        try:
+            # Test serialization
+            json_str = json.dumps(data, default=str)
+            
+            # Test that it can be parsed back
+            parsed = json.loads(json_str)
+            
+            # Check for data loss during serialization
+            if len(parsed) != len(data):
+                self.logger.warning(f"Data loss detected: {len(data)} -> {len(parsed)}")
+                return False, parsed, "Data loss during serialization"
+            
+            # Validate each instrument has required fields
+            required_fields = ['instrument_token', 'trading_symbol', 'ohlcv', 'last_updated']
+            for token, instrument in parsed.items():
+                missing_fields = [f for f in required_fields if f not in instrument]
+                if missing_fields:
+                    self.logger.warning(f"Instrument {token} missing fields: {missing_fields}")
+                    return False, parsed, f"Missing required fields: {missing_fields}"
+                
+                # Validate ohlcv has required fields
+                ohlcv_fields = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
+                if 'ohlcv' in instrument:
+                    missing_ohlcv = [f for f in ohlcv_fields if f not in instrument['ohlcv']]
+                    if missing_ohlcv:
+                        self.logger.warning(f"Instrument {token} missing OHLCV fields: {missing_ohlcv}")
+                        return False, parsed, f"Missing OHLCV fields: {missing_ohlcv}"
+            
+            return True, parsed, None
+            
+        except (TypeError, ValueError, json.JSONDecodeError) as e:
+            self.logger.error(f"JSON validation failed: {e}")
+            return False, None, str(e)
+
+    def _write_atomic(self, data):
+        """
+        Write data to file atomically using a temporary file
+        """
+        temp_file = self.json_file_path + ".tmp." + self.writer_id
+        
+        try:
+            # Write to temporary file
+            with open(temp_file, "w", encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+                f.flush()
+                os.fsync(f.fileno())  # Ensure data is written to disk
+            
+            # Verify the temp file was written correctly
+            if not os.path.exists(temp_file) or os.path.getsize(temp_file) == 0:
+                raise IOError("Temporary file write failed")
+            
+            # Atomically replace the original file
+            os.replace(temp_file, self.json_file_path)
+            
+            self.logger.debug(f"Successfully wrote {len(data)} instruments to {self.json_file_path}")
+            
+        except Exception as e:
+            self.logger.error(f"Error in atomic write: {e}")
+            # Clean up temp file if it exists
+            try:
+                if os.path.exists(temp_file):
+                    os.unlink(temp_file)
+            except:
+                pass
+            raise
+
+    def _save_to_file(self, data):
+        """
+        Save data to JSON file with:
+        1. File locking to prevent concurrent writes
+        2. Deduplication to ensure unique instrument tokens
+        3. JSON validation to ensure data integrity
+        4. Atomic writes to prevent corruption
+        """
+        temp_file = None
+        try:
+            # Step 1: Convert defaultdict to regular dict if needed
+            if hasattr(data, 'default_factory'):
+                data_dict = dict(data)
+            else:
+                data_dict = data
+            
+            self.logger.debug(f"Processing {len(data_dict)} raw entries")
+            
+            # Step 2: Deduplicate data
+            deduped_data = self._deduplicate_data(data_dict)
+            self.logger.debug(f"After deduplication: {len(deduped_data)} unique instruments")
+            
+            # Step 3: Validate JSON structure
+            is_valid, validated_data, error_msg = self._validate_json_structure(deduped_data)
+            
+            if not is_valid:
+                self.logger.error(f"Data validation failed: {error_msg}")
+                if validated_data:
+                    # Try to salvage by using the parsed data
+                    self.logger.warning("Attempting to salvage by using parsed data")
+                    validated_data = self._deduplicate_data(validated_data)
+                else:
+                    # Can't salvage, don't save
+                    self.logger.error("Data is corrupted beyond repair, skipping save")
+                    return
+            
+            # Step 4: Acquire lock and write atomically
+            with self._file_lock():
+                self.logger.debug("Lock acquired, proceeding with atomic write")
+                self._write_atomic(validated_data)
+            
+            self.logger.info(f"✅ Successfully saved {len(validated_data)} unique instruments to {self.json_file_path}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error saving JSON file: {e}")
+            # Clean up temp file if it exists
+            try:
+                if temp_file and os.path.exists(temp_file):
+                    os.unlink(temp_file)
+            except:
+                pass
+
     def _writer_loop(self):
         """Main writer loop running in separate process"""
-
         self.setupLogger()
         self.logger = default_logger()
-        self.logger.info(f"JSON file writer started for {self.json_file_path}")
+        self.logger.info(f"JSON file writer [{self.writer_id}] started for {self.json_file_path}")
+        
         # Load existing data if file exists
-        data = defaultdict(dict)
+        data = {}
         if os.path.exists(self.json_file_path):
             try:
                 with open(self.json_file_path, "r") as f:
-                    data.update(json.load(f))
+                    loaded_data = json.load(f)
+                    data.update(loaded_data)
                 self.logger.info(
                     f"Loaded existing data from {self.json_file_path} with {len(data.keys())} instruments."
                 )
+            except json.JSONDecodeError as e:
+                self.logger.error(f"JSON decode error loading file: {e}")
+                # Try to salvage by reading as text and finding valid JSON
+                try:
+                    with open(self.json_file_path, "r") as f:
+                        content = f.read()
+                    # Look for valid JSON structure
+                    import re
+                    match = re.search(r'\{.*\}', content, re.DOTALL)
+                    if match:
+                        salvage_data = json.loads(match.group())
+                        data.update(salvage_data)
+                        self.logger.info(f"Salvaged {len(data)} instruments from corrupted file")
+                except:
+                    self.logger.error("Could not salvage data from corrupted file, starting fresh")
             except Exception as e:
                 self.logger.error(f"Error loading JSON file: {e}")
 
@@ -221,21 +462,21 @@ class JSONFileWriter:
 
     def _update_instrument_data(self, data, tick_data):
         """Update instrument data with latest tick information"""
-        instrument_token = tick_data["instrument_token"]
+        instrument_token = str(tick_data["instrument_token"])  # Ensure string key
 
         if instrument_token not in data:
             # Initialize new instrument entry
             try:
                 trading_symbol = "NA"
-                trading_symbol = self.kite_instruments[instrument_token].tradingsymbol
+                trading_symbol = self.kite_instruments[int(instrument_token)].tradingsymbol
             except BaseException:
-                if instrument_token in NIFTY_50:
+                if int(instrument_token) in NIFTY_50:
                     trading_symbol = "NIFTY 50"
-                elif instrument_token in BSE_SENSEX:
+                elif int(instrument_token) in BSE_SENSEX:
                     trading_symbol = "SENSEX"
                 pass
             data[instrument_token] = {
-                "instrument_token": instrument_token,
+                "instrument_token": int(instrument_token),
                 "trading_symbol": trading_symbol,
                 "ohlcv": {
                     "open": tick_data["open_price"],
@@ -250,7 +491,7 @@ class JSONFileWriter:
                 "sell_quantity": tick_data["sell_quantity"],
                 "oi": tick_data["oi"],
                 "market_depth": tick_data.get("depth", {"bid": [], "ask": []}),
-                "last_updated": ensure_ist_datetime(tick_data.get("timestamp",datetime.now(IST))).isoformat(),  #datetime.now(IST).isoformat(),  # Direct IST now
+                "last_updated": ensure_ist_datetime(tick_data.get("timestamp", datetime.now(IST))).isoformat(),
                 "tick_count": 0,
             }
 
@@ -267,9 +508,7 @@ class JSONFileWriter:
         # Update close and volume
         current_ohlcv["close"] = current_price
         current_ohlcv["volume"] = tick_data.get("day_volume", 0)
-        current_ohlcv["timestamp"] = (
-            ensure_ist_datetime(tick_data["timestamp"]).isoformat()
-        )
+        current_ohlcv["timestamp"] = ensure_ist_datetime(tick_data["timestamp"]).isoformat()
 
         # Update OI, buy_quantity, sell_quantity, prev_day_close
         data[instrument_token]["oi"] = tick_data["oi"]
@@ -282,22 +521,8 @@ class JSONFileWriter:
             data[instrument_token]["market_depth"] = tick_data["depth"]
 
         # Update metadata
-        data[instrument_token]["last_updated"] = ensure_ist_datetime(tick_data.get("timestamp",datetime.now(IST))).isoformat() #datetime.now(IST).isoformat()
+        data[instrument_token]["last_updated"] = ensure_ist_datetime(tick_data.get("timestamp", datetime.now(IST))).isoformat()
         data[instrument_token]["tick_count"] += 1
-
-    def _save_to_file(self, data):
-        """Save data to JSON file atomically"""
-        try:
-            # Write to temporary file first
-            temp_file = self.json_file_path + ".tmp"
-            with open(temp_file, "w") as f:
-                json.dump(dict(data), f, indent=2, default=str)
-
-            # Atomically replace the original file
-            os.replace(temp_file, self.json_file_path)
-
-        except Exception as e:
-            self.logger.error(f"Error saving JSON file: {e}")
 
     def add_tick(self, tick_data):
         """Add tick data to the write queue"""
@@ -313,8 +538,16 @@ class JSONFileWriter:
         self.stop_event.set()
         if self.process and self.process.is_alive():
             self.process.join(timeout=5)
+        
+        # Clean up PID file
+        try:
+            pid_file = self.json_file_path + ".pid"
+            if os.path.exists(pid_file):
+                os.unlink(pid_file)
+        except Exception as e:
+            self.logger.error(f"Error cleaning up PID file: {e}")
+        
         self.logger.info("JSON writer stopped")
-
 
 class KiteTokenWatcher:
     """

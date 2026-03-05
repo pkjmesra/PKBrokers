@@ -339,32 +339,32 @@ class PKTickOrchestrator:
                 shared_stats['candles_completed'] = 0
                 shared_stats['last_tick_time'] = 0
                 shared_stats['start_time'] = time.time()
-                # Start a thread to send stats updates to the queue
-                def stats_sender():
-                    last_send = time.time()
-                    last_ticks_commit = time.time()
-                    while True:
-                        time.sleep(30)  # Send updates every n seconds
-                        try:
-                            # Only send if stats have changed
-                            if time.time() - last_send >= 30:
-                                stats_queue.put(shared_stats.copy())
-                                last_send = time.time()
-                            if time.time() - last_ticks_commit >= 60:
-                                from pkbrokers.kite.examples.pkkite import commit_ticks
-                                from PKDevTools.classes.PKDateUtilities import PKDateUtilities
-                                cur_ist = PKDateUtilities.currentDateTime()
-                                is_non_market_hour = (
-                                    (cur_ist.hour >= 15 and cur_ist.minute > 30)
-                                    and (cur_ist.hour <= 9 and cur_ist.minute < 15)
-                                    or PKDateUtilities.isTodayHoliday()
-                                )
-                                if not is_non_market_hour:
-                                    last_ticks_commit = time.time()
-                                    commit_ticks(file_name="ticks.json")
-                        except Exception as e:
-                            logger.error(f"Error sending stats: {e}")
-                threading.Thread(target=stats_sender, daemon=True).start()
+            # Start a thread to send stats updates to the queue
+            def stats_sender():
+                last_send = time.time()
+                last_ticks_commit = time.time()
+                while True:
+                    time.sleep(30)  # Send updates every n seconds
+                    try:
+                        # Only send if stats have changed
+                        if time.time() - last_send >= 30:
+                            stats_queue.put(shared_stats.copy())
+                            last_send = time.time()
+                        if time.time() - last_ticks_commit >= 60:
+                            from pkbrokers.kite.examples.pkkite import commit_ticks
+                            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+                            cur_ist = PKDateUtilities.currentDateTime()
+                            is_non_market_hour = (
+                                (cur_ist.hour >= 15 and cur_ist.minute > 30)
+                                and (cur_ist.hour <= 9 and cur_ist.minute < 15)
+                                or PKDateUtilities.isTodayHoliday()
+                            )
+                            if not is_non_market_hour:
+                                last_ticks_commit = time.time()
+                                commit_ticks(file_name="ticks.json")
+                    except Exception as e:
+                        logger.error(f"Error sending stats: {e}")
+            threading.Thread(target=stats_sender, daemon=True).start()
             kite_ticks(stop_queue=stop_queue, ws_stop_event=ws_stop_event, shared_stats=shared_stats, child_process_ref=child_process_ref)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")
