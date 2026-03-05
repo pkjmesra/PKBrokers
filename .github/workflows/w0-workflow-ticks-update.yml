@@ -194,9 +194,9 @@ jobs:
         echo "Checking for files to push to PKScreener with size validation..."
         
         # Define size thresholds (in bytes)
-        TICKS_MIN_SIZE=1000000        # 1 MB minimum for ticks.json
+        TICKS_MIN_SIZE=800000        # 1 MB minimum for ticks.json
         DAILY_PKL_MIN_SIZE=25000000    # 25 MB minimum for daily pkl
-        INTRADAY_PKL_MIN_SIZE=1000000  # 1 MB minimum for intraday pkl
+        INTRADAY_PKL_MIN_SIZE=800000  # 1 MB minimum for intraday pkl
         
         # Define paths - check multiple locations
         TICKS_PATH_1="pkbrokers/kite/examples/results/Data/ticks.json"

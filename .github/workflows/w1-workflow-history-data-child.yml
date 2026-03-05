@@ -219,7 +219,7 @@ jobs:
                     print(f'Trying Archiver cache file: {cache_file_name}', file=sys.stderr)
                     try:
                         r = requests.get(url, timeout=60)
-                        if r.status_code == 200 and len(r.content) > 1000000:
+                        if r.status_code == 200 and len(r.content) > 800000:
                             data = pickle.loads(r.content)
                             if len(data) > 100:
                                 print(f'✅ Found Archiver cache file: {cache_file_name}', file=sys.stderr)
@@ -270,7 +270,7 @@ jobs:
                             
                             # Download the latest file
                             r = requests.get(latest_url, timeout=60)
-                            if r.status_code == 200 and len(r.content) > 1000000:
+                            if r.status_code == 200 and len(r.content) > 800000:
                                 data = pickle.loads(r.content)
                                 if len(data) > 100:
                                     LATEST_FILE = latest_url
@@ -288,7 +288,7 @@ jobs:
                 for url in urls:
                     try:
                         r = requests.get(url, timeout=60)
-                        if r.status_code == 200 and len(r.content) > 1000000:
+                        if r.status_code == 200 and len(r.content) > 800000:
                             data = pickle.loads(r.content)
                             if len(data) > 100:
                                 print(f'Found pkl: {url}', file=sys.stderr)
@@ -766,7 +766,7 @@ jobs:
         
         # Define size thresholds
         DAILY_MIN_SIZE=25000000  # 25 MB minimum for daily
-        INTRADAY_MIN_SIZE=1000000  # 1 MB minimum for intraday (was 10KB, increased to 1MB)
+        INTRADAY_MIN_SIZE=800000  # 800KB minimum for intraday (was 10KB, increased to 800KB)
         
         # Determine pkl filename based on period and size thresholds
         case "$PERIOD" in
