@@ -236,7 +236,7 @@ class DataSharingManager:
             _holiday_cache = {"dates": holiday_dates}
             _holiday_cache_date = today
             
-            self.logger.info(f"Loaded {len(holiday_dates)} holidays for {current_year}")
+            self.logger.debug(f"Loaded {len(holiday_dates)} holidays for {current_year}")
             return holiday_dates
             
         except Exception as e:

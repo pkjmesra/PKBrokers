@@ -166,7 +166,7 @@ class WebSocketProcess:
 
         if self.websocket_index == 0:
             # Subscribe to indices first
-            self.logger.info(
+            self.logger.debug(
                 f"Websocket_index:{self.websocket_index}: Subscribing for indices"
             )
 
@@ -200,7 +200,7 @@ class WebSocketProcess:
             subscribe_msg = {"a": "subscribe", "v": self.token_batch}
             mode_msg = {"a": "mode", "v": ["full", self.token_batch]}
 
-            self.logger.info(
+            self.logger.debug(
                 f"Websocket_index:{self.websocket_index}: Batch size: {len(self.token_batch)}. Sending subscribe message: {subscribe_msg}"
             )
             await websocket.send(json.dumps(subscribe_msg))
@@ -223,7 +223,7 @@ class WebSocketProcess:
                     compression="deflate",
                     max_size=2**17,
                 ) as websocket:
-                    self.logger.info(
+                    self.logger.debug(
                         f"Websocket_index:{self.websocket_index}: Connected successfully"
                     )
                     self.websocket = websocket
@@ -376,7 +376,7 @@ class WebSocketProcess:
         self.setupLogger()
         self.logger = default_logger()
         self.logger.setLevel(self.log_level)
-        self.logger.info(
+        self.logger.debug(
             f"Websocket_index:{self.websocket_index}: Starting WebSocket process."
         )
         asyncio.run(self._connect_websocket())
@@ -448,7 +448,7 @@ def websocket_process_worker(args):
             except BaseException:
                 pass
         from PKDevTools.classes.log import default_logger
-        default_logger().info(f"WebSocket process {websocket_index} stopped")
+        default_logger().warning(f"WebSocket process {websocket_index} stopped")
 
 
 class ZerodhaWebSocketClient:
@@ -465,7 +465,7 @@ class ZerodhaWebSocketClient:
         self.api_key = api_key
         self.logger = default_logger()
         self.ws_stop_event = ws_stop_event  # Add this
-        self.logger.info(f"ZerodhaWebSocketClient initialized with ws_stop_event: {ws_stop_event}")
+        self.logger.debug(f"ZerodhaWebSocketClient initialized with ws_stop_event: {ws_stop_event}")
 
         # Use consistent multiprocessing context
         self.mp_context = multiprocessing.get_context("spawn")
@@ -652,7 +652,7 @@ class ZerodhaWebSocketClient:
             while not self.stop_event.is_set():
                 # Check if external stop requested
                 if self.ws_stop_event and self.ws_stop_event.is_set():
-                    self.logger.info("External stop requested, shutting down WebSocket processes...")
+                    self.logger.warning("External stop requested, shutting down WebSocket processes...")
                     self.stop_event.set()
                     break
                     
@@ -682,7 +682,7 @@ class ZerodhaWebSocketClient:
     def start(self):
         """Start WebSocket client with multiprocessing."""
         self.logger.debug("Starting Zerodha WebSocket client with multiprocessing")
-        self.logger.info(f"ws_stop_event in start(): {self.ws_stop_event}")
+        self.logger.debug(f"ws_stop_event in start(): {self.ws_stop_event}")
 
         # Build tokens if not provided
         if len(self.token_batches) == 0:
@@ -692,7 +692,7 @@ class ZerodhaWebSocketClient:
         num_batches = len(self.token_batches)
         total_instruments = sum(len(batch) for batch in self.token_batches)
 
-        self.logger.info(
+        self.logger.debug(
             f"Starting {num_batches} WebSocket processes for {total_instruments} instruments"
         )
 
@@ -708,7 +708,7 @@ class ZerodhaWebSocketClient:
         process_args = []
         for i in range(num_batches):
             token_batch = self.token_batches[i]
-            self.logger.info(f"Batch {i} will handle {len(token_batch)} instruments")
+            self.logger.debug(f"Batch {i} will handle {len(token_batch)} instruments")
             
             # Create base args tuple (without ws_stop_event)
             base_args = (
@@ -732,7 +732,7 @@ class ZerodhaWebSocketClient:
         for base_args in process_args:
             # Create full args with ws_stop_event and wrap in a single-element tuple
             full_args = base_args + (self.ws_stop_event,)
-            self.logger.info(f"Creating process with ws_stop_event: {self.ws_stop_event}")
+            self.logger.debug(f"Creating process with ws_stop_event: {self.ws_stop_event}")
             p = self.mp_context.Process(
                 target=websocket_process_worker, 
                 args=(full_args,)  # Note the comma - this is a tuple containing the full_args tuple

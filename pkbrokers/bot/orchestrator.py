@@ -150,7 +150,7 @@ class PKTickOrchestrator:
         # self.shared_stats = self.stats_collector.stats
         
         logger = default_logger()
-        logger.info(f"Orchestrator shared_stats created: {dict(self.shared_stats)}")
+        logger.debug(f"Orchestrator shared_stats created: {dict(self.shared_stats)}")
         self.child_process_ref = self.mp_context.Value("i", 0)
         self.stop_queue = self.manager.Queue()
         self.ws_stop_event = self.manager.Event()
@@ -217,7 +217,7 @@ class PKTickOrchestrator:
         self.child_process_ref.value = pid
         from PKDevTools.classes.log import default_logger
         logger = default_logger()
-        logger.info(f"Child process PID set to: {pid}")
+        logger.debug(f"Child process PID set to: {pid}")
 
     def is_market_hours(self):
         """Check if current time is within NSE market hours (9:15 AM to 3:30 PM IST)"""
@@ -295,8 +295,8 @@ class PKTickOrchestrator:
         setupLogger()
         logger = log.default_logger()
         # Debug - log the shared_stats at entry
-        logger.info(f"run_kite_ticks received shared_stats: {dict(shared_stats) if shared_stats else 'None'}")
-        logger.info(f"shared_stats type: {type(shared_stats)}")
+        logger.debug(f"run_kite_ticks received shared_stats: {dict(shared_stats) if shared_stats else 'None'}")
+        logger.debug(f"shared_stats type: {type(shared_stats)}")
 
         # Initialize environment variables
         from PKDevTools.classes import Archiver
@@ -324,7 +324,7 @@ class PKTickOrchestrator:
             
             from pkbrokers.kite.examples.pkkite import kite_ticks
             
-            logger.info(f"Starting kite_ticks process with ws_stop_event: {ws_stop_event}")
+            logger.debug(f"Starting kite_ticks process with ws_stop_event: {ws_stop_event}")
             # If shared_stats is None, try to recreate it
             if shared_stats is None:
                 logger.warning("shared_stats is None, creating new manager dict")
@@ -446,13 +446,13 @@ class PKTickOrchestrator:
                       self.ws_stop_event, self.stop_queue), 
                 name="KiteTicksProcess"
             )
-            logger.info(f"start: Orchestrator shared_stats id: {id(self.shared_stats)}")
-            logger.info(f"start: Orchestrator shared_stats type: {type(self.shared_stats)}")
+            logger.debug(f"start: Orchestrator shared_stats id: {id(self.shared_stats)}")
+            logger.debug(f"start: Orchestrator shared_stats type: {type(self.shared_stats)}")
             self.kite_process.daemon = False
             self.kite_process.start()
             logger.info("Kite ticks process started (market hours)")
         else:
-            logger.info(
+            logger.warning(
                 "Kite ticks process not started (outside market hours or holiday)"
             )
             kite_running = self.kite_process and self.kite_process.is_alive()
@@ -478,11 +478,11 @@ class PKTickOrchestrator:
         """Stop both processes gracefully with proper resource cleanup"""
         from PKDevTools.classes.log import default_logger
         logger = default_logger()
-        logger.info("Stopping processes...")
+        logger.warning("Stopping processes...")
         # self.stats_collector.stop()
         # Set WebSocket stop event if it exists
         if self.ws_stop_event:
-            logger.info("Signaling WebSocket processes to stop...")
+            logger.warning("Signaling WebSocket processes to stop...")
             self.ws_stop_event.set()
 
         # Try to stop watcher through queue for a graceful shutdown
@@ -502,7 +502,7 @@ class PKTickOrchestrator:
         for process, name in processes:
             if process and process.is_alive():
                 try:
-                    logger.info(f"Stopping {name} (PID: {process.pid})...")
+                    logger.warning(f"Stopping {name} (PID: {process.pid})...")
                     # Give more time for kite_process to shutdown gracefully
                     join_timeout = 10
                     kill_timeout = 5
@@ -571,14 +571,14 @@ class PKTickOrchestrator:
                 args=(self.bot_token, self.ticks_file_path, self.chat_id, self.shared_stats, self.child_process_ref, self.ws_stop_event, self.stop_queue), 
                 name="KiteTicksProcess"
             )
-            logger.info(f"restart_kite_process_if_needed: Orchestrator shared_stats id: {id(self.shared_stats)}")
-            logger.info(f"restart_kite_process_if_needed: Orchestrator shared_stats type: {type(self.shared_stats)}")
+            logger.debug(f"restart_kite_process_if_needed: Orchestrator shared_stats id: {id(self.shared_stats)}")
+            logger.debug(f"restart_kite_process_if_needed: Orchestrator shared_stats type: {type(self.shared_stats)}")
             self.kite_process.daemon = False
             self.kite_process.start()
 
         # If kite is running but shouldn't be, stop it
         elif not current_should_run and kite_running:
-            logger.info("Market hours ended - stopping kite process")
+            logger.warning("Market hours ended - stopping kite process")
             self.kite_process.terminate()
             self.kite_process.join(timeout=5)
             self.kite_process = None
@@ -623,7 +623,7 @@ class PKTickOrchestrator:
 
                 # Check if shutdown was requested (e.g., due to conflict)
                 if self.shutdown_requested:
-                    logger.info(
+                    logger.warning(
                         "Shutdown requested due to conflict. Stopping processes..."
                     )
                     break
@@ -725,7 +725,7 @@ class PKTickOrchestrator:
                             PKGitHubSecretsManager,
                         )
 
-                        logger.info(
+                        logger.debug(
                             f"CI_PAT length:{len(PKEnvironment().CI_PAT)}. Value: {PKEnvironment().CI_PAT[:10]}"
                         )
                         secrets_manager = PKGitHubSecretsManager(
@@ -749,7 +749,7 @@ class PKTickOrchestrator:
             self.stop()
 
         except KeyboardInterrupt:
-            logger.info("Keyboard interrupt received")
+            logger.warning("Keyboard interrupt received")
         except Exception as e:
             logger.error(f"Unexpected error in orchestrator: {e}")
         finally:
@@ -774,7 +774,7 @@ class PKTickOrchestrator:
         """Handle shutdown signals"""
         from PKDevTools.classes.log import default_logger
         logger = default_logger()
-        logger.info(f"Received signal {signum}. Shutting down gracefully...")
+        logger.warning(f"Received signal {signum}. Shutting down gracefully...")
         self.shutdown_requested = True
 
     def get_consumer(self):
@@ -834,7 +834,7 @@ def orchestrate():
             except Exception as commit_e:
                 logger.debug(f"Error committing received data: {commit_e}")
         else:
-            logger.info("No running instance or no data received, will try GitHub fallback")
+            logger.warning("No running instance or no data received, will try GitHub fallback")
             
             # Try GitHub fallback
             success_daily, daily_path = data_mgr.download_from_github(file_type="daily")
@@ -889,7 +889,7 @@ def orchestrate():
                 except Exception as load_err:
                     logger.warning(f"Error loading pkl into candle store: {load_err}")
             else:
-                logger.info("No fallback data available, starting fresh")
+                logger.warning("No fallback data available, starting fresh")
                 
     except Exception as e:
         logger.warning(f"Could not get data from running instance or GitHub: {e}")

@@ -350,7 +350,7 @@ class DatabaseWriterProcess:
                 # Log statistics periodically
                 if current_time - last_stats_time > 30:
                     queue_size = self.data_queue.qsize()
-                    self.logger.info(
+                    self.logger.debug(
                         f"Database writer processed {insert_count} ticks, "
                         f"queue size: {queue_size}, "
                         f"batch size: {len(batch)}"
@@ -395,7 +395,7 @@ class DatabaseWriterProcess:
         except BaseException:
             pass
 
-        self.logger.info("Database writer process stopped")
+        self.logger.warning("Database writer process stopped")
 
     def _process_tick_data(self, tick_data):
         """Process tick data for database insertion"""

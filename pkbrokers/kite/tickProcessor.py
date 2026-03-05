@@ -154,7 +154,7 @@ class TickProcessor:
                         self.instruments_map[int(token)] = symbol
                         self.candle_store.register_instrument(int(token), symbol)
                 
-                self.logger.info(f"Loaded {len(self.instruments_map)} instrument mappings")
+                self.logger.debug(f"Loaded {len(self.instruments_map)} instrument mappings")
         except Exception as e:
             self.logger.warning(f"Could not load instrument mappings: {e}")
     
@@ -177,14 +177,14 @@ class TickProcessor:
             name="tick_processor"
         )
         self._processor_thread.start()
-        self.logger.info("Tick processor started")
+        self.logger.debug("Tick processor started")
     
     def stop(self):
         """Stop the tick processing thread."""
         self._stop_event.set()
         if self._processor_thread is not None:
             self._processor_thread.join(timeout=5)
-        self.logger.info("Tick processor stopped")
+        self.logger.debug("Tick processor stopped")
     
     def _process_loop(self):
         """Main processing loop."""

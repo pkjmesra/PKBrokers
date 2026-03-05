@@ -201,20 +201,20 @@ class KiteAuthenticator:
             with env_update_context(os.path.join(os.getcwd(), ".env.dev")) as updater:
                 updater.update_values({"KTOKEN": access_token})
                 updater.reload_env()
-                default_logger().info(
+                default_logger().debug(
                     f"Token updated in os.environment: {PKEnvironment().KTOKEN}"
                 )
             try:
                 from PKDevTools.classes.GitHubSecrets import PKGitHubSecretsManager
 
-                default_logger().info(
+                default_logger().debug(
                     f"CI_PAT length:{len(PKEnvironment().CI_PAT)}. Value: {PKEnvironment().CI_PAT[:10]}"
                 )
                 gh_manager = PKGitHubSecretsManager(
                     repo="pkbrokers", token=PKEnvironment().CI_PAT
                 )
                 gh_manager.create_or_update_secret("KTOKEN", PKEnvironment().KTOKEN)
-                default_logger().info(
+                default_logger().debug(
                     f"Token updated in GitHub secrets:{prev_token != PKEnvironment().KTOKEN}"
                 )
             except Exception as e:

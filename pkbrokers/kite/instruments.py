@@ -790,7 +790,7 @@ class KiteInstruments:
                 self._init_db(drop_table=True)
                 instruments = self.fetch_instruments() if force_fetch else instruments
                 self._store_instruments(instruments)
-                self.logger.info(
+                self.logger.debug(
                     f"Synced NSE Instruments in: {'%.3f' % (time.time() - begin_time)} sec."
                 )
             return True

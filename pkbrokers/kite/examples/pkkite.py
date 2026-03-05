@@ -151,13 +151,13 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False, ws_stop_event=None
     from PKDevTools.classes.log import default_logger
     logger = default_logger()
     
-    logger.info(f"kite_ticks received shared_stats: {dict(shared_stats) if shared_stats else 'None'}")
-    logger.info(f"shared_stats type: {type(shared_stats)}")
+    logger.debug(f"kite_ticks received shared_stats: {dict(shared_stats) if shared_stats else 'None'}")
+    logger.debug(f"shared_stats type: {type(shared_stats)}")
     print(f"kite_ticks received ws_stop_event: {ws_stop_event}")
     # Test if we can modify it
     if shared_stats is not None:
         shared_stats['kite_ticks_received'] = True
-        logger.info(f"Updated shared_stats in kite_ticks: {dict(shared_stats)}")
+        logger.debug(f"Updated shared_stats in kite_ticks: {dict(shared_stats)}")
     else:
         logger.warning("shared_stats is None, creating local dict")
         shared_stats = {
@@ -331,11 +331,11 @@ def commit_ticks(file_name="ticks.json", branch_name="main"):
 
     try:
         tick_file = os.path.join(Archiver.get_user_data_dir(), file_name)
-        default_logger().info(f"File being committed:{tick_file}")
+        default_logger().debug(f"File being committed:{tick_file}")
         if os.path.exists(tick_file):
             Committer.execOSCommand(f"git add {tick_file} -f >/dev/null 2>&1")
             commit_path = f"-A '{tick_file}'"
-            default_logger().info(
+            default_logger().debug(
                 f"File being committed:{os.path.basename(tick_file)} in branch:{branch_name}"
             )
             Committer.commitTempOutcomes(
@@ -377,7 +377,7 @@ def save_optimized_format(ticks_data, output_dir=None):
         with gzip.open(output_path, "wt", encoding="utf-8") as f:
             json.dump(ticks_data, f, separators=(",", ":"))  # Compact JSON
         
-        default_logger().info(f"Saved optimized format: {output_path}")
+        default_logger().debug(f"Saved optimized format: {output_path}")
         return output_path
     except Exception as e:
         default_logger().error(f"Error saving optimized format: {e}")
@@ -393,7 +393,7 @@ def remote_bot_auth_token():
         access_token = orchestrate_consumer(command="/token")
         # If token is None or empty, try refresh_token to generate a new one
         if not access_token or access_token == "None" or len(str(access_token).strip()) < 10:
-            default_logger().info("Token is None or invalid, requesting /refresh_token...")
+            default_logger().warning("Token is None or invalid, requesting /refresh_token...")
             access_token = orchestrate_consumer(command="/refresh_token")
         _save_update_environment(access_token=access_token)
     except Exception as e:
@@ -501,14 +501,14 @@ def pkkite():
                 default_logger().warning(f"Could not get pkl files from running instance: {pkl_error}")
                 
                 # Try GitHub fallback
-                default_logger().info("Trying GitHub fallback for pkl files...")
+                default_logger().warning("Trying GitHub fallback for pkl files...")
                 success_daily, _ = data_mgr.download_from_github(file_type="daily")
                 success_intraday, _ = data_mgr.download_from_github(file_type="intraday")
                 
                 if success_daily or success_intraday:
                     default_logger().info("Downloaded data from GitHub actions-data-download branch")
                 else:
-                    default_logger().info("No fallback data available, starting fresh")
+                    default_logger().warning("No fallback data available, starting fresh")
 
             cur_ist = PKDateUtilities.currentDateTime()
             is_non_market_hour = (

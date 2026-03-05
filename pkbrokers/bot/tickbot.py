@@ -270,7 +270,7 @@ class PKTickBot:
                             filename=f"{file_name}.zip",
                             caption=f"📈 Latest market data (compressed)\nOriginal: {file_size:,} bytes → Zipped: {zip_size:,} bytes",
                         )
-                    self.logger.info(f"Sent zipped {file_name} file to user")
+                    self.logger.debug(f"Sent zipped {file_name} file to user")
 
                 elif zip_size > 0:
                     # File too large, need to split
@@ -584,7 +584,7 @@ class PKTickBot:
                     candle_store = get_candle_store()
                     
                     # Export pkl files with current data
-                    logger.info("Exporting pkl files before shutdown...")
+                    logger.warning("Exporting pkl files before shutdown...")
                     data_mgr.export_daily_candles_to_pkl(candle_store)
                     data_mgr.export_intraday_candles_to_pkl(candle_store)
                     

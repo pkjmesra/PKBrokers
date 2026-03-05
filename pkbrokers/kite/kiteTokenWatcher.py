@@ -188,7 +188,7 @@ class JSONFileWriter:
                     return True
                 except OSError:
                     # Process not running, safe to start
-                    self.logger.info(f"Stale PID file found for PID {pid}, cleaning up")
+                    self.logger.debug(f"Stale PID file found for PID {pid}, cleaning up")
                     os.unlink(pid_file)
             except (ValueError, IOError) as e:
                 self.logger.error(f"Error reading PID file: {e}")
@@ -218,7 +218,7 @@ class JSONFileWriter:
         except Exception as e:
             self.logger.error(f"Error writing PID file: {e}")
         
-        self.logger.info(f"JSON writer started with PID: {self.process.pid}")
+        self.logger.debug(f"JSON writer started with PID: {self.process.pid}")
 
     def setupLogger(self):
         if self.log_level > 0:
@@ -393,7 +393,7 @@ class JSONFileWriter:
         """Main writer loop running in separate process"""
         self.setupLogger()
         self.logger = default_logger()
-        self.logger.info(f"JSON file writer [{self.writer_id}] started for {self.json_file_path}")
+        self.logger.debug(f"JSON file writer [{self.writer_id}] started for {self.json_file_path}")
         
         # Load existing data if file exists
         data = {}
@@ -417,7 +417,7 @@ class JSONFileWriter:
                     if match:
                         salvage_data = json.loads(match.group())
                         data.update(salvage_data)
-                        self.logger.info(f"Salvaged {len(data)} instruments from corrupted file")
+                        self.logger.warning(f"Salvaged {len(data)} instruments from corrupted file")
                 except:
                     self.logger.error("Could not salvage data from corrupted file, starting fresh")
             except Exception as e:
@@ -547,7 +547,7 @@ class JSONFileWriter:
         except Exception as e:
             self.logger.error(f"Error cleaning up PID file: {e}")
         
-        self.logger.info("JSON writer stopped")
+        self.logger.warning("JSON writer stopped")
 
 class KiteTokenWatcher:
     """
@@ -621,8 +621,8 @@ class KiteTokenWatcher:
         self.client = client
         self.logger = default_logger()
         self._db_instance = None
-        self.logger.info(f"KiteTokenWatcher.__init__ received shared_stats: {dict(shared_stats) if shared_stats else 'None'}")
-        self.logger.info(f"shared_stats type: {type(shared_stats)}")
+        self.logger.debug(f"KiteTokenWatcher.__init__ received shared_stats: {dict(shared_stats) if shared_stats else 'None'}")
+        self.logger.debug(f"shared_stats type: {type(shared_stats)}")
 
         # JSON file writer
         self.json_output_path = json_output_path or os.path.join(
@@ -659,14 +659,14 @@ class KiteTokenWatcher:
             
             try:
                 self.shared_stats['watcher_initialized'] = True
-                self.logger.info(f"Updated shared_stats in watcher: {dict(self.shared_stats)}")
+                self.logger.debug(f"Updated shared_stats in watcher: {dict(self.shared_stats)}")
             except Exception as e:
                 self.logger.error(f"Could not update shared_stats: {e}")
 
     def set_ws_stop_event(self, event):
         """Set the stop event for WebSocket processes"""
         self.ws_stop_event = event
-        self.logger.info(f"ws_stop_event set to: {event}")
+        self.logger.debug(f"ws_stop_event set to: {event}")
         
     def set_stop_queue(self, stop_queue):
         """
@@ -690,7 +690,7 @@ class KiteTokenWatcher:
                     if self._stop_queue and not self._stop_queue.empty():
                         signal = self._stop_queue.get(timeout=0.1)
                         if signal == "STOP":
-                            self.logger.info(
+                            self.logger.warning(
                                 "Received stop signal from launcher/orchestrator"
                             )
                             self.stop()
@@ -757,7 +757,7 @@ class KiteTokenWatcher:
             try:
                 equities = kite.get_equities(column_names="instrument_token")
                 tokens = kite.get_instrument_tokens(equities=equities)
-                self.logger.info(f"Got {len(tokens)} tokens from Turso DB")
+                self.logger.debug(f"Got {len(tokens)} tokens from Turso DB")
             except Exception as db_error:
                 # Fallback: Use cached instruments or fetch from Kite API directly
                 self.logger.warning(f"Could not get equities from DB, using fallback: {db_error}")
@@ -766,13 +766,13 @@ class KiteTokenWatcher:
             # CRITICAL FIX: Fallback logic runs whenever tokens is empty (0)
             # This handles BOTH exception case AND when DB returns empty list gracefully
             if len(tokens) == 0:
-                self.logger.info("No tokens from DB, applying fallback strategies...")
+                self.logger.warning("No tokens from DB, applying fallback strategies...")
                 
                 # Fallback 0: First check if _kite_instruments was populated by sync_instruments
                 # This happens when sync_instruments(force_fetch=True) fetches from Zerodha API
                 if self._kite_instruments and len(self._kite_instruments) > 0:
                     tokens = [int(token) for token in self._kite_instruments.keys()]
-                    self.logger.info(f"Using {len(tokens)} tokens from already-loaded kite_instruments")
+                    self.logger.debug(f"Using {len(tokens)} tokens from already-loaded kite_instruments")
                     # Instruments are already registered in candle store above, so skip fallbacks
                 
                 # Fallback 1: Fetch NSE equity symbols from PKScreener and map to Kite tokens
@@ -780,14 +780,14 @@ class KiteTokenWatcher:
                     try:
                         import pandas as pd
                         import requests
-                        self.logger.info("Fetching NSE equity symbols from PKScreener GitHub...")
+                        self.logger.debug("Fetching NSE equity symbols from PKScreener GitHub...")
                         equity_csv_url = "https://raw.githubusercontent.com/pkjmesra/PKScreener/main/results/Indices/EQUITY_L.csv"
                         response = requests.get(equity_csv_url, timeout=30)
                         if response.status_code == 200:
                             from io import StringIO
                             equity_df = pd.read_csv(StringIO(response.text))
                             nse_symbols = equity_df['SYMBOL'].str.strip().tolist()
-                            self.logger.info(f"Fetched {len(nse_symbols)} NSE symbols from PKScreener")
+                            self.logger.debug(f"Fetched {len(nse_symbols)} NSE symbols from PKScreener")
                             
                             # Now fetch Kite instruments to map symbols to tokens
                             kite_url = "https://api.kite.trade/instruments/NSE"
@@ -800,7 +800,7 @@ class KiteTokenWatcher:
                                     (kite_df['tradingsymbol'].isin(nse_symbols))
                                 ]
                                 tokens = eq_df['instrument_token'].tolist()
-                                self.logger.info(f"Mapped {len(tokens)} NSE symbols to Kite instrument tokens")
+                                self.logger.debug(f"Mapped {len(tokens)} NSE symbols to Kite instrument tokens")
                                 # Register instruments with candle store
                                 for _, row in eq_df.iterrows():
                                     self._candle_store.register_instrument(
@@ -822,7 +822,7 @@ class KiteTokenWatcher:
                         instruments_df = hist.get_instruments(exchange="NSE")
                         if instruments_df is not None and len(instruments_df) > 0:
                             tokens = instruments_df[instruments_df['segment'] == 'NSE']['instrument_token'].tolist()
-                            self.logger.info(f"Fetched {len(tokens)} tokens from InstrumentHistory API")
+                            self.logger.debug(f"Fetched {len(tokens)} tokens from InstrumentHistory API")
                             for _, row in instruments_df[instruments_df['segment'] == 'NSE'].iterrows():
                                 self._candle_store.register_instrument(
                                     int(row['instrument_token']), 
@@ -836,7 +836,7 @@ class KiteTokenWatcher:
                     try:
                         import pandas as pd
                         import requests
-                        self.logger.info("Fetching ALL instruments directly from Zerodha CSV...")
+                        self.logger.debug("Fetching ALL instruments directly from Zerodha CSV...")
                         nse_url = "https://api.kite.trade/instruments/NSE"
                         response = requests.get(nse_url, timeout=60)
                         if response.status_code == 200:
@@ -845,7 +845,7 @@ class KiteTokenWatcher:
                             # Filter for EQ (equity) segment only
                             eq_df = df[df['segment'] == 'NSE']
                             tokens = eq_df['instrument_token'].tolist()
-                            self.logger.info(f"Fetched {len(tokens)} NSE tokens from Zerodha CSV")
+                            self.logger.debug(f"Fetched {len(tokens)} NSE tokens from Zerodha CSV")
                             for _, row in eq_df.iterrows():
                                 self._candle_store.register_instrument(
                                     int(row['instrument_token']),
@@ -877,7 +877,7 @@ class KiteTokenWatcher:
 
         # Initialize WebSocket client if not provided
         if self.client is None:
-            self.logger.info(f"Creating WebSocket client with ws_stop_event: {self.ws_stop_event}")
+            self.logger.debug(f"Creating WebSocket client with ws_stop_event: {self.ws_stop_event}")
             self.client = ZerodhaWebSocketClient(
                 enctoken=os.environ.get(
                     "KTOKEN", local_secrets.get("KTOKEN", "You need your Kite token")
@@ -1372,7 +1372,7 @@ class KiteTokenWatcher:
         if self.client:
             try:
                 self.client.stop()
-                self.logger.info("WebSocket client stopped")
+                self.logger.warning("WebSocket client stopped")
             except Exception as e:
                 self.logger.error(f"Error stopping client: {e}")
         

@@ -170,7 +170,7 @@ class HighPerformanceTursoWriter:
                 conn = sqlite3.connect(local_db_path, check_same_thread=False)
                 conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute("PRAGMA synchronous=NORMAL")
-                self.logger.info(f"Writer {self.writer_id}: Using local SQLite fallback: {local_db_path}")
+                self.logger.debug(f"Writer {self.writer_id}: Using local SQLite fallback: {local_db_path}")
             except Exception as local_error:
                 self.logger.error(
                     f"Writer {self.writer_id}: Local fallback also failed: {local_error}"
@@ -196,7 +196,7 @@ class HighPerformanceTursoWriter:
         # Statistics
         insert_count = 0
         last_stat_time = time.time()
-        self.logger.info(f"Writer {self.writer_id}: Connected to Turso successfully")
+        self.logger.debug(f"Writer {self.writer_id}: Connected to Turso successfully")
         while not self.stop_event.is_set() or not self.data_queue.empty():
             try:
                 # Get multiple items at once to reduce queue overhead
@@ -504,7 +504,7 @@ class ThreadSafeDatabase:
         self.setupLogger()
         self.logger = default_logger()
         self.logger.setLevel(self.log_level)
-        self.logger.info("Starting ThreadSafeDatabase logger...")
+        self.logger.debug("Starting ThreadSafeDatabase logger...")
         self.writer_index = 0  # For round-robin distribution
         # For Turso: use dedicated writer processes
         self.turso_writers = []
@@ -676,7 +676,7 @@ class ThreadSafeDatabase:
 
     def _start_turso_writers(self):
         """Start multiple writer processes for Turso"""
-        self.logger.info(f"Starting {self.num_writers} Turso writers...")
+        self.logger.debug(f"Starting {self.num_writers} Turso writers...")
 
         for i in range(self.num_writers):
             writer = HighPerformanceTursoWriter(
@@ -693,7 +693,7 @@ class ThreadSafeDatabase:
             self.turso_writers.append(writer)
             time.sleep(TURSO_WRITER_STAGGERED_INTERVAL_SEC)  # Stagger startup
 
-        self.logger.info("All Turso writers started")
+        self.logger.debug("All Turso writers started")
 
     def insert_ticks(self, ticks: List[Dict[str, Any]]):
         """Distribute ticks to writers using round-robin"""

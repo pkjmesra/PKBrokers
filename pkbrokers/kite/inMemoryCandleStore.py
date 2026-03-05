@@ -454,9 +454,9 @@ class InMemoryCandleStore:
                 self.stats['last_tick_time'] = timestamp
                 # Debug - log every 1000 ticks
                 if self.stats['ticks_processed'] % 1000 == 0:
-                    self.logger.info(f"Candle store processed {self.stats['ticks_processed']} ticks")
+                    self.logger.debug(f"Candle store processed {self.stats['ticks_processed']} ticks")
                     if hasattr(self, 'shared_stats') and self.shared_stats is not None:
-                        self.logger.info(f"Shared stats after update: {dict(self.shared_stats)}")
+                        self.logger.debug(f"Shared stats after update: {dict(self.shared_stats)}")
                 if hasattr(self, 'shared_stats') and self.shared_stats is not None:
                     self.shared_stats['ticks_processed'] = self.stats['ticks_processed']
                     self.shared_stats['last_tick_time'] = timestamp
@@ -857,7 +857,7 @@ class InMemoryCandleStore:
                 pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
             
             self.last_persist_time = time.time()
-            self.logger.info(f"Persisted candle store: {len(self.instruments)} instruments")
+            self.logger.debug(f"Persisted candle store: {len(self.instruments)} instruments")
             
             # Also save ticks.json
             self.save_ticks_json()
@@ -868,7 +868,7 @@ class InMemoryCandleStore:
     def _load_from_disk(self):
         """Load store data from disk."""
         if not os.path.exists(CANDLE_STORE_FILE):
-            self.logger.info("No existing candle store file found")
+            self.logger.warning("No existing candle store file found")
             return
         
         try:
@@ -1037,7 +1037,7 @@ class InMemoryCandleStore:
         from PKDevTools.classes.log import default_logger
         logger = default_logger()
         
-        logger.info(f"update_shared_stats called with: {shared_stats}")
+        logger.debug(f"update_shared_stats called with: {shared_stats}")
         self.shared_stats = shared_stats
         
         # If we have existing stats, copy them to the new shared_stats
@@ -1045,7 +1045,7 @@ class InMemoryCandleStore:
             try:
                 for key, value in self.stats.items():
                     self.shared_stats[key] = value
-                logger.info(f"Copied existing stats to new shared_stats: {dict(self.shared_stats)}")
+                logger.debug(f"Copied existing stats to new shared_stats: {dict(self.shared_stats)}")
             except Exception as e:
                 logger.error(f"Error copying stats: {e}")
 
@@ -1064,12 +1064,12 @@ def get_candle_store(shared_stats: dict = None) -> InMemoryCandleStore:
     
     # If instance doesn't exist, create it
     if _candle_store_instance is None:
-        logger.info(f"Creating new candle store instance with shared_stats: {shared_stats}")
+        logger.debug(f"Creating new candle store instance with shared_stats: {shared_stats}")
         _candle_store_instance = InMemoryCandleStore(shared_stats=shared_stats)
     else:
         # If instance exists but we have new shared_stats, update it
         if shared_stats is not None:
-            logger.info(f"Updating existing candle store with new shared_stats")
+            logger.debug(f"Updating existing candle store with new shared_stats")
             _candle_store_instance.update_shared_stats(shared_stats)
     
     return _candle_store_instance

@@ -1554,7 +1554,7 @@ class InstrumentDataManager:
             trading_instruments = self._get_trading_intruments()
 
             if not trading_instruments:
-                self.logger.info("No trading instruments found to fetch data")
+                self.logger.warning("No trading instruments found to fetch data")
                 return None
 
             # Format dates
@@ -1992,7 +1992,7 @@ class InstrumentDataManager:
             self.logger.info("Pickle file found on GitHub, downloading...")
             self._load_pickle_from_github()
         else:
-            self.logger.info("No pickle file found locally or remotely")
+            self.logger.warning("No pickle file found locally or remotely")
 
     def execute(self, fetch_kite=False, skip_db=False) -> bool:
         """
