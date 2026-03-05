@@ -1057,30 +1057,65 @@ class DataSharingManager:
             _ , cache_file_name = Archiver.afterMarketStockDataExists()
             today_suffix = cache_file_name.replace(".pkl", "").replace("stock_data_", "") #datetime.now(KOLKATA_TZ).strftime('%d%m%Y')
             
-            # Check for daily pkl
+            # Define minimum file sizes (in bytes)
+            DAILY_PKL_MIN_SIZE = 25 * 1024 * 1024  # 25 MB
+            INTRADAY_PKL_MIN_SIZE = 1 * 1024 * 1024  # 1 MB
+            
+            # Check for daily pkl with size validation
             daily_pkl = self.get_daily_pkl_path()
             if os.path.exists(daily_pkl):
-                files_to_commit.append((daily_pkl, f"actions-data-download/stock_data_{today_suffix}.pkl"))
-                files_to_commit.append((daily_pkl, "actions-data-download/daily_candles.pkl"))
+                file_size = os.path.getsize(daily_pkl)
+                if file_size >= DAILY_PKL_MIN_SIZE:
+                    files_to_commit.append((daily_pkl, f"actions-data-download/stock_data_{today_suffix}.pkl"))
+                    files_to_commit.append((daily_pkl, "actions-data-download/daily_candles.pkl"))
+                    self.logger.debug(f"Daily pkl size: {file_size/(1024*1024):.2f} MB - ✓ Valid")
+                else:
+                    self.logger.warning(f"Daily pkl size ({file_size/(1024*1024):.2f} MB) below minimum ({DAILY_PKL_MIN_SIZE/(1024*1024):.0f} MB) - skipping")
             
-            # Check for intraday pkl
+            # Check for intraday pkl with size validation
             intraday_pkl = self.get_intraday_pkl_path()
             if os.path.exists(intraday_pkl):
-                files_to_commit.append((intraday_pkl, f"actions-data-download/intraday_stock_data_{today_suffix}.pkl"))
-                files_to_commit.append((intraday_pkl, "actions-data-download/intraday_1m_candles.pkl"))
+                file_size = os.path.getsize(intraday_pkl)
+                if file_size >= INTRADAY_PKL_MIN_SIZE:
+                    files_to_commit.append((intraday_pkl, f"actions-data-download/intraday_stock_data_{today_suffix}.pkl"))
+                    files_to_commit.append((intraday_pkl, "actions-data-download/intraday_1m_candles.pkl"))
+                    self.logger.debug(f"Intraday pkl size: {file_size/(1024*1024):.2f} MB - ✓ Valid")
+                else:
+                    self.logger.warning(f"Intraday pkl size ({file_size/(1024*1024):.2f} MB) below minimum ({INTRADAY_PKL_MIN_SIZE/(1024*1024):.0f} MB) - skipping")
             
-            # Check for date-suffixed pkl files
+            # Check for date-suffixed daily pkl with size validation
             dated_daily = os.path.join(self.data_dir, f"stock_data_{today_suffix}.pkl")
             if os.path.exists(dated_daily) and dated_daily != daily_pkl:
-                files_to_commit.append((dated_daily, f"actions-data-download/stock_data_{today_suffix}.pkl"))
+                file_size = os.path.getsize(dated_daily)
+                if file_size >= DAILY_PKL_MIN_SIZE:
+                    files_to_commit.append((dated_daily, f"actions-data-download/stock_data_{today_suffix}.pkl"))
+                    self.logger.debug(f"Dated daily pkl size: {file_size/(1024*1024):.2f} MB - ✓ Valid")
+                else:
+                    self.logger.warning(f"Dated daily pkl size ({file_size/(1024*1024):.2f} MB) below minimum ({DAILY_PKL_MIN_SIZE/(1024*1024):.0f} MB) - skipping")
             
+            # Check for date-suffixed intraday pkl with size validation
             dated_intraday = os.path.join(self.data_dir, f"intraday_stock_data_{today_suffix}.pkl")
             if os.path.exists(dated_intraday) and dated_intraday != intraday_pkl:
-                files_to_commit.append((dated_intraday, f"actions-data-download/intraday_stock_data_{today_suffix}.pkl"))
+                file_size = os.path.getsize(dated_intraday)
+                if file_size >= INTRADAY_PKL_MIN_SIZE:
+                    files_to_commit.append((dated_intraday, f"actions-data-download/intraday_stock_data_{today_suffix}.pkl"))
+                    self.logger.debug(f"Dated intraday pkl size: {file_size/(1024*1024):.2f} MB - ✓ Valid")
+                else:
+                    self.logger.warning(f"Dated intraday pkl size ({file_size/(1024*1024):.2f} MB) below minimum ({INTRADAY_PKL_MIN_SIZE/(1024*1024):.0f} MB) - skipping")
             
             if not files_to_commit:
-                self.logger.warning("No pkl files to commit")
+                self.logger.warning("No valid pkl files to commit (all files below size thresholds or missing)")
                 return False
+            
+            # Remove duplicate remote paths (keep first occurrence)
+            unique_files = {}
+            for local_path, remote_path in files_to_commit:
+                if remote_path not in unique_files:
+                    unique_files[remote_path] = local_path
+            
+            files_to_commit = [(local_path, remote_path) for remote_path, local_path in unique_files.items()]
+            
+            self.logger.info(f"Preparing to commit {len(files_to_commit)} unique files after size validation")
             
             # Use GitHub API to commit to PKScreener repo
             headers = {
@@ -1094,6 +1129,17 @@ class DataSharingManager:
             committed_files = []
             for local_path, remote_path in files_to_commit:
                 try:
+                    # Double-check file size before committing
+                    file_size = os.path.getsize(local_path)
+                    is_daily = 'daily' in remote_path or 'stock_data' in remote_path
+                    is_intraday = 'intraday' in remote_path
+                    
+                    min_size = DAILY_PKL_MIN_SIZE if is_daily else INTRADAY_PKL_MIN_SIZE
+                    
+                    if file_size < min_size:
+                        self.logger.warning(f"File {remote_path} size ({file_size/(1024*1024):.2f} MB) dropped below minimum during processing - skipping")
+                        continue
+                    
                     # Read file content
                     with open(local_path, 'rb') as f:
                         content = base64.b64encode(f.read()).decode('utf-8')
@@ -1104,6 +1150,8 @@ class DataSharingManager:
                     resp = requests.get(get_url, headers=headers)
                     if resp.status_code == 200:
                         sha = resp.json().get('sha')
+                    elif resp.status_code != 404:
+                        self.logger.warning(f"Unexpected response checking {remote_path}: {resp.status_code}")
                     
                     # Create/update file
                     put_url = f"{api_base}/contents/{remote_path}"
@@ -1120,7 +1168,7 @@ class DataSharingManager:
                     resp = requests.put(put_url, headers=headers, json=data)
                     
                     if resp.status_code in [200, 201]:
-                        self.logger.info(f"✅ Committed {remote_path} to PKScreener/{branch_name}")
+                        self.logger.info(f"✅ Committed {remote_path} ({file_size/(1024*1024):.2f} MB) to PKScreener/{branch_name}")
                         committed_files.append(remote_path)
                     else:
                         self.logger.warning(f"Failed to commit {remote_path}: {resp.status_code} {resp.text[:200]}")
@@ -1130,9 +1178,10 @@ class DataSharingManager:
             
             if committed_files:
                 self.last_commit_time = datetime.now(KOLKATA_TZ)
-                self.logger.info(f"Successfully committed {len(committed_files)} files to PKScreener")
+                self.logger.info(f"✅ Successfully committed {len(committed_files)} files to PKScreener")
                 return True
             
+            self.logger.warning("No files were successfully committed")
             return False
             
         except Exception as e:

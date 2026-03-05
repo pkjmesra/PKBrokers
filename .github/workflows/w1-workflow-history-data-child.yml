@@ -38,7 +38,8 @@
 # UPDATED BEHAVIOR:
 # - Market hours check (9:15 AM - 3:30 PM IST, non-holiday): Merges ticks.json data
 # - Outside market hours or holidays: Commits PKL file as-is without merging ticks
-# - PKL file size validation: Ensures daily files are >= 25MB
+# - PKL file size validation: Ensures daily files are >= 25MB, intraday files >= 1MB
+# - instrument_history.db validation: Ensures zipped file is >= 10MB and <= 100MB
 # - Uses cache_file_name from Archiver for date instead of current date
 # - instrument_history.db is zipped before commit to stay under 100MB limit
 # - PKL commit uses local files only (no GitHub download)
@@ -412,42 +413,65 @@ jobs:
             # Download the zip file
             curl -L -o "$DATED_INSTRUMENTS_ZIP" "$FILE_URL"
             
-            # Unzip it directly into results/Data/ as instrument_history.db
-            # Assuming the zip contains the .db file, possibly with the dated name or a generic one.
-            # We extract and force rename/move to the target location.
-            unzip -o "$DATED_INSTRUMENTS_ZIP" -d temp_instrument_dir/
+            # Check zip file size
+            ZIP_SIZE=$(stat -c%s "$DATED_INSTRUMENTS_ZIP" 2>/dev/null || stat -f%z "$DATED_INSTRUMENTS_ZIP")
+            MIN_ZIP_SIZE=10000000  # 10 MB minimum for instrument_history.db.zip
             
-            # Find the extracted .db file (it might have the dated name or a generic one)
-            EXTRACTED_DB_FILE=$(find temp_instrument_dir -name "*.db" | head -1)
-            
-            if [ -f "$EXTRACTED_DB_FILE" ]; then
-                mv "$EXTRACTED_DB_FILE" "results/Data/instrument_history.db"
-                echo "✅ Successfully placed instrument_history.db in results/Data/"
+            if [ "$ZIP_SIZE" -lt "$MIN_ZIP_SIZE" ]; then
+                echo "⚠️ Downloaded zip file too small: $ZIP_SIZE bytes (minimum $MIN_ZIP_SIZE bytes). Proceeding with pkkite.py..."
+                rm -f "$DATED_INSTRUMENTS_ZIP"
+                # Fall through to pkkite logic
             else
-                echo "⚠️ Could not find .db file inside the downloaded zip."
-                # Fallback: remove potentially incomplete extraction
+                echo "✅ Zip file size: $ZIP_SIZE bytes - Valid"
+                
+                # Unzip it directly into results/Data/ as instrument_history.db
+                # Assuming the zip contains the .db file, possibly with the dated name or a generic one.
+                # We extract and force rename/move to the target location.
+                unzip -o "$DATED_INSTRUMENTS_ZIP" -d temp_instrument_dir/
+                
+                # Find the extracted .db file (it might have the dated name or a generic one)
+                EXTRACTED_DB_FILE=$(find temp_instrument_dir -name "*.db" | head -1)
+                
+                if [ -f "$EXTRACTED_DB_FILE" ]; then
+                    DB_SIZE=$(stat -c%s "$EXTRACTED_DB_FILE" 2>/dev/null || stat -f%z "$EXTRACTED_DB_FILE")
+                    MIN_DB_SIZE=50000000  # 50 MB minimum for uncompressed instrument_history.db
+                    
+                    if [ "$DB_SIZE" -lt "$MIN_DB_SIZE" ]; then
+                        echo "⚠️ Extracted database too small: $DB_SIZE bytes (minimum $MIN_DB_SIZE bytes). Proceeding with pkkite.py..."
+                    else
+                        echo "✅ Database size: $DB_SIZE bytes - Valid"
+                        mv "$EXTRACTED_DB_FILE" "results/Data/instrument_history.db"
+                        echo "✅ Successfully placed instrument_history.db in results/Data/"
+                    fi
+                else
+                    echo "⚠️ Could not find .db file inside the downloaded zip."
+                    # Fallback: remove potentially incomplete extraction
+                    # rm -rf temp_instrument_dir
+                    # We will fall through to the pkkite logic below
+                fi
+                
+                # Clean up
                 rm -rf temp_instrument_dir
-                # We will fall through to the pkkite logic below
-            fi
-            
-            # Clean up
-            rm -rf temp_instrument_dir
-            rm -f "$DATED_INSTRUMENTS_ZIP"
-            
-            # If we successfully got the DB, we might not need to run pkkite for the main history.
-            # However, pkkite might also generate other files. The original step only ran pkkite.
-            # To strictly follow the optimization, we skip pkkite only if the DB was successfully placed.
-            if [ -f "results/Data/instrument_history.db" ]; then
-                echo "Skipping pkkite.py run as today's instrument_history.db is already available."
-                exit 0
-            else
-                echo "Proceeding to run pkkite.py as fallback."
+                rm -f "$DATED_INSTRUMENTS_ZIP"
+                
+                # If we successfully got the DB, we might not need to run pkkite for the main history.
+                if [ -f "results/Data/instrument_history.db" ]; then
+                    DB_SIZE=$(stat -c%s "results/Data/instrument_history.db" 2>/dev/null || stat -f%z "results/Data/instrument_history.db")
+                    if [ "$DB_SIZE" -ge 50000000 ]; then
+                        echo "Skipping pkkite.py run as today's instrument_history.db is already available and valid."
+                        exit 0
+                    else
+                        echo "Database size ($DB_SIZE bytes) below minimum. Proceeding with pkkite.py as fallback."
+                    fi
+                else
+                    echo "Proceeding to run pkkite.py as fallback."
+                fi
             fi
         else
             echo "ℹ️ No existing instrument history zip found (HTTP $HTTP_STATUS). Running pkkite.py..."
         fi
 
-        # --- Original logic (runs only if download failed or file didn't exist) ---
+        # --- Original logic (runs only if download failed or file didn't exist or was invalid) ---
         # Use calculated offset from previous step if available
         OFFSET=${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 0 }}
         echo "Running pkkite with --history=${{ inputs.period }} --pastoffset=$OFFSET"
@@ -455,14 +479,20 @@ jobs:
         python pkkite.py --history=${{ inputs.period }} --pastoffset=$OFFSET --verbose
 
     - name: Find and commit instrument_history.db to PKScreener actions-data-download
-      # UPDATED STEP: Commit instrument_history.db with date suffix, zip it to stay under 100MB limit
+      # UPDATED STEP: Commit instrument_history.db with date suffix and size validation
       # This file is critical for token-to-symbol mapping in subsequent steps
       # Renames to instrument_history_YYYYMMDD.db, zips it, and removes older instrument_history_*.db.zip files
+      # Validates both DB file size (>=50MB) and zip file size (>=10MB, <=100MB)
       env:
         CI_PAT: ${{ secrets.CI_PAT }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         cd pkbrokers/kite/examples/
+        
+        # Define size thresholds
+        MIN_DB_SIZE=50000000  # 50 MB minimum for uncompressed instrument_history.db
+        MIN_ZIP_SIZE=10000000  # 10 MB minimum for zipped file
+        MAX_ZIP_SIZE=95000000  # 95 MB maximum to stay under GitHub's 100MB limit
         
         # First, get the target date using the same logic as the pkl commit step
         echo "Getting target date from Archiver..."
@@ -512,6 +542,13 @@ jobs:
           exit 0
         fi
         
+        # Validate database size
+        if [ "$DB_SIZE" -lt "$MIN_DB_SIZE" ]; then
+          echo "⚠️ Database size ($DB_SIZE bytes) below minimum required ($MIN_DB_SIZE bytes). Skipping commit."
+          exit 0
+        fi
+        echo "✅ Database size validation passed: $DB_SIZE bytes"
+        
         # Clone PKScreener actions-data-download branch
         git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
         cd pkscreener-data
@@ -526,17 +563,30 @@ jobs:
         mkdir -p actions-data-download
         cp "../$INSTRUMENTS_DB_PATH" "actions-data-download/$DATED_INSTRUMENTS_FILE"
         
-        # Zip the file (go into directory to avoid path in zip)
+        # Zip the file with maximum compression
         cd actions-data-download
         zip -9 "$DATED_INSTRUMENTS_ZIP" "$DATED_INSTRUMENTS_FILE"
         cd ..
         
+        # Check zip file size
+        ZIP_SIZE=$(stat -c%s "actions-data-download/$DATED_INSTRUMENTS_ZIP" 2>/dev/null || stat -f%z "actions-data-download/$DATED_INSTRUMENTS_ZIP")
+        
+        if [ "$ZIP_SIZE" -lt "$MIN_ZIP_SIZE" ]; then
+          echo "⚠️ Zipped file too small: $ZIP_SIZE bytes (minimum $MIN_ZIP_SIZE bytes). Skipping commit."
+          rm -f "actions-data-download/$DATED_INSTRUMENTS_FILE" "actions-data-download/$DATED_INSTRUMENTS_ZIP"
+          exit 0
+        fi
+        
+        if [ "$ZIP_SIZE" -gt "$MAX_ZIP_SIZE" ]; then
+          echo "⚠️ Zipped file too large: $ZIP_SIZE bytes (maximum $MAX_ZIP_SIZE bytes). Skipping commit."
+          rm -f "actions-data-download/$DATED_INSTRUMENTS_FILE" "actions-data-download/$DATED_INSTRUMENTS_ZIP"
+          exit 0
+        fi
+        
+        echo "✅ Created valid zipped instrument_history.db: $DATED_INSTRUMENTS_ZIP ($(($ZIP_SIZE/1024/1024)) MB)"
+        
         # Remove the uncompressed file (keep only zip)
         rm -f "actions-data-download/$DATED_INSTRUMENTS_FILE"
-        
-        # Show zip file size
-        ZIP_SIZE=$(stat -c%s "actions-data-download/$DATED_INSTRUMENTS_ZIP" 2>/dev/null || stat -f%z "actions-data-download/$DATED_INSTRUMENTS_ZIP")
-        echo "✅ Created zipped instrument_history.db: $DATED_INSTRUMENTS_ZIP ($(($ZIP_SIZE/1024/1024)) MB)"
         
         # Delete any older instrument_history_*.db.zip files (except the current one)
         echo "Removing older instrument_history_*.db.zip files..."
@@ -561,7 +611,7 @@ jobs:
         git diff --staged --name-status
         
         if ! git diff --staged --quiet; then
-          git commit -m "Update instrument_history.db to $DATED_INSTRUMENTS_ZIP and cleanup old versions [skip ci]"
+          git commit -m "Update instrument_history.db to $DATED_INSTRUMENTS_ZIP ($(($ZIP_SIZE/1024/1024)) MB) and cleanup old versions [skip ci]"
           
           # Retry push with rebase if needed
           for i in 1 2 3; do
@@ -658,8 +708,10 @@ jobs:
         echo "Generated pkl files:"
         ls -la results/Data/*.pkl 2>/dev/null || echo "No pkl files found"
 
-    - name: Commit updated pkl file to PKScreener actions-data-download
-      # FIXED STEP: Handle case when pkscreener-data directory doesn't exist
+    - name: Commit updated pkl file to PKScreener actions-data-download with size validation
+      # UPDATED STEP: Commit pkl files with size validation
+      # Daily files: >= 25MB
+      # Intraday files: >= 1MB
       env:
         CI_PAT: ${{ secrets.CI_PAT }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -712,44 +764,41 @@ jobs:
         echo "Period: $PERIOD"
         echo "Target date: $TARGET_DATE"
         
-        # Determine pkl filename based on period
-        # day -> stock_data_DDMMYYYY.pkl
-        # minute (1-min) -> intraday_stock_data_DDMMYYYY.pkl
-        # 5minute -> intraday_stock_data_DDMMYYYY_5min.pkl
-        # 10minute -> intraday_stock_data_DDMMYYYY_10min.pkl
-        # 30minute -> intraday_stock_data_DDMMYYYY_30min.pkl
-        # 60minute -> intraday_stock_data_DDMMYYYY_60min.pkl
+        # Define size thresholds
+        DAILY_MIN_SIZE=25000000  # 25 MB minimum for daily
+        INTRADAY_MIN_SIZE=1000000  # 1 MB minimum for intraday (was 10KB, increased to 1MB)
         
+        # Determine pkl filename based on period and size thresholds
         case "$PERIOD" in
             "day")
                 TARGET_FILE="stock_data_${TARGET_DATE}.pkl"
                 GENERIC_FILE="daily_candles.pkl"
-                MIN_SIZE=25000000  # 25 MB minimum for daily
+                MIN_SIZE=$DAILY_MIN_SIZE
                 ;;
             "minute")
                 TARGET_FILE="intraday_stock_data_${TARGET_DATE}.pkl"
                 GENERIC_FILE="intraday_1m_candles.pkl"
-                MIN_SIZE=10000  # 10 KB minimum for intraday
+                MIN_SIZE=$INTRADAY_MIN_SIZE
                 ;;
             "5minute")
                 TARGET_FILE="intraday_stock_data_${TARGET_DATE}_5min.pkl"
                 GENERIC_FILE="intraday_5m_candles.pkl"
-                MIN_SIZE=10000
+                MIN_SIZE=$INTRADAY_MIN_SIZE
                 ;;
             "10minute")
                 TARGET_FILE="intraday_stock_data_${TARGET_DATE}_10min.pkl"
                 GENERIC_FILE="intraday_10m_candles.pkl"
-                MIN_SIZE=10000
+                MIN_SIZE=$INTRADAY_MIN_SIZE
                 ;;
             "30minute")
                 TARGET_FILE="intraday_stock_data_${TARGET_DATE}_30min.pkl"
                 GENERIC_FILE="intraday_30m_candles.pkl"
-                MIN_SIZE=10000
+                MIN_SIZE=$INTRADAY_MIN_SIZE
                 ;;
             "60minute")
                 TARGET_FILE="intraday_stock_data_${TARGET_DATE}_60min.pkl"
                 GENERIC_FILE="intraday_60m_candles.pkl"
-                MIN_SIZE=10000
+                MIN_SIZE=$INTRADAY_MIN_SIZE
                 ;;
             *)
                 echo "Unknown period: $PERIOD, skipping pkl commit"
@@ -759,109 +808,105 @@ jobs:
         
         echo "Target file: $TARGET_FILE"
         echo "Generic file: $GENERIC_FILE"
-        echo "Minimum size required: $MIN_SIZE bytes"
+        echo "Minimum size required: $MIN_SIZE bytes ($(($MIN_SIZE/1024/1024)) MB)"
         
         # List available files using absolute path
         echo "Files in $RESULTS_DATA_DIR:"
         ls -la "$RESULTS_DATA_DIR" 2>/dev/null || echo "Directory not found"
         
         FILES_COPIED=0
+        COMMIT_NEEDED=false
+        
+        # Function to validate and copy pkl file
+        validate_and_copy() {
+            local src_file=$1
+            local dst_name=$2
+            
+            if [ -f "$src_file" ]; then
+                local file_size=$(stat -c%s "$src_file" 2>/dev/null || stat -f%z "$src_file")
+                if [ "$file_size" -gt "$MIN_SIZE" ]; then
+                    echo "✅ Found valid $PERIOD pkl: $src_file ($(($file_size/1024/1024)) MB)"
+                    cp "$src_file" "actions-data-download/$dst_name"
+                    FILES_COPIED=$((FILES_COPIED + 1))
+                    COMMIT_NEEDED=true
+                    return 0
+                else
+                    echo "⚠️ File too small (needs >$(($MIN_SIZE/1024/1024)) MB): $src_file ($(($file_size/1024/1024)) MB)"
+                    return 1
+                fi
+            fi
+            return 1
+        }
         
         if [ "$PERIOD" = "day" ]; then
-            # Use absolute path to find pkl files
+            # For day period, look for both daily and intraday pkl files
+            # First, try to find daily pkl
+            DAILY_FOUND=false
+            
             for PKL_FILE in "$RESULTS_DATA_DIR"/stock_data_*.pkl "$RESULTS_DATA_DIR"/daily_candles.pkl; do
-              if [ -f "$PKL_FILE" ]; then
-                PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
-                if [ "$PKL_SIZE" -gt "$MIN_SIZE" ]; then
-                  echo "✅ Found valid local daily pkl: $PKL_FILE ($PKL_SIZE bytes)"
-                  cp "$PKL_FILE" "actions-data-download/$TARGET_FILE"
-                  cp "$PKL_FILE" "actions-data-download/$GENERIC_FILE"
-                  FILES_COPIED=$((FILES_COPIED + 1))
-                  
-                  # Commit and push (rest of the code remains same)
-                  git config user.name "github-actions[bot]"
-                  git config user.email "actions@github.com"
-                  
-                  # Remove any .db files that may have been accidentally copied
-                  rm -f actions-data-download/instrument_history_*.db 2>/dev/null || true
-                  
-                  # Only add pkl and json files
-                  git add -f actions-data-download/*.pkl 2>/dev/null || true
-                  git add -f actions-data-download/*.json 2>/dev/null || true
-                  
-                  echo "Files to be committed:"
-                  git diff --staged --name-only
-                  
-                  if ! git diff --staged --quiet; then
-                    git commit -m "Update $TARGET_FILE from history download - $TARGET_DATE [period: $PERIOD]"
-                    
-                    for i in 1 2 3; do
-                      if git push; then
-                        echo "✅ Successfully committed updated pkl files to PKScreener actions-data-download"
-                        break
-                      else
-                        echo "Push failed, attempt $i, pulling and retrying..."
-                        git pull --rebase origin actions-data-download || true
-                        sleep 2
-                      fi
-                    done
-                  else
-                    echo "No changes to commit"
-                  fi
-                  break
-                else
-                  echo "⚠️ File too small (needs >25MB): $PKL_FILE ($PKL_SIZE bytes)"
-                fi
-              fi
-            done
-            
-            # Also try to commit intraday from local ticks.json for day period
-            INTRADAY_FOUND=0
-            for PKL_FILE in "$RESULTS_DATA_DIR"/intraday_stock_data_*.pkl "$RESULTS_DATA_DIR"/intraday_1m_candles.pkl; do
-              if [ -f "$PKL_FILE" ]; then
-                PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
-                if [ "$PKL_SIZE" -gt 10000 ]; then
-                  echo "✅ Found local intraday: $PKL_FILE ($PKL_SIZE bytes)"
-                  cp "$PKL_FILE" "actions-data-download/intraday_stock_data_${TARGET_DATE}.pkl"
-                  cp "$PKL_FILE" "actions-data-download/intraday_1m_candles.pkl"
-                  FILES_COPIED=$((FILES_COPIED + 1))
-                  INTRADAY_FOUND=1
-                  break
-                fi
-              fi
-            done
-            
-            # If no intraday pkl, try to generate from local ticks.json
-            if [ "$INTRADAY_FOUND" -eq 0 ]; then
-              echo "No intraday pkl found, trying to generate from local ticks.json..."
-              python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py --data-dir "$RESULTS_DATA_DIR" --verbose 2>/dev/null || true
-              
-              for PKL_FILE in "$RESULTS_DATA_DIR"/intraday_stock_data_*.pkl; do
-                if [ -f "$PKL_FILE" ]; then
-                  PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
-                  if [ "$PKL_SIZE" -gt 10000 ]; then
-                    echo "✅ Generated intraday from local ticks: $PKL_FILE ($PKL_SIZE bytes)"
-                    cp "$PKL_FILE" "actions-data-download/intraday_stock_data_${TARGET_DATE}.pkl"
-                    cp "$PKL_FILE" "actions-data-download/intraday_1m_candles.pkl"
-                    FILES_COPIED=$((FILES_COPIED + 1))
+                if validate_and_copy "$PKL_FILE" "$TARGET_FILE"; then
+                    validate_and_copy "$PKL_FILE" "$GENERIC_FILE"
+                    DAILY_FOUND=true
                     break
-                  fi
                 fi
-              done
+            done
+            
+            if [ "$DAILY_FOUND" = false ]; then
+                echo "⚠️ No valid daily pkl file found meeting size requirement"
+            fi
+            
+            # Also try to commit intraday from local files for day period
+            INTRADAY_MIN_SIZE=$INTRADAY_MIN_SIZE  # Use intraday size for intraday files
+            
+            for PKL_FILE in "$RESULTS_DATA_DIR"/intraday_stock_data_*.pkl "$RESULTS_DATA_DIR"/intraday_1m_candles.pkl; do
+                if [ -f "$PKL_FILE" ]; then
+                    file_size=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
+                    if [ "$file_size" -gt "$INTRADAY_MIN_SIZE" ]; then
+                        echo "✅ Found valid intraday pkl: $PKL_FILE ($(($file_size/1024/1024)) MB)"
+                        cp "$PKL_FILE" "actions-data-download/intraday_stock_data_${TARGET_DATE}.pkl"
+                        cp "$PKL_FILE" "actions-data-download/intraday_1m_candles.pkl"
+                        FILES_COPIED=$((FILES_COPIED + 1))
+                        COMMIT_NEEDED=true
+                        break
+                    fi
+                fi
+            done
+            
+            # If no intraday pkl, try to generate from local ticks.json as fallback
+            if [ "$FILES_COPIED" -lt 2 ]; then
+                echo "No valid intraday pkl found, trying to generate from local ticks.json..."
+                python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py --data-dir "$RESULTS_DATA_DIR" --verbose 2>/dev/null || true
+                
+                for PKL_FILE in "$RESULTS_DATA_DIR"/intraday_stock_data_*.pkl; do
+                    if [ -f "$PKL_FILE" ]; then
+                        file_size=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
+                        if [ "$file_size" -gt "$INTRADAY_MIN_SIZE" ]; then
+                            echo "✅ Generated valid intraday from local ticks: $PKL_FILE ($(($file_size/1024/1024)) MB)"
+                            cp "$PKL_FILE" "actions-data-download/intraday_stock_data_${TARGET_DATE}.pkl"
+                            cp "$PKL_FILE" "actions-data-download/intraday_1m_candles.pkl"
+                            FILES_COPIED=$((FILES_COPIED + 1))
+                            COMMIT_NEEDED=true
+                            break
+                        fi
+                    fi
+                done
             fi
         else
             # Intraday periods - use local files only
             for PKL_FILE in "$RESULTS_DATA_DIR"/*.pkl; do
-              if [ -f "$PKL_FILE" ]; then
-                PKL_SIZE=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
-                if [ "$PKL_SIZE" -gt "$MIN_SIZE" ]; then
-                  echo "✅ Found local file: $PKL_FILE ($PKL_SIZE bytes)"
-                  cp "$PKL_FILE" "actions-data-download/$TARGET_FILE"
-                  cp "$PKL_FILE" "actions-data-download/$GENERIC_FILE"
-                  FILES_COPIED=$((FILES_COPIED + 1))
-                  break
+                if [ -f "$PKL_FILE" ]; then
+                    file_size=$(stat -c%s "$PKL_FILE" 2>/dev/null || stat -f%z "$PKL_FILE")
+                    if [ "$file_size" -gt "$MIN_SIZE" ]; then
+                        echo "✅ Found valid $PERIOD pkl: $PKL_FILE ($(($file_size/1024/1024)) MB)"
+                        cp "$PKL_FILE" "actions-data-download/$TARGET_FILE"
+                        cp "$PKL_FILE" "actions-data-download/$GENERIC_FILE"
+                        FILES_COPIED=$((FILES_COPIED + 1))
+                        COMMIT_NEEDED=true
+                        break
+                    else
+                        echo "⚠️ File too small (needs >$(($MIN_SIZE/1024/1024)) MB): $PKL_FILE ($(($file_size/1024/1024)) MB)"
+                    fi
                 fi
-              fi
             done
         fi
         
@@ -869,10 +914,10 @@ jobs:
         # Note: instrument_history.db is committed separately in an earlier step (as zip)
         echo "Note: SQLite .db files are not committed here (instrument_history.db committed separately as zip)"
         
-        echo "Total files copied: $FILES_COPIED"
+        echo "Total valid files copied: $FILES_COPIED"
         
-        if [ "$FILES_COPIED" -eq 0 ]; then
-          echo "⚠️ No valid pkl files found to commit for period: $PERIOD"
+        if [ "$COMMIT_NEEDED" = false ]; then
+          echo "⚠️ No valid pkl files found meeting size requirements for period: $PERIOD"
           exit 0
         fi
         

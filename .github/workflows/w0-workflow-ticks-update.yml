@@ -50,30 +50,6 @@ jobs:
         repository: pkjmesra/PKBrokers
         ref: main
 
-    # - name: Check for holidays
-    #   id: holiday_check
-    #   run: |
-    #     # Download the holidays JSON file
-    #     curl -s -o holidays.json https://raw.githubusercontent.com/pkjmesra/PKScreener/main/.github/dependencies/nse-holidays.json
-        
-    #     # Get current date in DD-MMM-YYYY format (e.g., 26-Jan-2025)
-    #     CURRENT_DATE=$(date +"%d-%b-%Y")
-        
-    #     # Check if current date is in holidays list
-    #     if jq -e --arg date "$CURRENT_DATE" '.CM[] | select(.tradingDate == $date)' holidays.json > /dev/null; then
-    #       echo "Today ($CURRENT_DATE) is a market holiday. Exiting."
-    #       echo "is_holiday=true" >> $GITHUB_OUTPUT
-    #     else
-    #       echo "Today ($CURRENT_DATE) is not a market holiday. Proceeding."
-    #       echo "is_holiday=false" >> $GITHUB_OUTPUT
-    #     fi
-
-    # - name: Exit if holiday (scheduled runs only)
-    #   if: github.event_name == 'schedule' && steps.holiday_check.outputs.is_holiday == 'true'
-    #   run: |
-    #     echo "Skipping execution due to market holiday."
-    #     exit 0
-
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -209,26 +185,36 @@ jobs:
       run: |
         python .github/workflows/get_archive_date.py
 
-    - name: Push ticks and pkl files to PKScreener
+    - name: Push validated files to PKScreener with size checks
       if: always()
       env:
         GH_TOKEN: ${{ secrets.CI_PAT }}
+        ARCHIVE_DATE_STR: ${{ steps.get_date.outputs.date_str }}
       run: |
-        echo "Checking for files to push to PKScreener..."
+        echo "Checking for files to push to PKScreener with size validation..."
+        
+        # Define size thresholds (in bytes)
+        TICKS_MIN_SIZE=1000000        # 1 MB minimum for ticks.json
+        DAILY_PKL_MIN_SIZE=25000000    # 25 MB minimum for daily pkl
+        INTRADAY_PKL_MIN_SIZE=1000000  # 1 MB minimum for intraday pkl
         
         # Define paths - check multiple locations
-        # The kiteTokenWatcher saves to results/Data relative to cwd (pkbrokers/kite/examples/)
-        # So files end up in pkbrokers/kite/examples/results/Data/
         TICKS_PATH_1="pkbrokers/kite/examples/results/Data/ticks.json"
         TICKS_PATH_2="pkbrokers/kite/examples/ticks.json"
         DATA_DIR_1="pkbrokers/kite/examples/results/Data"
         DATA_DIR_2="pkbrokers/kite/examples"
         
         # Find ticks.json
+        TICKS_FOUND=false
+        TICKS_VALID=false
+        TICKS_SIZE=0
+        
         if [ -f "$TICKS_PATH_1" ] && [ -s "$TICKS_PATH_1" ]; then
           TICKS_PATH="$TICKS_PATH_1"
-        else
+          TICKS_FOUND=true
+        elif [ -f "$TICKS_PATH_2" ] && [ -s "$TICKS_PATH_2" ]; then
           TICKS_PATH="$TICKS_PATH_2"
+          TICKS_FOUND=true
         fi
         
         # Find DATA_DIR with pkl files
@@ -253,83 +239,136 @@ jobs:
         mkdir -p pkscreener-data/actions-data-download
         
         FILES_COPIED=0
+        TICKS_COMMITTED=false
         
-        # Copy ticks.json if exists
-        if [ -f "$TICKS_PATH" ] && [ -s "$TICKS_PATH" ]; then
-          TICKS_SIZE=$(stat -c%s "$TICKS_PATH" 2>/dev/null || stat -f%z "$TICKS_PATH")
-          echo "Found ticks.json ($TICKS_SIZE bytes)"
-          
-          if [ "$TICKS_SIZE" -gt 10 ]; then
-            cp "$TICKS_PATH" pkscreener-data/results/Data/ticks.json
-            FILES_COPIED=$((FILES_COPIED + 1))
-          fi
+        # Function to validate and copy file with size check
+        validate_and_copy() {
+            local src_file=$1
+            local dst_path=$2
+            local min_size=$3
+            local file_type=$4
+            
+            if [ -f "$src_file" ]; then
+                local file_size=$(stat -c%s "$src_file" 2>/dev/null || stat -f%z "$src_file")
+                echo "Found $file_type: $src_file ($(($file_size/1024/1024)) MB)"
+                
+                if [ "$file_size" -gt "$min_size" ]; then
+                    echo "  ✅ Size validation passed ($(($file_size/1024/1024)) MB >= $(($min_size/1024/1024)) MB)"
+                    cp "$src_file" "$dst_path"
+                    FILES_COPIED=$((FILES_COPIED + 1))
+                    return 0
+                else
+                    echo "  ⚠️ Size validation FAILED ($(($file_size/1024/1024)) MB < $(($min_size/1024/1024)) MB) - skipping"
+                    return 1
+                fi
+            else
+                echo "  ℹ️ File not found: $src_file"
+                return 1
+            fi
+        }
+        
+        # Copy and validate ticks.json
+        if [ "$TICKS_FOUND" = true ]; then
+            TICKS_SIZE=$(stat -c%s "$TICKS_PATH" 2>/dev/null || stat -f%z "$TICKS_PATH")
+            echo "Found ticks.json ($(($TICKS_SIZE/1024/1024)) MB)"
+            
+            if [ "$TICKS_SIZE" -gt "$TICKS_MIN_SIZE" ]; then
+                echo "  ✅ ticks.json size validation passed ($(($TICKS_SIZE/1024/1024)) MB >= 1 MB)"
+                cp "$TICKS_PATH" pkscreener-data/results/Data/ticks.json
+                FILES_COPIED=$((FILES_COPIED + 1))
+                TICKS_COMMITTED=true
+            else
+                echo "  ⚠️ ticks.json size validation FAILED ($(($TICKS_SIZE/1024/1024)) MB < 1 MB) - skipping"
+            fi
         fi
         
-        # Define specific file names
+        # Define specific file names with date suffix
         DAILY_CANDLES_FILE="$DATA_DIR/daily_candles.pkl"
         STOCK_DATA_FILE="$DATA_DIR/stock_data_$ARCHIVE_DATE_STR.pkl"
         INTRADAY_CANDLES_FILE="$DATA_DIR/intraday_1m_candles.pkl"
         INTRADAY_STOCK_DATA_FILE="$DATA_DIR/intraday_stock_data_$ARCHIVE_DATE_STR.pkl"
+        
+        # Copy and validate daily pkl files
+        echo ""
+        echo "Validating daily pkl files (minimum 25 MB):"
+        validate_and_copy "$DAILY_CANDLES_FILE" "pkscreener-data/actions-data-download/daily_candles.pkl" $DAILY_PKL_MIN_SIZE "daily_candles.pkl"
+        validate_and_copy "$STOCK_DATA_FILE" "pkscreener-data/actions-data-download/stock_data_$ARCHIVE_DATE_STR.pkl" $DAILY_PKL_MIN_SIZE "stock_data_$ARCHIVE_DATE_STR.pkl"
+        
+        # Copy and validate intraday pkl files
+        echo ""
+        echo "Validating intraday pkl files (minimum 1 MB):"
+        validate_and_copy "$INTRADAY_CANDLES_FILE" "pkscreener-data/actions-data-download/intraday_1m_candles.pkl" $INTRADAY_PKL_MIN_SIZE "intraday_1m_candles.pkl"
+        validate_and_copy "$INTRADAY_STOCK_DATA_FILE" "pkscreener-data/actions-data-download/intraday_stock_data_$ARCHIVE_DATE_STR.pkl" $INTRADAY_PKL_MIN_SIZE "intraday_stock_data_$ARCHIVE_DATE_STR.pkl"
+        
+        # Check for any candles.db files (optional, no size validation)
         CANDLES_DB_FILE="$DATA_DIR/candles_$ARCHIVE_DATE_STR.db"
-        
-        # Copy daily pkl files
-        if [ -f "$DAILY_CANDLES_FILE" ]; then
-            echo "Found daily_candles.pkl"
-            cp "$DAILY_CANDLES_FILE" pkscreener-data/actions-data-download/
-            FILES_COPIED=$((FILES_COPIED + 1))
-        fi
-        if [ -f "$STOCK_DATA_FILE" ]; then
-            echo "Found stock_data_$ARCHIVE_DATE_STR.pkl"
-            cp "$STOCK_DATA_FILE" pkscreener-data/actions-data-download/
-            FILES_COPIED=$((FILES_COPIED + 1))
-        fi
-        
-        # Copy intraday pkl files
-        if [ -f "$INTRADAY_CANDLES_FILE" ]; then
-            echo "Found intraday_1m_candles.pkl"
-            cp "$INTRADAY_CANDLES_FILE" pkscreener-data/actions-data-download/
-            FILES_COPIED=$((FILES_COPIED + 1))
-        fi
-        if [ -f "$INTRADAY_STOCK_DATA_FILE" ]; then
-            echo "Found intraday_stock_data_$ARCHIVE_DATE_STR.pkl"
-            cp "$INTRADAY_STOCK_DATA_FILE" pkscreener-data/actions-data-download/
-            FILES_COPIED=$((FILES_COPIED + 1))
-        fi
-
-        # Copy SQLite DB files
         if [ -f "$CANDLES_DB_FILE" ]; then
-            echo "Found candles_$ARCHIVE_DATE_STR.db"
+            DB_SIZE=$(stat -c%s "$CANDLES_DB_FILE" 2>/dev/null || stat -f%z "$CANDLES_DB_FILE")
+            echo ""
+            echo "Found candles_$ARCHIVE_DATE_STR.db ($(($DB_SIZE/1024/1024)) MB) - copying without size validation"
             cp "$CANDLES_DB_FILE" pkscreener-data/actions-data-download/
             FILES_COPIED=$((FILES_COPIED + 1))
         fi
         
-        if [ "$FILES_COPIED" -gt 0 ]; then
-          # Create metadata
+        # Create metadata only if ticks.json was committed
+        if [ "$TICKS_COMMITTED" = true ]; then
+          echo ""
+          echo "Creating metadata file (ticks.json was committed)..."
           cat > pkscreener-data/results/Data/ticks_metadata.json << EOF
         {
           "source": "PKBrokers-orchestrator",
           "synced_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
           "workflow": "w0-workflow-ticks-update.yml",
           "files_copied": $FILES_COPIED,
-          "date_suffix": "$ARCHIVE_DATE_STR"
+          "date_suffix": "$ARCHIVE_DATE_STR",
+          "ticks_size_mb": $(($TICKS_SIZE/1024/1024)),
+          "files_validated": true
         }
         EOF
+          # Copy metadata to actions-data-download as well
+          cp pkscreener-data/results/Data/ticks_metadata.json pkscreener-data/actions-data-download/
+          FILES_COPIED=$((FILES_COPIED + 1))
+          echo "✅ Created metadata file with validation info"
+        else
+          echo ""
+          echo "⚠️ ticks.json not committed (size too small or missing) - skipping metadata creation"
+        fi
+        
+        if [ "$FILES_COPIED" -gt 0 ]; then
+          echo ""
+          echo "Total valid files to commit: $FILES_COPIED"
           
           cd pkscreener-data
           git config user.name "github-actions[bot]"
           git config user.email "actions@github.com"
+          
           # Use -f to force add files that may be in .gitignore
+          echo "Staging files for commit..."
           git add -f results/Data/ actions-data-download/ 2>/dev/null || true
+          
+          # Show what's being committed
+          echo "Files staged:"
+          git diff --staged --name-only
           
           if git diff --staged --quiet; then
             echo "No changes to push"
           else
-            git commit -m "Sync ticks and pkl from PKBrokers $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            # Get summary of files being committed with sizes
+            echo ""
+            echo "📊 Files being committed with size validation:"
+            for file in $(git diff --staged --name-only); do
+              if [ -f "$file" ]; then
+                size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file")
+                echo "  • $file ($(($size/1024/1024)) MB)"
+              fi
+            done
+            
+            git commit -m "Sync validated files from PKBrokers $(date -u +%Y-%m-%dT%H:%M:%SZ) [ticks:$(($TICKS_SIZE/1024/1024))MB]"
             
             # Retry logic for push conflicts
             for i in 1 2 3; do
               if git push origin actions-data-download; then
-                echo "✅ Files pushed to PKScreener successfully ($FILES_COPIED files)"
+                echo "✅ Files pushed to PKScreener successfully ($FILES_COPIED validated files)"
                 break
               else
                 echo "Push failed, attempt $i, pulling and retrying..."
@@ -340,7 +379,7 @@ jobs:
           fi
           cd ..
         else
-          echo "No files to push"
+          echo "❌ No valid files found meeting size requirements - nothing to push"
         fi
 
     - name: Cleanup .env.dev file
