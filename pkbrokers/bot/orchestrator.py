@@ -344,14 +344,15 @@ class PKTickOrchestrator:
                 last_send = time.time()
                 last_ticks_commit = time.time()
                 logger.info("stats_sender started successfully!")
+                CYCLE_TIME_SEC = 30
                 while True:
-                    time.sleep(30)  # Send updates every n seconds
+                    time.sleep(CYCLE_TIME_SEC)  # Send updates every n seconds
                     try:
                         # Only send if stats have changed
-                        if time.time() - last_send >= 30:
+                        if time.time() - last_send >= CYCLE_TIME_SEC:
                             stats_queue.put(shared_stats.copy())
                             last_send = time.time()
-                        if time.time() - last_ticks_commit >= 60:
+                        if time.time() - last_ticks_commit >= 2*CYCLE_TIME_SEC:
                             from pkbrokers.kite.examples.pkkite import commit_ticks
                             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
                             cur_ist = PKDateUtilities.currentDateTime()
@@ -366,7 +367,7 @@ class PKTickOrchestrator:
                                 )
                             )
                             logger.debug(f"Checking if we should commit ticks: is_market_open={is_market_open}")
-                            if is_market_open:
+                            if is_market_open or (time.time() - last_ticks_commit >= 60*CYCLE_TIME_SEC):
                                 last_ticks_commit = time.time()
                                 commit_ticks(file_name="ticks.json")
                     except Exception as e:

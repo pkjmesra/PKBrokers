@@ -118,7 +118,7 @@ class WebSocketProcess:
         self.websocket = None
         self.encToken_invalidated = False
         self.ws_stop_event = ws_stop_event
-        print(f"Websocket_index:{websocket_index}: ws_stop_event in process = {ws_stop_event}")
+        # print(f"Websocket_index:{websocket_index}: ws_stop_event in process = {ws_stop_event}")
         self.multiprocessingForWindows()
 
     def _build_websocket_url(self):
@@ -427,7 +427,7 @@ def websocket_process_worker(args):
     ) = args
 
     # Optional: Add debug log
-    print(f"Websocket_index:{websocket_index}: Starting with ws_stop_event={ws_stop_event}")
+    # print(f"Websocket_index:{websocket_index}: Starting with ws_stop_event={ws_stop_event}")
 
     process = WebSocketProcess(
         enctoken=enctoken,
