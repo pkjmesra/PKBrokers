@@ -319,6 +319,11 @@ class WebSocketProcess:
                             await websocket.ping()
                             # Check stop events on timeout
                             continue
+                        except asyncio.exceptions.IncompleteReadError:
+                            self.logger.error(
+                                f"Websocket_index:{self.websocket_index}: Connection lost (IncompleteReadError)"
+                            )
+                            break
                         except Exception as e:
                             if not self.stop_event.is_set() and not (self.ws_stop_event and self.ws_stop_event.is_set()):
                                 self.logger.error(

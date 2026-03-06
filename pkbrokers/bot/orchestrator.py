@@ -355,17 +355,20 @@ class PKTickOrchestrator:
                             from pkbrokers.kite.examples.pkkite import commit_ticks
                             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
                             cur_ist = PKDateUtilities.currentDateTime()
-                            is_non_market_hour = (
-                                (cur_ist.hour >= 15 and cur_ist.minute > 30)
-                                and (cur_ist.hour <= 9 and cur_ist.minute < 15)
-                                or PKDateUtilities.isTodayHoliday()
+                            # Market hours: 9:15 AM to 3:30 PM on non-holiday weekdays
+                            is_market_open = (
+                                cur_ist.weekday() < 5 and  # Monday=0, Friday=4
+                                not PKDateUtilities.isTodayHoliday() and
+                                (
+                                    (cur_ist.hour == 9 and cur_ist.minute >= 15) or
+                                    (cur_ist.hour > 9 and cur_ist.hour < 15) or
+                                    (cur_ist.hour == 15 and cur_ist.minute <= 30)
+                                )
                             )
-                            logger.info(f"Checking if we should commit ticks: is_non_market_hour={is_non_market_hour}")
-                            if not is_non_market_hour:
+                            logger.debug(f"Checking if we should commit ticks: is_market_open={is_market_open}")
+                            if is_market_open:
                                 last_ticks_commit = time.time()
                                 commit_ticks(file_name="ticks.json")
-                            else:
-                                break
                     except Exception as e:
                         logger.error(f"Error sending stats: {e}")
             threading.Thread(target=stats_sender, daemon=True).start()
@@ -468,7 +471,7 @@ class PKTickOrchestrator:
             cur_ist = PKDateUtilities.currentDateTime()
             is_non_market_hour = (
                 (cur_ist.hour >= 15 and cur_ist.minute >= 30)
-                and (cur_ist.hour <= 9 and cur_ist.minute <= 15)
+                or  (cur_ist.hour <= 9 and cur_ist.minute <= 15)
                 or PKDateUtilities.isTodayHoliday()
             )
             if is_non_market_hour:
@@ -677,7 +680,7 @@ class PKTickOrchestrator:
                         
                         # Check for market close commit
                         if data_mgr.should_commit():
-                            logger.info("Market close detected - committing pkl files")
+                            logger.info("Market close detected or recent data was received from previous running instance - committing pkl files")
                             candle_store = get_candle_store()
                             
                             # Export and commit daily pkl
