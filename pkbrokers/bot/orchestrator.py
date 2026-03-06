@@ -568,7 +568,9 @@ class PKTickOrchestrator:
             logger.info("Market hours started - starting kite process")
             self.kite_process = self.mp_context.Process(
                 target=PKTickOrchestrator.run_kite_ticks, 
-                args=(self.bot_token, self.ticks_file_path, self.chat_id, self.shared_stats, self.child_process_ref, self.ws_stop_event, self.stop_queue), 
+                args=(self.bot_token, self.ticks_file_path, self.chat_id, 
+                      self.shared_stats, self.stats_queue, self.child_process_ref, 
+                      self.ws_stop_event, self.stop_queue), 
                 name="KiteTicksProcess"
             )
             logger.debug(f"restart_kite_process_if_needed: Orchestrator shared_stats id: {id(self.shared_stats)}")
