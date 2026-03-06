@@ -24,6 +24,17 @@ SOFTWARE.
 
 """
 
+"""
+This module contains examples of how external consumers 
+would use this pkbrokers.kite package. The examples are not 
+meant to be run as-is, but rather to illustrate the intended 
+usage of the package. For example, PKScreener might use the 
+kite_fetch_save_pickle function to fetch and save instrument 
+data, while PKAuth might use the kite_auth function to 
+authenticate with the Kite API. These examples are meant 
+to be simple and straightforward, and may not include all 
+necessary error handling or edge cases for production use.
+"""
 def kite_fetch_save_pickle():
     from pkbrokers.kite.datamanager import InstrumentDataManager
 
