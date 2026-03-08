@@ -129,7 +129,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:44:44+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3799809": {
     "instrument_token": 3799809,
@@ -261,7 +261,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:27:00+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4730625": {
     "instrument_token": 4730625,
@@ -338,7 +338,7 @@
       "low": 0,
       "close": 3468.35,
       "volume": 348261,
-      "timestamp": "2026-03-08T11:57:19.626165+05:30"
+      "timestamp": "2026-03-08T16:30:41.661683+05:30"
     },
     "prev_day_close": 0,
     "buy_quantity": 348191,
@@ -348,8 +348,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:19.626165+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.661683+05:30",
+    "tick_count": 6
   },
   "370689": {
     "instrument_token": 370689,
@@ -437,7 +437,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:46+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4765185": {
     "instrument_token": 4765185,
@@ -569,7 +569,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:48:36+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "278793": {
     "instrument_token": 278793,
@@ -613,7 +613,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:47+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2964737": {
     "instrument_token": 2964737,
@@ -833,7 +833,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:56:17+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "803329": {
     "instrument_token": 803329,
@@ -943,7 +943,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:05+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3915521": {
     "instrument_token": 3915521,
@@ -1141,7 +1141,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:59+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3738113": {
     "instrument_token": 3738113,
@@ -1273,7 +1273,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:41+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3695361": {
     "instrument_token": 3695361,
@@ -1361,7 +1361,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:45:43+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2289665": {
     "instrument_token": 2289665,
@@ -1471,7 +1471,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:53:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6524417": {
     "instrument_token": 6524417,
@@ -1603,7 +1603,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:04+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4387841": {
     "instrument_token": 4387841,
@@ -1625,7 +1625,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:27+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "591617": {
     "instrument_token": 591617,
@@ -1691,7 +1691,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:24+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6242817": {
     "instrument_token": 6242817,
@@ -1735,7 +1735,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:34+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4448257": {
     "instrument_token": 4448257,
@@ -1867,7 +1867,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:54:52+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "415745": {
     "instrument_token": 415745,
@@ -1999,7 +1999,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:58+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3353857": {
     "instrument_token": 3353857,
@@ -2087,7 +2087,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:37+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2675969": {
     "instrument_token": 2675969,
@@ -2131,7 +2131,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:49:52+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4246785": {
     "instrument_token": 4246785,
@@ -2197,7 +2197,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:15+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5619457": {
     "instrument_token": 5619457,
@@ -2285,7 +2285,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:47+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4981249": {
     "instrument_token": 4981249,
@@ -2351,7 +2351,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:47+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "7452929": {
     "instrument_token": 7452929,
@@ -2461,7 +2461,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:49+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3487233": {
     "instrument_token": 3487233,
@@ -2615,7 +2615,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:11+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2781441": {
     "instrument_token": 2781441,
@@ -2703,7 +2703,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:57+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "877057": {
     "instrument_token": 877057,
@@ -2769,7 +2769,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:55:29+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "7496705": {
     "instrument_token": 7496705,
@@ -2901,7 +2901,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:15:08+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1275137": {
     "instrument_token": 1275137,
@@ -3011,7 +3011,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "516609": {
     "instrument_token": 516609,
@@ -3099,7 +3099,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:47:29+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "419593": {
     "instrument_token": 419593,
@@ -3165,7 +3165,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:45+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5025537": {
     "instrument_token": 5025537,
@@ -3253,7 +3253,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:56:46+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1716481": {
     "instrument_token": 1716481,
@@ -3297,7 +3297,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:50:01+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3849985": {
     "instrument_token": 3849985,
@@ -3363,7 +3363,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:37+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4966657": {
     "instrument_token": 4966657,
@@ -3715,7 +3715,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:56+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194077441": {
     "instrument_token": 194077441,
@@ -3759,7 +3759,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:12+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "78849": {
     "instrument_token": 78849,
@@ -3880,7 +3880,7 @@
       "low": 0,
       "close": 13324.55,
       "volume": 1335175,
-      "timestamp": "2026-03-08T11:57:16.774112+05:30"
+      "timestamp": "2026-03-08T16:30:41.644319+05:30"
     },
     "prev_day_close": 0,
     "buy_quantity": 1337325,
@@ -3890,8 +3890,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:16.774112+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.644319+05:30",
+    "tick_count": 6
   },
   "1552897": {
     "instrument_token": 1552897,
@@ -3979,7 +3979,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:51+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "193818113": {
     "instrument_token": 193818113,
@@ -4023,7 +4023,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:36+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6366721": {
     "instrument_token": 6366721,
@@ -4111,7 +4111,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1285889": {
     "instrument_token": 1285889,
@@ -4177,7 +4177,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:32+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5461505": {
     "instrument_token": 5461505,
@@ -4353,7 +4353,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:42:52+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "268809": {
     "instrument_token": 268809,
@@ -4463,7 +4463,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:11+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "692481": {
     "instrument_token": 692481,
@@ -4551,7 +4551,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:59+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3717889": {
     "instrument_token": 3717889,
@@ -4595,7 +4595,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:10+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4576001": {
     "instrument_token": 4576001,
@@ -4727,7 +4727,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:28:52+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4512001": {
     "instrument_token": 4512001,
@@ -4969,7 +4969,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:10+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5523969": {
     "instrument_token": 5523969,
@@ -5035,7 +5035,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:53+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "418049": {
     "instrument_token": 418049,
@@ -5101,7 +5101,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:56+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2911745": {
     "instrument_token": 2911745,
@@ -5167,7 +5167,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3571457": {
     "instrument_token": 3571457,
@@ -5211,7 +5211,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:28:02+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2976513": {
     "instrument_token": 2976513,
@@ -5365,7 +5365,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:28:31+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "195026177": {
     "instrument_token": 195026177,
@@ -5453,7 +5453,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:13+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3894785": {
     "instrument_token": 3894785,
@@ -5585,7 +5585,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:54:57+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "175361": {
     "instrument_token": 175361,
@@ -5805,7 +5805,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "7387905": {
     "instrument_token": 7387905,
@@ -5915,7 +5915,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2630657": {
     "instrument_token": 2630657,
@@ -5981,7 +5981,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:50:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "969473": {
     "instrument_token": 969473,
@@ -6047,7 +6047,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:22:21+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4488705": {
     "instrument_token": 4488705,
@@ -6223,7 +6223,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:41:40+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4714753": {
     "instrument_token": 4714753,
@@ -6311,7 +6311,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:59+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2193409": {
     "instrument_token": 2193409,
@@ -6443,7 +6443,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:49:24+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4514561": {
     "instrument_token": 4514561,
@@ -6509,7 +6509,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:32+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3697921": {
     "instrument_token": 3697921,
@@ -6641,7 +6641,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:15+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5138177": {
     "instrument_token": 5138177,
@@ -6773,7 +6773,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:23+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "406281": {
     "instrument_token": 406281,
@@ -6872,7 +6872,7 @@
       "low": 740.6,
       "close": 742.0,
       "volume": 0,
-      "timestamp": "2026-03-08T11:57:20.947463+05:30"
+      "timestamp": "2026-03-08T16:30:40.997410+05:30"
     },
     "prev_day_close": 757.8,
     "buy_quantity": 0,
@@ -6882,8 +6882,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:20.947463+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:40.997410+05:30",
+    "tick_count": 6
   },
   "3587585": {
     "instrument_token": 3587585,
@@ -6949,7 +6949,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:26+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5818881": {
     "instrument_token": 5818881,
@@ -7004,7 +7004,7 @@
       "low": 0,
       "close": 1300.34,
       "volume": 130024,
-      "timestamp": "2026-03-08T11:57:15.523451+05:30"
+      "timestamp": "2026-03-08T16:30:41.334143+05:30"
     },
     "prev_day_close": 0,
     "buy_quantity": 129999,
@@ -7014,8 +7014,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:15.523451+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.334143+05:30",
+    "tick_count": 6
   },
   "194330369": {
     "instrument_token": 194330369,
@@ -7125,7 +7125,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:45:51+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6147585": {
     "instrument_token": 6147585,
@@ -7279,7 +7279,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:31+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5904897": {
     "instrument_token": 5904897,
@@ -7345,7 +7345,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:59+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "193736193": {
     "instrument_token": 193736193,
@@ -7499,7 +7499,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:50:21+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6625793": {
     "instrument_token": 6625793,
@@ -7565,7 +7565,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:53:12+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5750529": {
     "instrument_token": 5750529,
@@ -7653,7 +7653,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:21+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5351681": {
     "instrument_token": 5351681,
@@ -7697,7 +7697,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:49:10+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "379393": {
     "instrument_token": 379393,
@@ -7730,7 +7730,7 @@
       "low": 0,
       "close": 59856.6,
       "volume": 6031055,
-      "timestamp": "2026-03-08T11:57:20.626125+05:30"
+      "timestamp": "2026-03-08T16:30:41.922016+05:30"
     },
     "prev_day_close": 0,
     "buy_quantity": 6043520,
@@ -7740,8 +7740,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:20.626125+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.922016+05:30",
+    "tick_count": 6
   },
   "3579393": {
     "instrument_token": 3579393,
@@ -7807,7 +7807,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:49:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "163073": {
     "instrument_token": 163073,
@@ -7895,7 +7895,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:52:21+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1382657": {
     "instrument_token": 1382657,
@@ -8049,7 +8049,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "578305": {
     "instrument_token": 578305,
@@ -8093,7 +8093,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:46:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5195009": {
     "instrument_token": 5195009,
@@ -8159,7 +8159,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:27:52+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4443649": {
     "instrument_token": 4443649,
@@ -8269,7 +8269,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:48+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4299521": {
     "instrument_token": 4299521,
@@ -8390,7 +8390,7 @@
       "low": 0,
       "close": 15478.55,
       "volume": 1562405,
-      "timestamp": "2026-03-08T11:57:15.649279+05:30"
+      "timestamp": "2026-03-08T16:30:41.329860+05:30"
     },
     "prev_day_close": 0,
     "buy_quantity": 1563305,
@@ -8400,8 +8400,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:15.649279+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.329860+05:30",
+    "tick_count": 6
   },
   "838401": {
     "instrument_token": 838401,
@@ -8423,7 +8423,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:53+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "693249": {
     "instrument_token": 693249,
@@ -8555,7 +8555,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:52+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194045185": {
     "instrument_token": 194045185,
@@ -8643,7 +8643,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:20:58+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2031617": {
     "instrument_token": 2031617,
@@ -8775,7 +8775,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:40:03+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "772609": {
     "instrument_token": 772609,
@@ -8819,7 +8819,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:50:30+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1307649": {
     "instrument_token": 1307649,
@@ -8907,7 +8907,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:42:32+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4328449": {
     "instrument_token": 4328449,
@@ -8973,7 +8973,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:46+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "895745": {
     "instrument_token": 895745,
@@ -9017,7 +9017,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:28:26+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "859393": {
     "instrument_token": 859393,
@@ -9061,7 +9061,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:53+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2415617": {
     "instrument_token": 2415617,
@@ -9105,7 +9105,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:27:10+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3918849": {
     "instrument_token": 3918849,
@@ -9171,7 +9171,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:56:52+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "339713": {
     "instrument_token": 339713,
@@ -9479,7 +9479,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:53+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194355713": {
     "instrument_token": 194355713,
@@ -9545,7 +9545,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194548737": {
     "instrument_token": 194548737,
@@ -9655,7 +9655,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:59+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1259521": {
     "instrument_token": 1259521,
@@ -9765,7 +9765,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:52+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3906305": {
     "instrument_token": 3906305,
@@ -9831,7 +9831,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:42+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1645825": {
     "instrument_token": 1645825,
@@ -9941,7 +9941,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:27:25+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "470529": {
     "instrument_token": 470529,
@@ -9963,7 +9963,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:51:07+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "274441": {
     "instrument_token": 274441,
@@ -10007,7 +10007,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:11+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194419969": {
     "instrument_token": 194419969,
@@ -10161,7 +10161,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:30+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2828801": {
     "instrument_token": 2828801,
@@ -10359,7 +10359,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:49+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3015169": {
     "instrument_token": 3015169,
@@ -10403,7 +10403,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:45:05+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "119553": {
     "instrument_token": 119553,
@@ -10469,7 +10469,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:12+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6013185": {
     "instrument_token": 6013185,
@@ -10557,7 +10557,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:06+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4918017": {
     "instrument_token": 4918017,
@@ -10733,7 +10733,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:54:11+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2125825": {
     "instrument_token": 2125825,
@@ -10777,7 +10777,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1378561": {
     "instrument_token": 1378561,
@@ -10997,7 +10997,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:33+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3742209": {
     "instrument_token": 3742209,
@@ -11041,7 +11041,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:40+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "342529": {
     "instrument_token": 342529,
@@ -11327,7 +11327,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:33+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2796033": {
     "instrument_token": 2796033,
@@ -11415,7 +11415,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:08:39+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194303233": {
     "instrument_token": 194303233,
@@ -11481,7 +11481,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:28:15+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3771393": {
     "instrument_token": 3771393,
@@ -11679,7 +11679,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:28:48+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "270857": {
     "instrument_token": 270857,
@@ -11899,7 +11899,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:05+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6281729": {
     "instrument_token": 6281729,
@@ -11943,7 +11943,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:57+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4306433": {
     "instrument_token": 4306433,
@@ -11965,7 +11965,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:50+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2402561": {
     "instrument_token": 2402561,
@@ -12097,7 +12097,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:41:12+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "945409": {
     "instrument_token": 945409,
@@ -12273,7 +12273,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:55:26+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "779521": {
     "instrument_token": 779521,
@@ -12361,7 +12361,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:41+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4341505": {
     "instrument_token": 4341505,
@@ -12438,7 +12438,7 @@
       "low": 36160.0,
       "close": 36319.6,
       "volume": 0,
-      "timestamp": "2026-03-08T11:57:15.715969+05:30"
+      "timestamp": "2026-03-08T16:30:41.653063+05:30"
     },
     "prev_day_close": 36273.85,
     "buy_quantity": 0,
@@ -12448,8 +12448,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:15.715969+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.653063+05:30",
+    "tick_count": 6
   },
   "7465985": {
     "instrument_token": 7465985,
@@ -12515,7 +12515,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:48:56+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3111169": {
     "instrument_token": 3111169,
@@ -12603,7 +12603,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:35+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6434817": {
     "instrument_token": 6434817,
@@ -12669,7 +12669,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:21+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2426881": {
     "instrument_token": 2426881,
@@ -12779,7 +12779,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:41+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1769729": {
     "instrument_token": 1769729,
@@ -12867,7 +12867,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:37+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1053697": {
     "instrument_token": 1053697,
@@ -12999,7 +12999,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:50:23+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5088513": {
     "instrument_token": 5088513,
@@ -13087,7 +13087,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:28:02+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3861249": {
     "instrument_token": 3861249,
@@ -13153,7 +13153,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:28:02+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194621953": {
     "instrument_token": 194621953,
@@ -13219,7 +13219,7 @@
       "ask": []
     },
     "last_updated": "2025-07-04T09:34:20+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194541825": {
     "instrument_token": 194541825,
@@ -13263,7 +13263,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:59+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6300161": {
     "instrument_token": 6300161,
@@ -13307,7 +13307,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:15+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6503169": {
     "instrument_token": 6503169,
@@ -13395,7 +13395,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:26:26+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "560129": {
     "instrument_token": 560129,
@@ -13483,7 +13483,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:48:27+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "65281": {
     "instrument_token": 65281,
@@ -13747,7 +13747,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "579329": {
     "instrument_token": 579329,
@@ -13967,7 +13967,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:05+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194630913": {
     "instrument_token": 194630913,
@@ -14077,7 +14077,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:48:50+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "387841": {
     "instrument_token": 387841,
@@ -14253,7 +14253,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:42:45+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4516097": {
     "instrument_token": 4516097,
@@ -14385,7 +14385,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:56:01+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6936321": {
     "instrument_token": 6936321,
@@ -14451,7 +14451,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3945985": {
     "instrument_token": 3945985,
@@ -14539,7 +14539,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:50+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5478145": {
     "instrument_token": 5478145,
@@ -14627,7 +14627,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:55:46+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2608129": {
     "instrument_token": 2608129,
@@ -14715,7 +14715,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:53+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1850113": {
     "instrument_token": 1850113,
@@ -14759,7 +14759,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:52:04+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2647809": {
     "instrument_token": 2647809,
@@ -14847,7 +14847,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194356225": {
     "instrument_token": 194356225,
@@ -15045,7 +15045,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:57+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2039041": {
     "instrument_token": 2039041,
@@ -15111,7 +15111,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:41+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3392257": {
     "instrument_token": 3392257,
@@ -15243,7 +15243,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:18+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2892033": {
     "instrument_token": 2892033,
@@ -15287,7 +15287,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:49:53+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1756929": {
     "instrument_token": 1756929,
@@ -15419,7 +15419,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:20:44+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3017985": {
     "instrument_token": 3017985,
@@ -15485,7 +15485,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:46:52+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1613313": {
     "instrument_token": 1613313,
@@ -15573,7 +15573,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:55:23+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3661825": {
     "instrument_token": 3661825,
@@ -15639,7 +15639,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:56:35+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194316289": {
     "instrument_token": 194316289,
@@ -15793,7 +15793,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:56:56+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4849665": {
     "instrument_token": 4849665,
@@ -15826,7 +15826,7 @@
       "low": 0,
       "close": 16293.05,
       "volume": 1639655,
-      "timestamp": "2026-03-08T11:57:21.825666+05:30"
+      "timestamp": "2026-03-08T16:30:41.904943+05:30"
     },
     "prev_day_close": 0,
     "buy_quantity": 1640755,
@@ -15836,8 +15836,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:21.825666+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.904943+05:30",
+    "tick_count": 6
   },
   "5072129": {
     "instrument_token": 5072129,
@@ -15947,7 +15947,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:46:25+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "724225": {
     "instrument_token": 724225,
@@ -15991,7 +15991,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:35+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3831297": {
     "instrument_token": 3831297,
@@ -16079,7 +16079,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:27:56+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "107265": {
     "instrument_token": 107265,
@@ -16387,7 +16387,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:14+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2910465": {
     "instrument_token": 2910465,
@@ -16431,7 +16431,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:43:26+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1026561": {
     "instrument_token": 1026561,
@@ -16475,7 +16475,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:41:23+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1034497": {
     "instrument_token": 1034497,
@@ -16563,7 +16563,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:06+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2791681": {
     "instrument_token": 2791681,
@@ -16629,7 +16629,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:37+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3531777": {
     "instrument_token": 3531777,
@@ -16805,7 +16805,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:58+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1169409": {
     "instrument_token": 1169409,
@@ -16893,7 +16893,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:44:19+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3438081": {
     "instrument_token": 3438081,
@@ -17135,7 +17135,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:40+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1522689": {
     "instrument_token": 1522689,
@@ -17289,7 +17289,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:08+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3735553": {
     "instrument_token": 3735553,
@@ -17377,7 +17377,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:53+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4528897": {
     "instrument_token": 4528897,
@@ -17520,7 +17520,7 @@
       "low": 0,
       "close": 1429.95,
       "volume": 142997,
-      "timestamp": "2026-03-08T11:57:14.895076+05:30"
+      "timestamp": "2026-03-08T16:30:41.648700+05:30"
     },
     "prev_day_close": 0,
     "buy_quantity": 142971,
@@ -17530,8 +17530,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:14.895076+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.648700+05:30",
+    "tick_count": 6
   },
   "20225": {
     "instrument_token": 20225,
@@ -17641,7 +17641,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:55:13+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "780289": {
     "instrument_token": 780289,
@@ -17729,7 +17729,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:40:22+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194557185": {
     "instrument_token": 194557185,
@@ -17883,7 +17883,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:45:26+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5439233": {
     "instrument_token": 5439233,
@@ -17927,7 +17927,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:41+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5321729": {
     "instrument_token": 5321729,
@@ -17993,7 +17993,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:47:44+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4892417": {
     "instrument_token": 4892417,
@@ -18103,7 +18103,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:40:14+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "86529": {
     "instrument_token": 86529,
@@ -18213,7 +18213,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:53+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2918145": {
     "instrument_token": 2918145,
@@ -18323,7 +18323,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:22+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "667137": {
     "instrument_token": 667137,
@@ -18455,7 +18455,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:05+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4055041": {
     "instrument_token": 4055041,
@@ -18565,7 +18565,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:55:01+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "411657": {
     "instrument_token": 411657,
@@ -18631,7 +18631,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "279305": {
     "instrument_token": 279305,
@@ -18719,7 +18719,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T14:29:47+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4315905": {
     "instrument_token": 4315905,
@@ -18895,7 +18895,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:32+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "582913": {
     "instrument_token": 582913,
@@ -18972,7 +18972,7 @@
       "low": 0,
       "close": 1574.29,
       "volume": 157419,
-      "timestamp": "2026-03-08T11:57:15.438145+05:30"
+      "timestamp": "2026-03-08T16:30:41.908225+05:30"
     },
     "prev_day_close": 0,
     "buy_quantity": 157387,
@@ -18982,8 +18982,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:15.438145+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.908225+05:30",
+    "tick_count": 6
   },
   "405257": {
     "instrument_token": 405257,
@@ -19049,7 +19049,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T14:30:03+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5741569": {
     "instrument_token": 5741569,
@@ -19137,7 +19137,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:56:26+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "239873": {
     "instrument_token": 239873,
@@ -19225,7 +19225,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:05+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "828673": {
     "instrument_token": 828673,
@@ -19247,7 +19247,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:47:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2400769": {
     "instrument_token": 2400769,
@@ -19357,7 +19357,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:51:08+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3780097": {
     "instrument_token": 3780097,
@@ -19423,7 +19423,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:05+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3011329": {
     "instrument_token": 3011329,
@@ -19599,7 +19599,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:52:45+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "290305": {
     "instrument_token": 290305,
@@ -19643,7 +19643,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:57+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "289801": {
     "instrument_token": 289801,
@@ -19731,7 +19731,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "7728897": {
     "instrument_token": 7728897,
@@ -19841,7 +19841,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:56:10+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "628225": {
     "instrument_token": 628225,
@@ -19951,7 +19951,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:55:24+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3410177": {
     "instrument_token": 3410177,
@@ -20215,7 +20215,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:49+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1785089": {
     "instrument_token": 1785089,
@@ -20325,7 +20325,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:22+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "258825": {
     "instrument_token": 258825,
@@ -20369,7 +20369,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:07+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5284353": {
     "instrument_token": 5284353,
@@ -20457,7 +20457,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:01+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5228801": {
     "instrument_token": 5228801,
@@ -20501,7 +20501,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:25+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194305793": {
     "instrument_token": 194305793,
@@ -20545,7 +20545,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:51:37+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2479361": {
     "instrument_token": 2479361,
@@ -20589,7 +20589,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:46+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3026177": {
     "instrument_token": 3026177,
@@ -20743,7 +20743,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:09+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "265225": {
     "instrument_token": 265225,
@@ -20985,7 +20985,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:44:32+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "580609": {
     "instrument_token": 580609,
@@ -21161,7 +21161,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:14+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "404745": {
     "instrument_token": 404745,
@@ -21205,7 +21205,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:40:30+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6010881": {
     "instrument_token": 6010881,
@@ -21249,7 +21249,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T14:50:49+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4611073": {
     "instrument_token": 4611073,
@@ -21271,7 +21271,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:48:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "951809": {
     "instrument_token": 951809,
@@ -21359,7 +21359,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:51:34+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4270849": {
     "instrument_token": 4270849,
@@ -21557,7 +21557,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3444993": {
     "instrument_token": 3444993,
@@ -21601,7 +21601,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:11+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "269569": {
     "instrument_token": 269569,
@@ -21623,7 +21623,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:47:20+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194806017": {
     "instrument_token": 194806017,
@@ -21887,7 +21887,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:43:08+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "678145": {
     "instrument_token": 678145,
@@ -22041,7 +22041,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:49+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3421953": {
     "instrument_token": 3421953,
@@ -22173,7 +22173,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:58+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3419905": {
     "instrument_token": 3419905,
@@ -22283,7 +22283,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:51:25+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5803521": {
     "instrument_token": 5803521,
@@ -22371,7 +22371,7 @@
       "ask": []
     },
     "last_updated": "2026-03-05T15:21:19+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "996353": {
     "instrument_token": 996353,
@@ -22393,7 +22393,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:55:57+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194728193": {
     "instrument_token": 194728193,
@@ -22657,7 +22657,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:12+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1887745": {
     "instrument_token": 1887745,
@@ -22899,7 +22899,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:51:36+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "7413761": {
     "instrument_token": 7413761,
@@ -22943,7 +22943,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:31+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "140033": {
     "instrument_token": 140033,
@@ -22987,7 +22987,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:28:21+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2968577": {
     "instrument_token": 2968577,
@@ -23174,7 +23174,7 @@
       "low": 0,
       "close": 3070.09,
       "volume": 307823,
-      "timestamp": "2026-03-08T11:57:18.121837+05:30"
+      "timestamp": "2026-03-08T16:30:41.911537+05:30"
     },
     "prev_day_close": 0,
     "buy_quantity": 307767,
@@ -23184,8 +23184,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:18.121837+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.911537+05:30",
+    "tick_count": 6
   },
   "878593": {
     "instrument_token": 878593,
@@ -23251,7 +23251,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:40:47+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "412937": {
     "instrument_token": 412937,
@@ -23361,7 +23361,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5801729": {
     "instrument_token": 5801729,
@@ -23537,7 +23537,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:20:41+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6456833": {
     "instrument_token": 6456833,
@@ -23669,7 +23669,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:10+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "952577": {
     "instrument_token": 952577,
@@ -23735,7 +23735,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:49+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "7996929": {
     "instrument_token": 7996929,
@@ -23823,7 +23823,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:53:22+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194085121": {
     "instrument_token": 194085121,
@@ -23977,7 +23977,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:42:10+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "266505": {
     "instrument_token": 266505,
@@ -24153,7 +24153,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:06:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5786113": {
     "instrument_token": 5786113,
@@ -24197,7 +24197,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:04+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1435137": {
     "instrument_token": 1435137,
@@ -24285,7 +24285,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:13+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1777665": {
     "instrument_token": 1777665,
@@ -24373,7 +24373,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:59+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1050881": {
     "instrument_token": 1050881,
@@ -24461,7 +24461,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:46:32+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "274185": {
     "instrument_token": 274185,
@@ -24725,7 +24725,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:08+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3535873": {
     "instrument_token": 3535873,
@@ -24769,7 +24769,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:49:45+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2076161": {
     "instrument_token": 2076161,
@@ -24857,7 +24857,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:42+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1000449": {
     "instrument_token": 1000449,
@@ -25033,7 +25033,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "456193": {
     "instrument_token": 456193,
@@ -25099,7 +25099,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:28:00+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2254337": {
     "instrument_token": 2254337,
@@ -25143,7 +25143,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:45:15+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3006209": {
     "instrument_token": 3006209,
@@ -25253,7 +25253,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:53+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1895937": {
     "instrument_token": 1895937,
@@ -25363,7 +25363,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:56:03+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "897537": {
     "instrument_token": 897537,
@@ -25473,7 +25473,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:45:16+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "288009": {
     "instrument_token": 288009,
@@ -25539,7 +25539,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T14:58:47+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194578689": {
     "instrument_token": 194578689,
@@ -25583,7 +25583,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:36+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3727873": {
     "instrument_token": 3727873,
@@ -25627,7 +25627,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:12+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "240641": {
     "instrument_token": 240641,
@@ -25737,7 +25737,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:50:21+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6451969": {
     "instrument_token": 6451969,
@@ -25781,7 +25781,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4284417": {
     "instrument_token": 4284417,
@@ -25825,7 +25825,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:23:28+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2396673": {
     "instrument_token": 2396673,
@@ -25847,7 +25847,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:43:12+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6925313": {
     "instrument_token": 6925313,
@@ -25979,7 +25979,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:50:43+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4840449": {
     "instrument_token": 4840449,
@@ -26507,7 +26507,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1857025": {
     "instrument_token": 1857025,
@@ -26617,7 +26617,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:52+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1897217": {
     "instrument_token": 1897217,
@@ -26672,7 +26672,7 @@
       "low": 0,
       "close": 4896.55,
       "volume": 493610,
-      "timestamp": "2026-03-08T11:57:20.513265+05:30"
+      "timestamp": "2026-03-08T16:30:41.012190+05:30"
     },
     "prev_day_close": 0,
     "buy_quantity": 495560,
@@ -26682,8 +26682,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:20.513265+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.012190+05:30",
+    "tick_count": 6
   },
   "1813249": {
     "instrument_token": 1813249,
@@ -26815,7 +26815,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:11+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4751873": {
     "instrument_token": 4751873,
@@ -26947,7 +26947,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:14+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6914049": {
     "instrument_token": 6914049,
@@ -27013,7 +27013,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:01+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3478273": {
     "instrument_token": 3478273,
@@ -27057,7 +27057,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4749569": {
     "instrument_token": 4749569,
@@ -27167,7 +27167,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:56:24+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1316353": {
     "instrument_token": 1316353,
@@ -27277,7 +27277,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:50:16+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5261057": {
     "instrument_token": 5261057,
@@ -27321,7 +27321,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:43+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194510337": {
     "instrument_token": 194510337,
@@ -27365,7 +27365,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:40:00+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3053313": {
     "instrument_token": 3053313,
@@ -27563,7 +27563,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:50:24+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "51457": {
     "instrument_token": 51457,
@@ -27607,7 +27607,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:49:03+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2294785": {
     "instrument_token": 2294785,
@@ -27695,7 +27695,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4593921": {
     "instrument_token": 4593921,
@@ -27739,7 +27739,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:54:28+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1304833": {
     "instrument_token": 1304833,
@@ -27937,7 +27937,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:04+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2895105": {
     "instrument_token": 2895105,
@@ -28003,7 +28003,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:27:30+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "806401": {
     "instrument_token": 806401,
@@ -28069,7 +28069,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:45:52+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "7105025": {
     "instrument_token": 7105025,
@@ -28135,7 +28135,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:56:20+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2157569": {
     "instrument_token": 2157569,
@@ -28223,7 +28223,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:00+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194189057": {
     "instrument_token": 194189057,
@@ -28267,7 +28267,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:40:00+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5506049": {
     "instrument_token": 5506049,
@@ -28311,7 +28311,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:11+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "418825": {
     "instrument_token": 418825,
@@ -28487,7 +28487,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1594113": {
     "instrument_token": 1594113,
@@ -28663,7 +28663,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:04+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "356865": {
     "instrument_token": 356865,
@@ -28707,7 +28707,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:54:24+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "558849": {
     "instrument_token": 558849,
@@ -28773,7 +28773,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:56:39+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "411145": {
     "instrument_token": 411145,
@@ -28839,7 +28839,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:48+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "70401": {
     "instrument_token": 70401,
@@ -28949,7 +28949,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:17+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4772865": {
     "instrument_token": 4772865,
@@ -29235,7 +29235,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:11+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5932801": {
     "instrument_token": 5932801,
@@ -29367,7 +29367,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:40:46+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "62721": {
     "instrument_token": 62721,
@@ -29521,7 +29521,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:00+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2992385": {
     "instrument_token": 2992385,
@@ -29631,7 +29631,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:56+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1409793": {
     "instrument_token": 1409793,
@@ -29697,7 +29697,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:47:14+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "254209": {
     "instrument_token": 254209,
@@ -29741,7 +29741,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:25:36+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6280193": {
     "instrument_token": 6280193,
@@ -29807,7 +29807,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:44+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "193878017": {
     "instrument_token": 193878017,
@@ -29917,7 +29917,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:55:33+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "648961": {
     "instrument_token": 648961,
@@ -30071,7 +30071,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:54:29+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1793": {
     "instrument_token": 1793,
@@ -30258,7 +30258,7 @@
       "low": 49679.5,
       "close": 49970.6,
       "volume": 0,
-      "timestamp": "2026-03-08T11:57:15.053714+05:30"
+      "timestamp": "2026-03-08T16:30:41.914769+05:30"
     },
     "prev_day_close": 50000.8,
     "buy_quantity": 0,
@@ -30268,8 +30268,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:15.053714+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.914769+05:30",
+    "tick_count": 6
   },
   "405769": {
     "instrument_token": 405769,
@@ -30401,7 +30401,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:59+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "719105": {
     "instrument_token": 719105,
@@ -30555,7 +30555,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:30+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1609217": {
     "instrument_token": 1609217,
@@ -30687,7 +30687,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:21:06+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "7264769": {
     "instrument_token": 7264769,
@@ -30775,7 +30775,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:28:49+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3472641": {
     "instrument_token": 3472641,
@@ -30973,7 +30973,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194547457": {
     "instrument_token": 194547457,
@@ -31083,7 +31083,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:48:08+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2832641": {
     "instrument_token": 2832641,
@@ -31127,7 +31127,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:50:33+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6296321": {
     "instrument_token": 6296321,
@@ -31149,7 +31149,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:43:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3881217": {
     "instrument_token": 3881217,
@@ -31259,7 +31259,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:43:19+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "676609": {
     "instrument_token": 676609,
@@ -31369,7 +31369,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:12+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5380353": {
     "instrument_token": 5380353,
@@ -31479,7 +31479,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:14+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1459457": {
     "instrument_token": 1459457,
@@ -31655,7 +31655,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:03+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "958465": {
     "instrument_token": 958465,
@@ -31743,7 +31743,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:48+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1799681": {
     "instrument_token": 1799681,
@@ -31809,7 +31809,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:09+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3854849": {
     "instrument_token": 3854849,
@@ -31919,7 +31919,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:45:34+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "510465": {
     "instrument_token": 510465,
@@ -32018,7 +32018,7 @@
       "low": 0,
       "close": 3265.47,
       "volume": 327559,
-      "timestamp": "2026-03-08T11:57:16.414340+05:30"
+      "timestamp": "2026-03-08T16:30:41.338539+05:30"
     },
     "prev_day_close": 0,
     "buy_quantity": 327496,
@@ -32028,8 +32028,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:16.414340+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.338539+05:30",
+    "tick_count": 6
   },
   "5404929": {
     "instrument_token": 5404929,
@@ -32095,7 +32095,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:51+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4274177": {
     "instrument_token": 4274177,
@@ -32183,7 +32183,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:54+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3764993": {
     "instrument_token": 3764993,
@@ -32359,7 +32359,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:28+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1764609": {
     "instrument_token": 1764609,
@@ -32623,7 +32623,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:44:25+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3586049": {
     "instrument_token": 3586049,
@@ -32733,7 +32733,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:38+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2395137": {
     "instrument_token": 2395137,
@@ -32766,7 +32766,7 @@
       "low": 9222.05,
       "close": 9237.05,
       "volume": 0,
-      "timestamp": "2026-03-08T11:57:15.906930+05:30"
+      "timestamp": "2026-03-08T16:30:41.321412+05:30"
     },
     "prev_day_close": 9319.7,
     "buy_quantity": 0,
@@ -32776,8 +32776,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:15.906930+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.321412+05:30",
+    "tick_count": 6
   },
   "3376129": {
     "instrument_token": 3376129,
@@ -32821,7 +32821,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:49:05+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3608577": {
     "instrument_token": 3608577,
@@ -33063,7 +33063,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:48:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5468673": {
     "instrument_token": 5468673,
@@ -33107,7 +33107,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:40:00+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "7536385": {
     "instrument_token": 7536385,
@@ -33239,7 +33239,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:44+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6391297": {
     "instrument_token": 6391297,
@@ -33283,7 +33283,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:09+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3400961": {
     "instrument_token": 3400961,
@@ -33349,7 +33349,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:42+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1239809": {
     "instrument_token": 1239809,
@@ -33415,7 +33415,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2297601": {
     "instrument_token": 2297601,
@@ -33525,7 +33525,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:25:39+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194394881": {
     "instrument_token": 194394881,
@@ -33569,7 +33569,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:20+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2674433": {
     "instrument_token": 2674433,
@@ -33833,7 +33833,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2814209": {
     "instrument_token": 2814209,
@@ -33921,7 +33921,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:55:43+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "303361": {
     "instrument_token": 303361,
@@ -34031,7 +34031,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:42:59+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4662785": {
     "instrument_token": 4662785,
@@ -34163,7 +34163,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:42:50+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2815745": {
     "instrument_token": 2815745,
@@ -34306,7 +34306,7 @@
       "low": 0,
       "close": 1262.18,
       "volume": 126218,
-      "timestamp": "2026-03-08T11:57:15.085544+05:30"
+      "timestamp": "2026-03-08T16:30:41.016950+05:30"
     },
     "prev_day_close": 0,
     "buy_quantity": 126193,
@@ -34316,8 +34316,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:15.085544+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.016950+05:30",
+    "tick_count": 6
   },
   "3394561": {
     "instrument_token": 3394561,
@@ -34449,7 +34449,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:17+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "193618945": {
     "instrument_token": 193618945,
@@ -34647,7 +34647,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:55:14+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2234113": {
     "instrument_token": 2234113,
@@ -34823,7 +34823,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:53+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "260617": {
     "instrument_token": 260617,
@@ -34911,7 +34911,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:52:29+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "264969": {
     "instrument_token": 264969,
@@ -34955,7 +34955,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:40:20+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6988033": {
     "instrument_token": 6988033,
@@ -35285,7 +35285,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:40:40+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3739393": {
     "instrument_token": 3739393,
@@ -35329,7 +35329,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:57+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3665409": {
     "instrument_token": 3665409,
@@ -35439,7 +35439,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:53+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4518657": {
     "instrument_token": 4518657,
@@ -35549,7 +35549,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:28:09+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "319233": {
     "instrument_token": 319233,
@@ -35571,7 +35571,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:55:39+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194519553": {
     "instrument_token": 194519553,
@@ -35615,7 +35615,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:11+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4835585": {
     "instrument_token": 4835585,
@@ -35637,7 +35637,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:03+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "481025": {
     "instrument_token": 481025,
@@ -35725,7 +35725,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:57+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "303617": {
     "instrument_token": 303617,
@@ -35769,7 +35769,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:23:44+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5476353": {
     "instrument_token": 5476353,
@@ -35835,7 +35835,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:53:19+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3446529": {
     "instrument_token": 3446529,
@@ -36044,7 +36044,7 @@
       "low": 0,
       "close": 24571.75,
       "volume": 2480665,
-      "timestamp": "2026-03-08T11:57:15.980148+05:30"
+      "timestamp": "2026-03-08T16:30:41.657359+05:30"
     },
     "prev_day_close": 0,
     "buy_quantity": 2487335,
@@ -36054,8 +36054,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:15.980148+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.657359+05:30",
+    "tick_count": 6
   },
   "2822913": {
     "instrument_token": 2822913,
@@ -36121,7 +36121,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:56:19+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4589313": {
     "instrument_token": 4589313,
@@ -36187,7 +36187,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:48:19+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2946817": {
     "instrument_token": 2946817,
@@ -36253,7 +36253,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:33+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5278977": {
     "instrument_token": 5278977,
@@ -36363,7 +36363,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:45+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5352961": {
     "instrument_token": 5352961,
@@ -36451,7 +36451,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:24:52+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "10241": {
     "instrument_token": 10241,
@@ -36583,7 +36583,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:56+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "288521": {
     "instrument_token": 288521,
@@ -36781,7 +36781,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:59+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3777793": {
     "instrument_token": 3777793,
@@ -37001,7 +37001,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:57+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5085953": {
     "instrument_token": 5085953,
@@ -37089,7 +37089,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:02+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "824321": {
     "instrument_token": 824321,
@@ -37155,7 +37155,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:12+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4824065": {
     "instrument_token": 4824065,
@@ -37243,7 +37243,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:35+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3398401": {
     "instrument_token": 3398401,
@@ -37353,7 +37353,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:42:04+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2527745": {
     "instrument_token": 2527745,
@@ -37463,7 +37463,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:52+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "266249": {
     "instrument_token": 266249,
@@ -37617,7 +37617,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:45+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "42497": {
     "instrument_token": 42497,
@@ -37683,7 +37683,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:28:24+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "7742465": {
     "instrument_token": 7742465,
@@ -37925,7 +37925,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:41:57+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5171969": {
     "instrument_token": 5171969,
@@ -37969,7 +37969,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:40:17+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5899009": {
     "instrument_token": 5899009,
@@ -37991,7 +37991,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:10+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "352001": {
     "instrument_token": 352001,
@@ -38123,7 +38123,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:55:48+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "592897": {
     "instrument_token": 592897,
@@ -38277,7 +38277,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:40:19+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "4145153": {
     "instrument_token": 4145153,
@@ -38387,7 +38387,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:50:35+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5436929": {
     "instrument_token": 5436929,
@@ -38651,7 +38651,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:35+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194489089": {
     "instrument_token": 194489089,
@@ -38717,7 +38717,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:48+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5177345": {
     "instrument_token": 5177345,
@@ -38871,7 +38871,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T14:15:58+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5990913": {
     "instrument_token": 5990913,
@@ -38915,7 +38915,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:58+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "380161": {
     "instrument_token": 380161,
@@ -39047,7 +39047,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:49:48+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194349057": {
     "instrument_token": 194349057,
@@ -39289,7 +39289,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:44:52+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3676417": {
     "instrument_token": 3676417,
@@ -39311,7 +39311,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:17+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "6549505": {
     "instrument_token": 6549505,
@@ -39377,7 +39377,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:42+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194086401": {
     "instrument_token": 194086401,
@@ -39487,7 +39487,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:46:04+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "864001": {
     "instrument_token": 864001,
@@ -39531,7 +39531,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:51:04+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1946369": {
     "instrument_token": 1946369,
@@ -39597,7 +39597,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:49:44+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "920065": {
     "instrument_token": 920065,
@@ -39773,7 +39773,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:58+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "271113": {
     "instrument_token": 271113,
@@ -39817,7 +39817,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:56+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2666241": {
     "instrument_token": 2666241,
@@ -39861,7 +39861,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:34+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194788097": {
     "instrument_token": 194788097,
@@ -40015,7 +40015,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:02+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3774721": {
     "instrument_token": 3774721,
@@ -40059,7 +40059,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:57:07+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2315777": {
     "instrument_token": 2315777,
@@ -40103,7 +40103,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:58:50+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2953217": {
     "instrument_token": 2953217,
@@ -40257,7 +40257,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:32+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "3577857": {
     "instrument_token": 3577857,
@@ -40631,7 +40631,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:54:30+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1346049": {
     "instrument_token": 1346049,
@@ -40840,7 +40840,7 @@
       "low": 0,
       "close": 886.55,
       "volume": 88923,
-      "timestamp": "2026-03-08T11:57:18.990653+05:30"
+      "timestamp": "2026-03-08T16:30:41.002482+05:30"
     },
     "prev_day_close": 0,
     "buy_quantity": 88923,
@@ -40850,8 +40850,8 @@
       "bid": [],
       "ask": []
     },
-    "last_updated": "2026-03-08T11:57:18.990653+05:30",
-    "tick_count": 5
+    "last_updated": "2026-03-08T16:30:41.002482+05:30",
+    "tick_count": 6
   },
   "7670273": {
     "instrument_token": 7670273,
@@ -40961,7 +40961,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:56+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "5181953": {
     "instrument_token": 5181953,
@@ -41093,7 +41093,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:26+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "52737": {
     "instrument_token": 52737,
@@ -41247,7 +41247,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:56:27+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2989313": {
     "instrument_token": 2989313,
@@ -41269,7 +41269,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:43+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "7461377": {
     "instrument_token": 7461377,
@@ -41401,7 +41401,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:42:23+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "409609": {
     "instrument_token": 409609,
@@ -41445,7 +41445,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:55+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "2054145": {
     "instrument_token": 2054145,
@@ -41555,7 +41555,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:29:26+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "194416385": {
     "instrument_token": 194416385,
@@ -41577,7 +41577,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:48:07+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "7455745": {
     "instrument_token": 7455745,
@@ -41621,7 +41621,7 @@
       "ask": []
     },
     "last_updated": "2026-03-06T15:59:31+05:30",
-    "tick_count": 5
+    "tick_count": 6
   },
   "1689601": {
     "instrument_token": 1689601,
