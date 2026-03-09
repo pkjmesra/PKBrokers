@@ -26,7 +26,7 @@ name: 0. 24x7 bot Ticks Runner
 on:
   schedule:
     # Every 5 hours and 50 minutes
-    - cron: '50 */5 * * *'
+    - cron: '50 */1 * * *'
   workflow_dispatch:  # Allow manual triggering
     inputs:
       logLevel:
@@ -38,7 +38,7 @@ on:
 jobs:
   market-runner:
     runs-on: ubuntu-latest
-    timeout-minutes: 355  # Just under 6 hours (5h55m) to avoid being cutoff
+    timeout-minutes: 60  # Just under an hour
     env:
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
       TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
