@@ -38,7 +38,7 @@ on:
 jobs:
   market-runner:
     runs-on: ubuntu-latest
-    timeout-minutes: 60  # Just under an hour
+    timeout-minutes: 70 # Set a timeout to prevent hanging runs
     env:
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
       TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
@@ -142,6 +142,7 @@ jobs:
         chmod 600 user_session.session
 
     - name: Run pkkite orchestrator from source
+      timeout-minutes: 55  # Set a timeout to prevent hanging runs
       env:
         PYTHONUNBUFFERED: 1  # Force unbuffered output
         PKDevTools_Default_Log_Level: ${{ env.PKDevTools_Default_Log_Level }}
@@ -181,6 +182,7 @@ jobs:
         cd ../../..
 
     - name: Get Archive Date String
+      if: always()
       id: get_date
       run: |
         python .github/workflows/get_archive_date.py
