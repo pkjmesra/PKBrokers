@@ -347,9 +347,9 @@ class DataSharingManager:
                                 
                                 # Validate freshness and trigger history download if stale
                                 if validate_freshness and file_type == "daily":
-                                    is_fresh, data_date, missing_days, trading_date = self.validate_pkl_freshness(output_path)
-                                    if not is_fresh and missing_days > 0:
-                                        self.logger.warning(f"Downloaded pkl is stale by {missing_days} trading days. Triggering history download...")
+                                    is_fresh, data_date, missing_days, trading_date, latest_time, stale_seconds = self.validate_pkl_freshness(output_path)
+                                    if not is_fresh and (missing_days > 0 or stale_seconds > 0):
+                                        self.logger.warning(f"Downloaded pkl is stale by {missing_days} trading days or {stale_seconds} seconds. Triggering history download...")
                                         self.trigger_history_download_workflow(missing_days)
                                 
                                 return True, output_path
@@ -368,63 +368,158 @@ class DataSharingManager:
             self.logger.error(f"Error downloading from GitHub: {e}")
             return False, None
     
-    def validate_pkl_freshness(self, pkl_path: str) -> Tuple[bool, Optional[datetime], int]:
+    def validate_pkl_freshness(self, pkl_path: str) -> Tuple[bool, Optional[datetime], int, Optional[datetime], Optional[datetime.time], int]:
         """
-        Validate if pkl file data is fresh (has data up to last trading date).
+        Validate if pkl file data is fresh (has data up to current market time).
         
         Args:
             pkl_path: Path to pkl file
             
         Returns:
-            Tuple of (is_fresh, latest_data_date, missing_trading_days)
+            Tuple of (is_fresh, latest_data_date, missing_trading_days, last_trading_date, latest_time, stale_seconds)
+            is_fresh: True if data includes recent ticks (within acceptable delay)
+            stale_seconds: Number of seconds the data is stale (0 if fresh)
         """
         try:
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+            from datetime import datetime, time, timedelta
+            import pytz
             
             if not os.path.exists(pkl_path):
-                return False, None, 0, None
+                return False, None, 0, None, None, 0
             
             with open(pkl_path, 'rb') as f:
                 data = pickle.load(f)
             
             if not data:
-                return False, None, 0, None
+                return False, None, 0, None, None, 0
             
-            # Find the latest date across all stocks
+            # Find the latest date and time across all stocks
             latest_date = None
+            latest_datetime = None  # Full datetime with timezone
+            latest_time = None
+            
             for symbol, df in data.items():
                 if hasattr(df, 'index') and len(df.index) > 0:
-                    stock_last_date = df.index[-1]
-                    if hasattr(stock_last_date, 'date'):
-                        stock_last_date = stock_last_date.date()
-                    elif hasattr(stock_last_date, 'to_pydatetime'):
-                        stock_last_date = stock_last_date.to_pydatetime().date()
+                    stock_last_idx = df.index[-1]
+                    stock_datetime = None
                     
-                    if latest_date is None or stock_last_date > latest_date:
-                        latest_date = stock_last_date
+                    # Extract full datetime based on index type
+                    if hasattr(stock_last_idx, 'to_pydatetime'):
+                        # Pandas Timestamp
+                        stock_datetime = stock_last_idx.to_pydatetime()
+                    elif hasattr(stock_last_idx, 'tz'):
+                        # Timezone-aware datetime
+                        stock_datetime = stock_last_idx
+                    elif isinstance(stock_last_idx, (datetime, str)):
+                        # Convert string or datetime
+                        if isinstance(stock_last_idx, str):
+                            try:
+                                stock_datetime = datetime.fromisoformat(stock_last_idx)
+                            except:
+                                continue
+                        else:
+                            stock_datetime = stock_last_idx
+                    
+                    if stock_datetime is None:
+                        continue
+                    
+                    # Ensure timezone-aware (assume IST if naive)
+                    if hasattr(stock_datetime, 'tzinfo') and stock_datetime.tzinfo is None:
+                        stock_datetime = pytz.timezone('Asia/Kolkata').localize(stock_datetime)
+                    
+                    # Get date and time
+                    stock_date = stock_datetime.date()
+                    stock_time = stock_datetime.time()
+                    
+                    if latest_datetime is None or stock_datetime > latest_datetime:
+                        latest_datetime = stock_datetime
+                        latest_date = stock_date
+                        latest_time = stock_time
+                    elif stock_date == latest_date and stock_time and latest_time and stock_time > latest_time:
+                        latest_datetime = stock_datetime
+                        latest_time = stock_time
             
-            if latest_date is None:
-                return False, None, 0, None
+            if latest_datetime is None:
+                return False, None, 0, None, None, 0
             
-            # Get the last trading date using PKDateUtilities
+            # Get current time in IST
+            KOLKATA_TZ = pytz.timezone('Asia/Kolkata')
+            now = datetime.now(KOLKATA_TZ)
+            
+            # Define market hours
+            MARKET_OPEN_TIME = time(9, 15, 0)
+            MARKET_CLOSE_TIME = time(15, 29, 0)
+            current_time = now.time()
+            current_date = now.date()
+            
+            # Check if today is a trading day
+            is_trading_day = self.is_trading_day(now)
+            
+            # Determine the reference time for freshness comparison
+            if is_trading_day and current_time >= MARKET_OPEN_TIME:
+                # During market hours - compare against current time
+                reference_datetime = now
+                self.logger.debug(f"Market hours - comparing against current time: {reference_datetime}")
+            else:
+                # Outside market hours or holiday - compare against last market close
+                last_trading_date = PKDateUtilities.tradingDate()
+                if hasattr(last_trading_date, 'date'):
+                    last_trading_date = last_trading_date.date()
+                
+                reference_datetime = KOLKATA_TZ.localize(datetime.combine(
+                    last_trading_date, 
+                    MARKET_CLOSE_TIME
+                ))
+                self.logger.debug(f"Non-market hours - comparing against last close: {reference_datetime}")
+            
+            # Calculate stale seconds
+            if latest_datetime >= reference_datetime:
+                # Data is fresh (includes current time or last close)
+                is_fresh = True
+                stale_seconds = 0
+                self.logger.info(f"Pkl data is fresh. Latest: {latest_datetime}, Reference: {reference_datetime}")
+            else:
+                # Data is stale
+                is_fresh = False
+                stale_seconds = int((reference_datetime - latest_datetime).total_seconds())
+                
+                # Calculate missing trading days for historical context
+                last_trading_date = PKDateUtilities.tradingDate()
+                if hasattr(last_trading_date, 'date'):
+                    last_trading_date = last_trading_date.date()
+                
+                if latest_date < last_trading_date:
+                    missing_days = PKDateUtilities.trading_days_between(latest_date, last_trading_date)
+                else:
+                    missing_days = 0
+                
+                # Detailed logging based on scenario
+                if is_trading_day and current_time >= MARKET_OPEN_TIME:
+                    # During market hours
+                    self.logger.warning(f"Pkl data is stale during market hours. "
+                                    f"Latest: {latest_datetime}, Current: {now}, "
+                                    f"Stale by {stale_seconds} seconds ({stale_seconds/60:.1f} minutes)")
+                elif latest_date == current_date and not is_trading_day:
+                    # Today is holiday, data from today (shouldn't happen)
+                    self.logger.warning(f"Pkl data is from today ({current_date}) which is a holiday. "
+                                    f"Last trading day was {last_trading_date}")
+                else:
+                    # Outside market hours
+                    self.logger.warning(f"Pkl data is stale. Latest: {latest_datetime}, "
+                                    f"Reference: {reference_datetime}, "
+                                    f"Missing {missing_days} trading days, Stale by {stale_seconds} seconds")
+            
+            # Get last trading date for return value
             last_trading_date = PKDateUtilities.tradingDate()
             if hasattr(last_trading_date, 'date'):
                 last_trading_date = last_trading_date.date()
             
-            # Check if data is fresh
-            if latest_date >= last_trading_date:
-                self.logger.info(f"Pkl data is fresh. Latest date: {latest_date}, Last trading date: {last_trading_date}")
-                return True, latest_date, 0, last_trading_date
-            
-            # Calculate missing trading days
-            missing_days = PKDateUtilities.trading_days_between(latest_date, last_trading_date)
-            
-            self.logger.warning(f"Pkl data is stale. Latest date: {latest_date}, Last trading date: {last_trading_date}, Missing {missing_days} trading days")
-            return False, latest_date, missing_days, last_trading_date
+            return is_fresh, latest_date, missing_days if not is_fresh else 0, last_trading_date, latest_time, stale_seconds
             
         except Exception as e:
             self.logger.error(f"Error validating pkl freshness: {e}")
-            return False, None, 0, None
+            return False, None, 0, None, None, 0
     
     def trigger_history_download_workflow(self, past_offset: int = 1) -> bool:
         """
@@ -491,14 +586,14 @@ class DataSharingManager:
             if pkl_path is None:
                 pkl_path = self.get_daily_pkl_path()
             
-            is_fresh, data_date, missing_days, trading_date = self.validate_pkl_freshness(pkl_path)
+            is_fresh, data_date, missing_days, trading_date, latest_time, stale_seconds = self.validate_pkl_freshness(pkl_path)
             
             if is_fresh:
                 self.logger.info("Data is already fresh")
                 return True
             
-            if missing_days > 0:
-                self.logger.info(f"Data is stale by {missing_days} trading days. Triggering history download...")
+            if missing_days > 0 or stale_seconds > 0:
+                self.logger.info(f"Data is stale by {missing_days} trading days or {stale_seconds} seconds. Triggering history download...")
                 
                 # Trigger history download workflow
                 triggered = self.trigger_history_download_workflow(missing_days)
@@ -530,7 +625,7 @@ class DataSharingManager:
         pkl_path = self.get_daily_pkl_path()
         
         # Check freshness of the existing daily_candles.pkl
-        is_fresh, _, _, _ = self.validate_pkl_freshness(pkl_path)
+        is_fresh, _, _, _, latest_time, stale_seconds = self.validate_pkl_freshness(pkl_path)
         
         if is_fresh and os.path.exists(pkl_path):
             self.logger.info("daily_candles.pkl is already fresh.")

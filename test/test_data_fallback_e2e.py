@@ -147,7 +147,7 @@ class TestDataFallbackE2E(unittest.TestCase):
             pickle.dump(sample_data, f)
         
         # Validate freshness - should be fresh since it's today's data
-        is_fresh, data_date, missing_days, trading_date = data_mgr.validate_pkl_freshness(test_pkl_path)
+        is_fresh, data_date, missing_days, trading_date, latest_time, stale_seconds = data_mgr.validate_pkl_freshness(test_pkl_path)
         
         # Data from today should be fresh (or 0-1 days old depending on market hours)
         self.assertLessEqual(missing_days, 1, "Today's data should have 0-1 missing days")
@@ -179,13 +179,14 @@ class TestDataFallbackE2E(unittest.TestCase):
             pickle.dump(sample_data, f)
         
         # Validate freshness - should be stale
-        is_fresh, data_date, missing_days, trading_date = data_mgr.validate_pkl_freshness(test_pkl_path)
+        is_fresh, data_date, missing_days, trading_date, latest_time, stale_seconds = data_mgr.validate_pkl_freshness(test_pkl_path)
         
         # Data from 2 weeks ago should be stale (at least 5-10 trading days)
         self.assertFalse(is_fresh, "2-week old data should be stale")
         self.assertGreater(missing_days, 5, "Should have multiple missing trading days")
+        self.assertGreater(stale_seconds, 0, "Should have some stale seconds")
         
-        print(f"✅ Stale data detected: is_fresh={is_fresh}, missing_days={missing_days}")
+        print(f"✅ Stale data detected: is_fresh={is_fresh}, missing_days={missing_days}, stale_seconds={stale_seconds}")
 
     def test_load_pkl_into_candle_store(self):
         """Test loading pkl data into candle store."""
