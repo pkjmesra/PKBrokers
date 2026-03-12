@@ -29,6 +29,7 @@ import os
 import signal
 import sys
 import time
+import pytz
 from datetime import datetime
 from datetime import time as dt_time
 from typing import Optional
@@ -47,6 +48,8 @@ if __name__ == "__main__":
 WAIT_TIME_SEC_CLOSING_ANOTHER_RUNNING_INSTANCE = 10
 MAX_STALE_SECONDS = 120  # 2 minutes
 MAX_REFRESH_INTERVAL = 60  # 1 minute
+KOLKATA_TZ = pytz.timezone("Asia/Kolkata")
+
 class StatsCollector:
     """Dedicated process to collect and serve stats"""
     
