@@ -967,31 +967,31 @@ def orchestrate():
                     close_price = ohlcv.get('close', 0)
                     if close_price == 0:
                         continue
-                    
-                    # Parse timestamp - use the tick's timestamp
+
+                    # Parse timestamp - preserve the original format
                     timestamp_str = ohlcv.get('timestamp')
                     if timestamp_str:
                         try:
-                            from dateutil import parser
-                            dt = parser.parse(timestamp_str)
-                            exchange_timestamp = dt.timestamp()
+                            # Keep it as a string for now, let the candle store handle conversion
+                            exchange_timestamp = timestamp_str
+                            # We don't convert to Unix timestamp here - preserve original format
                         except:
                             exchange_timestamp = time.time()
                     else:
                         exchange_timestamp = time.time()
-                    
+
                     # CRITICAL: Register instrument first
                     if trading_symbol:
                         candle_store.register_instrument(instrument_token, trading_symbol)
-                    
-                    # Create tick data in the format expected by process_tick()
+
+                    # Create tick data - preserve timestamp as string if that's what we received
                     tick_for_candle = {
                         'instrument_token': instrument_token,
                         'trading_symbol': trading_symbol,
                         'last_price': close_price,
                         'day_volume': ohlcv.get('volume', 0),
                         'oi': tick_info.get('oi', 0),
-                        'exchange_timestamp': exchange_timestamp,
+                        'exchange_timestamp': exchange_timestamp,  # Keep as string, don't convert
                         'type': 'tick',
                         'open_price': ohlcv.get('open', close_price),
                         'high_price': ohlcv.get('high', close_price),

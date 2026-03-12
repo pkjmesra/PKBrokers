@@ -406,7 +406,7 @@ class InMemoryCandleStore:
                 - last_price: float
                 - day_volume: int (optional)
                 - oi: int (optional)
-                - exchange_timestamp: int/float (Unix timestamp)
+                - exchange_timestamp: int/float/str (Unix timestamp or ISO string)
                 - trading_symbol: str (optional)
                 
         Returns:
@@ -417,63 +417,74 @@ class InMemoryCandleStore:
             price = tick_data.get('last_price', 0)
             day_volume = tick_data.get('day_volume', 0)
             oi = tick_data.get('oi', 0)
-            timestamp = tick_data.get('exchange_timestamp')
+            raw_timestamp = tick_data.get('exchange_timestamp')
             trading_symbol = tick_data.get('trading_symbol', '')
+            
+            # Parse timestamp to datetime (timezone-aware)
+            if isinstance(raw_timestamp, str):
+                # Parse ISO string to datetime
+                from dateutil import parser
+                dt = parser.parse(raw_timestamp)
+                if dt.tzinfo is None:
+                    dt = pytz.timezone('Asia/Kolkata').localize(dt)
+                else:
+                    dt = dt.astimezone(pytz.timezone('Asia/Kolkata'))
+            elif isinstance(raw_timestamp, (int, float)):
+                # Convert Unix timestamp to datetime
+                dt = datetime.fromtimestamp(raw_timestamp, tz=pytz.timezone('Asia/Kolkata'))
+            else:
+                dt = datetime.now(pytz.timezone('Asia/Kolkata'))
+            
+            # Store datetime in tick_data for reference (optional)
+            tick_data['exchange_timestamp_dt'] = dt
+            
+            # For candle calculations, we need the timestamp as float
+            timestamp_float = dt.timestamp()
             
             # Add periodic debug logging
             if self.stats['ticks_processed'] % 1000 == 0:
-                self.logger.info(f"process_tick called with token={instrument_token}, symbol={trading_symbol}, price={price}, ts={timestamp}")
+                self.logger.info(f"process_tick called with token={instrument_token}, symbol={trading_symbol}, price={price}, dt={dt}")
             
             if instrument_token is None or price is None or price <= 0:
                 return False
-            
-            # Handle timestamp
-            if timestamp is None:
-                timestamp = time.time()
-            elif hasattr(timestamp, 'timestamp'):
-                timestamp = timestamp.timestamp()
             
             with self.lock:
                 instrument = self._get_or_create_instrument(instrument_token, trading_symbol)
                 instrument.last_update = time.time()
                 
                 # Calculate INCREMENTAL volume from cumulative day_volume
-                # day_volume from Zerodha is cumulative total for the day
-                # We need the increment since last tick for intraday candles
                 incremental_volume = 0
                 if day_volume > 0:
                     if instrument.last_day_volume > 0:
-                        # Calculate increment (handle day reset if new day_volume < last)
                         if day_volume >= instrument.last_day_volume:
                             incremental_volume = day_volume - instrument.last_day_volume
                         else:
-                            # New trading day or data reset - use full day_volume
                             incremental_volume = day_volume
                     else:
-                        # First tick for this instrument - use full day_volume
                         incremental_volume = day_volume
                     instrument.last_day_volume = day_volume
                 
-                # Update candles for all intervals
+                # Update candles for all intervals using timestamp_float
                 for interval in SUPPORTED_INTERVALS.keys():
-                    # For daily candles, use cumulative day_volume directly
-                    # For intraday candles, use incremental volume
                     if interval in ('day', '1d'):
-                        self._update_candle(instrument, interval, timestamp, price, day_volume, oi, is_daily=True)
+                        self._update_candle(instrument, interval, timestamp_float, price, day_volume, oi, is_daily=True)
                     else:
-                        self._update_candle(instrument, interval, timestamp, price, incremental_volume, oi, is_daily=False)
+                        self._update_candle(instrument, interval, timestamp_float, price, incremental_volume, oi, is_daily=False)
                 
                 self.stats = self.get_stats()
                 self.stats['ticks_processed'] += 1
-                self.stats['last_tick_time'] = timestamp
-                # Debug - log every 1000 ticks
+                self.stats['last_tick_time'] = timestamp_float
+                
+                # Debug logging
                 if self.stats['ticks_processed'] % 1000 == 0:
                     self.logger.debug(f"Candle store processed {self.stats['ticks_processed']} ticks")
                     if hasattr(self, 'shared_stats') and self.shared_stats is not None:
                         self.logger.debug(f"Shared stats after update: {dict(self.shared_stats)}")
+                
+                # Update shared stats
                 if hasattr(self, 'shared_stats') and self.shared_stats is not None:
                     self.shared_stats['ticks_processed'] = self.stats['ticks_processed']
-                    self.shared_stats['last_tick_time'] = timestamp
+                    self.shared_stats['last_tick_time'] = timestamp_float
                     self.shared_stats['instruments_with_ticks'] = self.stats.get('instruments_with_ticks', 0)
                     self.shared_stats['instrument_count'] = len(self.instruments)
                     self.shared_stats['uptime_seconds'] = self.stats.get('uptime_seconds', 0)
