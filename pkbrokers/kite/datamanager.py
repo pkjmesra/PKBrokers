@@ -40,6 +40,7 @@ from PKDevTools.classes import Archiver
 from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
 
+MAX_NETWORK_TIMEOUT = 60 # 60 seconds for network operations
 class InstrumentDataManager:
     """
     A comprehensive data manager for financial instrument data synchronization and retrieval.
@@ -437,7 +438,7 @@ class InstrumentDataManager:
         for url, file_type in sources:
             try:
                 self.logger.debug(f"Trying to download ticks from: {url}")
-                response = requests.get(url, timeout=60)
+                response = requests.get(url, timeout=MAX_NETWORK_TIMEOUT)
                 
                 if response.status_code != 200:
                     self.logger.debug(f"Not available: HTTP {response.status_code}")
@@ -1419,21 +1420,21 @@ class InstrumentDataManager:
         
         try:
             self.logger.info(f"Downloading pickle from: {url_to_use}")
-            response = requests.get(url_to_use, timeout=60)
+            response = requests.get(url_to_use, timeout=MAX_NETWORK_TIMEOUT)
             
             # If dated file fails, try fallback chain
             if response.status_code != 200 and url_to_use == self.raw_pickle_url:
                 self.logger.info("Dated pickle not found, trying fallback...")
                 url_to_use = self.fallback_pickle_url
                 local_path = self.fallback_local_path
-                response = requests.get(url_to_use, timeout=60)
+                response = requests.get(url_to_use, timeout=MAX_NETWORK_TIMEOUT)
                 
                 # If still failed, try daily_candles.pkl
                 if response.status_code != 200:
                     self.logger.info("Fallback not found, trying daily_candles.pkl...")
                     url_to_use = self.daily_candles_url
                     local_path = Path(Archiver.get_user_data_dir()) / "daily_candles.pkl"
-                    response = requests.get(url_to_use, timeout=60)
+                    response = requests.get(url_to_use, timeout=MAX_NETWORK_TIMEOUT)
             
             response.raise_for_status()
             

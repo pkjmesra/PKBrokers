@@ -36,6 +36,7 @@ from PKDevTools.classes import Archiver
 from PKDevTools.classes.Environment import PKEnvironment
 from telethon import TelegramClient, events
 
+MAX_NETWORK_TIMEOUT = 20 # 20 seconds for network operations
 
 class PKTickBotConsumer:
     """Programmatic client to interact with PKTickBot with zip handling"""
@@ -89,14 +90,14 @@ class PKTickBotConsumer:
             # Get file path
             url = f"{self.bridge_base_url}/getFile"
             payload = {"file_id": file_id}
-            response = requests.post(url, json=payload, timeout=30)
+            response = requests.post(url, json=payload, timeout=MAX_NETWORK_TIMEOUT)
             response.raise_for_status()
 
             file_path_info = response.json()["result"]["file_path"]
 
             # Download file
             download_url = f"https://api.telegram.org/file/bot{self.bridge_bot_token}/{file_path_info}"
-            response = requests.get(download_url, stream=True, timeout=60)
+            response = requests.get(download_url, stream=True, timeout=MAX_NETWORK_TIMEOUT)
             response.raise_for_status()
 
             with open(file_path, "wb") as f:
@@ -284,7 +285,7 @@ async def get_pktickbot_response_command(command: str = "/ticks"):
         # Wait for response with timeout
         try:
             # Wait for the response received signal
-            await asyncio.wait_for(response_received.wait(), timeout=60)
+            await asyncio.wait_for(response_received.wait(), timeout=MAX_NETWORK_TIMEOUT)
 
             # Get the response from queue
             response = await response_queue.get()
@@ -310,7 +311,7 @@ async def get_pktickbot_response_command(command: str = "/ticks"):
         except asyncio.TimeoutError:
             return {
                 "type": "timeout",
-                "content": "No response from bot within 60 seconds",
+                "content": f"No response from bot within {MAX_NETWORK_TIMEOUT} seconds",
                 "success": False,
             }
 

@@ -45,7 +45,8 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()
 
 WAIT_TIME_SEC_CLOSING_ANOTHER_RUNNING_INSTANCE = 10
-
+MAX_STALE_SECONDS = 120  # 2 minutes
+MAX_REFRESH_INTERVAL = 60  # 1 minute
 class StatsCollector:
     """Dedicated process to collect and serve stats"""
     
@@ -645,8 +646,8 @@ class PKTickOrchestrator:
             def data_refresher():
                 """Periodically check and refresh pkl data during market hours."""
                 logger = default_logger()
-                refresh_interval = 60  # Check every 60 seconds
-                max_stale_seconds = 120  # 2 minutes
+                refresh_interval = MAX_REFRESH_INTERVAL  # Check every 60 seconds
+                max_stale_seconds = MAX_STALE_SECONDS  # 2 minutes
                 
                 while not self.shutdown_requested:
                     try:

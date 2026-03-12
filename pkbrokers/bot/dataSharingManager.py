@@ -75,6 +75,8 @@ MARKET_CLOSE_MINUTE = 30
 
 # Staleness threshold (seconds)
 MAX_STALE_SECONDS = 120  # 2 minutes
+MAX_NETWORK_TIMEOUT = 20 # 20 seconds for network operations
+SECONDS_IN_1_MINUTE = 60  # 60 seconds
 
 # Holiday cache
 _holiday_cache: Optional[Dict[str, List[str]]] = None
@@ -273,7 +275,7 @@ class DataSharingManager:
             microsecond=0
         )
         
-        time_to_close = (market_close - now).total_seconds() / 60
+        time_to_close = (market_close - now).total_seconds() / SECONDS_IN_1_MINUTE
         
         return 0 <= time_to_close <= minutes_before
     
@@ -458,7 +460,7 @@ class DataSharingManager:
             for url in urls_to_try:
                 try:
                     self.logger.debug(f"Trying to download from: {url}")
-                    response = requests.get(url, timeout=60)
+                    response = requests.get(url, timeout=MAX_NETWORK_TIMEOUT)
                     
                     if response.status_code == 200 and len(response.content) > 1000:
                         # Ensure we got actual pkl content, not an error page
@@ -655,7 +657,7 @@ class DataSharingManager:
                     # During market hours
                     self.logger.warning(f"Pkl data is stale during market hours. "
                                     f"Latest: {latest_datetime}, Current: {now}, "
-                                    f"Stale by {stale_seconds} seconds ({stale_seconds/60:.1f} minutes)")
+                                    f"Stale by {stale_seconds} seconds ({stale_seconds/SECONDS_IN_1_MINUTE:.1f} minutes)")
                 elif latest_date == current_date and not is_trading_day:
                     # Today is holiday, data from today (shouldn't happen)
                     self.logger.debug(f"Pkl data is from today ({current_date}) which is a holiday. "

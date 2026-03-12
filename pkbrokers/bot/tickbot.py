@@ -52,6 +52,7 @@ OWNER_USER = "Itsonlypk"
 GROUP_CHAT_ID = 1001907892864
 start_time = datetime.now()
 APOLOGY_TEXT = "Apologies! The @pktickbot is NOT available for the time being! We are working with our host GitHub and other data source providers to sort out pending invoices and restore the services soon! Thanks for your patience and support! 🙏"
+SECONDS_IN_1_MINUTE = 60  # 60 seconds
 
 # Enable logging
 logging.basicConfig(
@@ -568,7 +569,7 @@ class PKTickBot:
             if (
                 timeSinceStarted.total_seconds() >= MINUTES_2_IN_SECONDS
             ):  # shutdown only if we have been running for over 2 minutes.
-                warn_msg = f"❌ This instance is stopping due to conflict after running for {timeSinceStarted.total_seconds()/60} minutes."
+                warn_msg = f"❌ This instance is stopping due to conflict after running for {timeSinceStarted.total_seconds()/SECONDS_IN_1_MINUTE} minutes."
                 logger.warning(warn_msg)
                 context.bot.send_message(
                     chat_id=int(f"-{Channel_Id}"), text=warn_msg, parse_mode="HTML"
