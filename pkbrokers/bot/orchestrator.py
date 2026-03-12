@@ -345,20 +345,33 @@ class PKTickOrchestrator:
                 last_ticks_commit = time.time()
                 logger.info("stats_sender started successfully!")
                 CYCLE_TIME_SEC = 30
+                commit_count = 0
+                error_count = 0
+                
                 while True:
-                    time.sleep(CYCLE_TIME_SEC)  # Send updates every n seconds
                     try:
-                        # Only send if stats have changed
+                        time.sleep(CYCLE_TIME_SEC)
+                        
+                        # Send stats updates
                         if time.time() - last_send >= CYCLE_TIME_SEC:
                             stats_queue.put(shared_stats.copy())
                             last_send = time.time()
-                        if time.time() - last_ticks_commit >= 2*CYCLE_TIME_SEC:
+                        
+                        # Check if it's time to commit ticks (every 60 seconds)
+                        current_time = time.time()
+                        time_since_last_commit = current_time - last_ticks_commit
+                        
+                        if time_since_last_commit >= 2*CYCLE_TIME_SEC:  # 60 seconds
+                            logger.debug(f"Commit check: {time_since_last_commit:.1f}s since last commit")
+                            
                             from pkbrokers.kite.examples.pkkite import commit_ticks
                             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+                            
                             cur_ist = PKDateUtilities.currentDateTime()
+                            
                             # Market hours: 9:15 AM to 3:30 PM on non-holiday weekdays
                             is_market_open = (
-                                cur_ist.weekday() < 5 and  # Monday=0, Friday=4
+                                cur_ist.weekday() < 5 and
                                 not PKDateUtilities.isTodayHoliday() and
                                 (
                                     (cur_ist.hour == 9 and cur_ist.minute >= 15) or
@@ -366,12 +379,26 @@ class PKTickOrchestrator:
                                     (cur_ist.hour == 15 and cur_ist.minute <= 30)
                                 )
                             )
-                            logger.debug(f"Checking if we should commit ticks: is_market_open={is_market_open}")
-                            if is_market_open or (time.time() - last_ticks_commit >= 60*CYCLE_TIME_SEC):
-                                last_ticks_commit = time.time()
-                                commit_ticks(file_name="ticks.json")
+                            
+                            # Force commit if market is open OR if it's been more than 4 cycles (2 minutes) since last commit
+                            should_commit = is_market_open or (time_since_last_commit >= 4*CYCLE_TIME_SEC)
+                            
+                            logger.info(f"Commit decision: should_commit={should_commit}, is_market_open={is_market_open}, time_since={time_since_last_commit:.1f}s")
+                            
+                            if should_commit:
+                                try:
+                                    commit_count += 1
+                                    logger.info(f"Attempting commit #{commit_count} at {cur_ist.strftime('%H:%M:%S')}")
+                                    commit_ticks(file_name="ticks.json")
+                                    last_ticks_commit = current_time
+                                    logger.info(f"✓ Commit #{commit_count} successful")
+                                except Exception as commit_err:
+                                    error_count += 1
+                                    logger.error(f"✗ Commit #{commit_count} failed (error #{error_count}): {commit_err}", exc_info=True)
+                                    # Don't update last_ticks_commit on failure, so it will retry
                     except Exception as e:
-                        logger.error(f"Error sending stats: {e}")
+                        logger.error(f"Fatal error in stats_sender: {e}", exc_info=True)
+                        time.sleep(5)  # Brief pause before retrying
             threading.Thread(target=stats_sender, daemon=True).start()
             kite_ticks(stop_queue=stop_queue, ws_stop_event=ws_stop_event, shared_stats=shared_stats, child_process_ref=child_process_ref)
         except KeyboardInterrupt:
