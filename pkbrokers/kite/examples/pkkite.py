@@ -510,15 +510,6 @@ def pkkite():
                 else:
                     default_logger().warning("No fallback data available, starting fresh")
 
-            cur_ist = PKDateUtilities.currentDateTime()
-            is_non_market_hour = (
-                (cur_ist.hour >= 15 and cur_ist.minute >= 30)
-                or (cur_ist.hour <= 9 and cur_ist.minute <= 15)
-                or PKDateUtilities.isTodayHoliday()[0]
-            )
-            if is_non_market_hour:
-                orchestrate_consumer(command="/db")
-                commit_ticks(file_name="ticks.db.zip")
         except Exception as e:
             default_logger().error(e)
             pass
