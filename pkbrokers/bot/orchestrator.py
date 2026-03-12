@@ -617,12 +617,13 @@ class PKTickOrchestrator:
             self.kite_process = None
 
     def run(self):
-        """Main run method with graceful shutdown handling"""
+        """Main run method with graceful shutdown handling and periodic data refresh."""
         try:
             from PKDevTools.classes.log import default_logger
             import threading
             import queue
             logger = default_logger()
+            
             # Start a thread to read from stats_queue and update shared_stats
             def stats_reader():
                 logger = default_logger()
@@ -639,6 +640,54 @@ class PKTickOrchestrator:
                         logger.error(f"Error in stats reader: {e}")
             
             threading.Thread(target=stats_reader, daemon=True).start()
+            
+            # Start a thread for periodic data refresh during market hours
+            def data_refresher():
+                """Periodically check and refresh pkl data during market hours."""
+                logger = default_logger()
+                refresh_interval = 60  # Check every 60 seconds
+                max_stale_seconds = 120  # 2 minutes
+                
+                while not self.shutdown_requested:
+                    try:
+                        time.sleep(refresh_interval)
+                        
+                        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+                        from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+                        from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
+                        
+                        # Only refresh during trading hours
+                        if not PKDateUtilities.isTradingTime():
+                            continue
+                        
+                        data_mgr = get_data_sharing_manager()
+                        candle_store = get_candle_store()
+                        
+                        # Check and refresh daily pkl if stale
+                        daily_pkl_path = data_mgr.get_daily_pkl_path()
+                        is_fresh, _, missing_days, _, _, stale_seconds = data_mgr.validate_pkl_freshness(daily_pkl_path)
+                        
+                        if not is_fresh and (stale_seconds > max_stale_seconds or missing_days > 0):
+                            logger.info(f"Periodic refresh: Daily pkl stale by {stale_seconds}s or missing {missing_days} days")
+                            data_mgr.refresh_pkl_if_stale(candle_store, max_stale_seconds)
+                        
+                        # Check and refresh intraday pkl if stale (based on file age during market hours)
+                        if data_mgr.is_market_open():
+                            intraday_path = data_mgr.get_intraday_pkl_path()
+                            if os.path.exists(intraday_path):
+                                mod_time = datetime.fromtimestamp(os.path.getmtime(intraday_path), tz=KOLKATA_TZ)
+                                now = datetime.now(KOLKATA_TZ)
+                                seconds_old = (now - mod_time).total_seconds()
+                                
+                                if seconds_old > max_stale_seconds:
+                                    logger.info(f"Periodic refresh: Intraday pkl is {seconds_old:.0f}s old")
+                                    data_mgr.export_intraday_candles_to_pkl(candle_store)
+                    
+                    except Exception as e:
+                        logger.error(f"Error in data refresher thread: {e}")
+            
+            threading.Thread(target=data_refresher, daemon=True).start()
+            
             signal.signal(signal.SIGINT, self.signal_handler)
             signal.signal(signal.SIGTERM, self.signal_handler)
             self.start()
@@ -651,6 +700,7 @@ class PKTickOrchestrator:
             gh_manager = PKGitHubSecretsManager(repo="pkbrokers")
             gh_manager.test_encryption()
             test_mode_counter = 0
+            
             while True:
                 time.sleep(1)
 
@@ -698,6 +748,7 @@ class PKTickOrchestrator:
                         self.test_mode = False
                         test_mode_counter = 0
                     last_market_check = current_time
+                    
                     # Check if we should commit pkl files (market close detection or periodic during trading)
                     try:
                         from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
@@ -711,14 +762,17 @@ class PKTickOrchestrator:
                             logger.info("Market close detected or recent data was received from previous running instance - committing pkl files")
                             candle_store = get_candle_store()
                             
+                            # Ensure data is fresh before committing
+                            data_mgr.ensure_data_freshness(candle_store)
+                            
                             # Export and commit daily pkl
                             data_mgr.export_daily_candles_to_pkl(candle_store)
                             
                             # Export and commit intraday pkl
                             data_mgr.export_intraday_candles_to_pkl(candle_store)
                             
-                            # Commit to GitHub
-                            data_mgr.commit_pkl_files()
+                            # Commit to GitHub (will refresh if needed)
+                            data_mgr.commit_pkl_files(candle_store=candle_store)
                         
                         # Periodic commit during trading hours (every 30 minutes)
                         elif PKDateUtilities.isTradingTime():
@@ -730,12 +784,15 @@ class PKTickOrchestrator:
                                     logger.info(f"Periodic commit during trading hours ({cur_ist.hour}:{cur_ist.minute:02d})")
                                     candle_store = get_candle_store()
                                     
+                                    # Ensure data is fresh before committing
+                                    data_mgr.ensure_data_freshness(candle_store)
+                                    
                                     # Export pkl files with current aggregated data
                                     data_mgr.export_daily_candles_to_pkl(candle_store, merge_with_historical=True)
                                     data_mgr.export_intraday_candles_to_pkl(candle_store)
                                     
                                     # Commit to GitHub
-                                    data_mgr.commit_pkl_files()
+                                    data_mgr.commit_pkl_files(candle_store=candle_store)
                                     data_mgr.last_periodic_commit = cur_ist
                             
                     except Exception as commit_e:

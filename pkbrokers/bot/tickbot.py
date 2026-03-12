@@ -30,7 +30,7 @@ import os
 import signal
 import sys
 import zipfile
-
+import pytz
 try:
     import thread
 except ImportError:
@@ -46,6 +46,7 @@ from telegram.ext import CallbackContext, CommandHandler, MessageHandler, Filter
 
 from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
 
+KOLKATA_TZ = pytz.timezone("Asia/Kolkata")
 MINUTES_2_IN_SECONDS = 120
 OWNER_USER = "Itsonlypk"
 GROUP_CHAT_ID = 1001907892864
@@ -379,9 +380,6 @@ class PKTickBot:
         # Since each symbol appears only once in your JSON, we just need to sort by both criteria
         
         # Sort by timestamp (latest first) and then by tick count (highest first)
-        import pytz
-
-        KOLKATA_TZ = pytz.timezone("Asia/Kolkata")
         top_limit = sorted(
             instruments,
             key=lambda x: (
@@ -537,6 +535,7 @@ class PKTickBot:
             update.message.reply_text("❌ Error checking status")
 
     def error_handler(self, update: object, context: CallbackContext) -> None:
+        """Handle errors, with special handling for conflict detection."""
         if self._shouldAvoidResponse(update) and update is not None:
             if update is not None:
                 update.message.reply_text(APOLOGY_TEXT)
@@ -575,7 +574,7 @@ class PKTickBot:
                     chat_id=int(f"-{Channel_Id}"), text=warn_msg, parse_mode="HTML"
                 )
                 
-                # Before shutting down, export and commit pkl files
+                # Before shutting down, export and commit pkl files with fresh data
                 try:
                     from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
                     from pkbrokers.kite.inMemoryCandleStore import get_candle_store
@@ -583,13 +582,17 @@ class PKTickBot:
                     data_mgr = get_data_sharing_manager()
                     candle_store = get_candle_store()
                     
+                    # Ensure data is fresh before committing
+                    logger.warning("Ensuring data freshness before shutdown...")
+                    data_mgr.ensure_data_freshness(candle_store)
+                    
                     # Export pkl files with current data
                     logger.warning("Exporting pkl files before shutdown...")
                     data_mgr.export_daily_candles_to_pkl(candle_store)
                     data_mgr.export_intraday_candles_to_pkl(candle_store)
                     
                     # Commit to GitHub
-                    data_mgr.commit_pkl_files()
+                    data_mgr.commit_pkl_files(candle_store=candle_store)
                     logger.info("Data exported and committed before shutdown")
                 except Exception as export_e:
                     logger.error(f"Error exporting data before shutdown: {export_e}")
@@ -671,8 +674,8 @@ class PKTickBot:
             from pkbrokers.kite.inMemoryCandleStore import get_candle_store
             candle_store = get_candle_store()
 
-            # Ensure the daily PKL is fresh before sending
-            if not data_mgr.prepare_daily_pkl_for_sending(candle_store):
+            # Ensure the daily PKL is fresh before sending (within 2 minutes)
+            if not data_mgr.prepare_daily_pkl_for_sending(candle_store, max_stale_seconds=120):
                 update.message.reply_text("❌ Failed to prepare daily pkl file with latest data. Please try again.")
                 return
 
@@ -680,10 +683,13 @@ class PKTickBot:
             
             if pkl_path and os.path.exists(pkl_path):
                 is_fresh, data_date, missing_days, trading_date, latest_time, stale_seconds = data_mgr.validate_pkl_freshness(pkl_path)
-                comparison_date_msg = f"Data date/time: {data_date}/{latest_time}, Trading date: {trading_date}\n"
+                comparison_date_msg = f"Data date/time: {data_date} {latest_time or ''}, Trading date: {trading_date}\n"
+                freshness_msg = f"Freshness: {'✓ Fresh' if is_fresh else f'⚠ Stale by {stale_seconds}s'}\n"
+                
                 warn_msg = ""
                 if not is_fresh or (missing_days > 0 or stale_seconds > 0):
-                    warn_msg = f"Daily candles pkl is stale by {missing_days} trading days and {stale_seconds} seconds.\n"
+                    warn_msg = f"⚠ Daily candles pkl is stale by {missing_days} trading days and {stale_seconds} seconds.\n"
+                
                 # Zip and send
                 zip_success, zip_path = data_mgr.zip_file(pkl_path)
                 if zip_success and zip_path:
@@ -691,10 +697,10 @@ class PKTickBot:
                         update.message.reply_document(
                             document=f,
                             filename="daily_candles.pkl.zip",
-                            caption=f"📊 Daily candles pkl file\n{warn_msg}{comparison_date_msg}"
+                            caption=f"📊 Daily candles pkl file\n{warn_msg}{freshness_msg}{comparison_date_msg}"
                         )
                     os.unlink(zip_path)
-                    self.logger.info("Sent daily pkl to requesting instance")
+                    self.logger.info(f"Sent daily pkl to requesting instance (stale: {stale_seconds}s)")
                 else:
                     update.message.reply_text("❌ Error zipping daily pkl file")
             else:
@@ -718,9 +724,15 @@ class PKTickBot:
             from pkbrokers.kite.inMemoryCandleStore import get_candle_store
             candle_store = get_candle_store()
             
+            # For intraday, we always export fresh data before sending
             success, pkl_path, latest_date = data_mgr.export_intraday_candles_to_pkl(candle_store)
-            
+
             if success and pkl_path and os.path.exists(pkl_path):
+                # Calculate freshness info
+                mod_time = datetime.fromtimestamp(os.path.getmtime(pkl_path), tz=KOLKATA_TZ)
+                now = datetime.now(KOLKATA_TZ)
+                seconds_old = (now - mod_time).total_seconds()
+                
                 # Zip and send
                 zip_success, zip_path = data_mgr.zip_file(pkl_path)
                 if zip_success and zip_path:
@@ -728,10 +740,12 @@ class PKTickBot:
                         update.message.reply_document(
                             document=f,
                             filename="intraday_1m_candles.pkl.zip",
-                            caption=f"📊 Intraday 1-minute candles pkl file.\nLatest date: {latest_date}"
+                            caption=f"📊 Intraday 1-minute candles pkl file.\n"
+                                    f"Latest date: {latest_date}\n"
+                                    f"Generated: {seconds_old:.0f}s ago"
                         )
                     os.unlink(zip_path)
-                    self.logger.info("Sent intraday pkl to requesting instance")
+                    self.logger.info(f"Sent intraday pkl to requesting instance (age: {seconds_old:.0f}s)")
                 else:
                     update.message.reply_text("❌ Error zipping intraday pkl file")
             else:
@@ -740,13 +754,16 @@ class PKTickBot:
         except Exception as e:
             self.logger.error(f"Error sending intraday pkl: {e}")
             update.message.reply_text(f"❌ Error: {e}")
-    
+
     def request_data(self, update: Update, context: CallbackContext) -> None:
         """Request all available data (pkl files, db) from this instance.
         
         This only sends data - NO shutdown is triggered here.
         Shutdown only happens when a Telegram conflict (409 error) is detected,
         indicating both old and new instances are polling simultaneously.
+        
+        All data files are refreshed if stale before sending to ensure the
+        recipient gets the most recent data available.
         """
         if self._shouldAvoidResponse(update):
             if update is not None:
@@ -754,18 +771,18 @@ class PKTickBot:
             return
         
         try:
-            update.message.reply_text("📤 Sending available data files...")
+            update.message.reply_text("📤 Preparing and sending available data files...")
             data_mgr = get_data_sharing_manager()
             from pkbrokers.kite.inMemoryCandleStore import get_candle_store
             candle_store = get_candle_store()
             
-            # Ensure the daily PKL is fresh before sending
-            if not data_mgr.prepare_daily_pkl_for_sending(candle_store):
-                update.message.reply_text("❌ Failed to prepare daily pkl file with latest data. Aborting daily pkl send.")
-                # Continue with other data types if possible, or return
-            else:
-                # Send daily pkl
-                self.send_daily_pkl(update, context)
+            # Ensure data is fresh before sending
+            daily_refreshed, intraday_refreshed = data_mgr.ensure_data_freshness(candle_store)
+            if daily_refreshed or intraday_refreshed:
+                update.message.reply_text(f"✅ Refreshed stale data - Daily: {daily_refreshed}, Intraday: {intraday_refreshed}")
+            
+            # Send daily pkl
+            self.send_daily_pkl(update, context)
             
             # Send intraday pkl
             self.send_intraday_pkl(update, context)
@@ -773,11 +790,11 @@ class PKTickBot:
             # Send db file
             self.send_zipped_db(update, context)
 
-            # Send instrument_history.db file (NEW)
+            # Send instrument_history.db file
             self.send_zipped_instrument_history(update, context)
             
             update.message.reply_text("✅ Data transfer complete!")
-            self.logger.info("Data sent to requesting instance")
+            self.logger.info("Data sent to requesting instance (with freshness ensured)")
             
         except Exception as e:
             self.logger.error(f"Error in request_data: {e}")

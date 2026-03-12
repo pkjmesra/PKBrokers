@@ -30,6 +30,7 @@ This module handles:
 - Downloading fallback data from GitHub actions-data-download branch
 - Committing updated pkl files when market closes
 - Holiday and market hours awareness
+- Automatic data freshness validation and refresh before sending/committing
 
 """
 
@@ -40,7 +41,7 @@ import os
 import pickle
 import shutil
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import pytz
@@ -72,6 +73,9 @@ MARKET_OPEN_MINUTE = 15
 MARKET_CLOSE_HOUR = 15
 MARKET_CLOSE_MINUTE = 30
 
+# Staleness threshold (seconds)
+MAX_STALE_SECONDS = 120  # 2 minutes
+
 # Holiday cache
 _holiday_cache: Optional[Dict[str, List[str]]] = None
 _holiday_cache_date: Optional[str] = None
@@ -86,6 +90,8 @@ class DataSharingManager:
     - Download fallback data from GitHub when no running instance available
     - Detect market close and auto-commit pkl files
     - Track trading holidays from NSE holiday list
+    - Automatic freshness validation with 2-minute staleness threshold
+    - Auto-refresh before sending or committing stale data
     """
     
     def __init__(self, data_dir: str = None):
@@ -104,6 +110,8 @@ class DataSharingManager:
         # Track state
         self.data_received_from_instance = False
         self.last_commit_time = None
+        self.last_periodic_commit = None  # Track last periodic commit time
+        self._refresh_count = 0  # Counter for debugging
         
     def get_daily_pkl_path(self) -> str:
         """Get path to daily candle pkl file."""
@@ -269,7 +277,121 @@ class DataSharingManager:
         
         return 0 <= time_to_close <= minutes_before
     
-    def download_from_github(self, file_type: str = "daily", validate_freshness: bool = True) -> Tuple[bool, Optional[str]]:
+    def refresh_pkl_if_stale(self, candle_store, max_stale_seconds: int = MAX_STALE_SECONDS) -> bool:
+        """
+        Refresh the daily pkl file if it's stale by more than max_stale_seconds.
+        
+        This method checks the current pkl freshness and regenerates it using the
+        latest candle store data if it's stale. This ensures that any data request
+        or commit operation always works with the most recent data.
+        
+        Args:
+            candle_store: InMemoryCandleStore instance
+            max_stale_seconds: Maximum allowed staleness in seconds (default: 120)
+            
+        Returns:
+            True if pkl was refreshed, False if already fresh or refresh failed
+        """
+        pkl_path = self.get_daily_pkl_path()
+        self._refresh_count += 1
+        
+        # Check freshness
+        is_fresh, latest_date, missing_days, last_trading_date, latest_time, stale_seconds = self.validate_pkl_freshness(pkl_path)
+        
+        if is_fresh:
+            self.logger.debug(f"[Refresh #{self._refresh_count}] Daily pkl is fresh (stale: {stale_seconds}s < {max_stale_seconds}s)")
+            return False
+        
+        # Log staleness details
+        if stale_seconds > 0:
+            self.logger.warning(
+                f"[Refresh #{self._refresh_count}] Daily pkl is stale by {stale_seconds} seconds "
+                f"(>{max_stale_seconds}s). Latest data from {latest_date} {latest_time or ''}. Refreshing..."
+            )
+        elif missing_days > 0:
+            self.logger.warning(
+                f"[Refresh #{self._refresh_count}] Daily pkl is missing {missing_days} trading days. "
+                f"Latest data from {latest_date}. Refreshing..."
+            )
+        
+        # Refresh the pkl with latest candle data
+        start_time = datetime.now()
+        success, _ = self.export_daily_candles_to_pkl(candle_store, merge_with_historical=True)
+        elapsed = (datetime.now() - start_time).total_seconds()
+        
+        if success:
+            self.logger.info(f"[Refresh #{self._refresh_count}] ✅ Daily pkl refreshed successfully in {elapsed:.2f}s")
+            
+            # Verify freshness after refresh
+            is_fresh, latest_date, missing_days, last_trading_date, latest_time, stale_seconds = self.validate_pkl_freshness(pkl_path)
+            if is_fresh:
+                self.logger.info(f"[Refresh #{self._refresh_count}] ✓ Post-refresh validation: Fresh - {latest_date} {latest_time}")
+            else:
+                self.logger.warning(f"[Refresh #{self._refresh_count}] ⚠ Post-refresh validation: Still stale by {stale_seconds}s")
+            
+            return True
+        else:
+            self.logger.error(f"[Refresh #{self._refresh_count}] ❌ Failed to refresh daily pkl")
+            return False
+    
+    def refresh_intraday_pkl_if_stale(self, candle_store, max_stale_seconds: int = MAX_STALE_SECONDS) -> bool:
+        """
+        Refresh the intraday pkl file if it's stale by more than max_stale_seconds.
+        
+        Args:
+            candle_store: InMemoryCandleStore instance
+            max_stale_seconds: Maximum allowed staleness in seconds (default: 120)
+            
+        Returns:
+            True if pkl was refreshed, False if already fresh or refresh failed
+        """
+        pkl_path = self.get_intraday_pkl_path()
+        
+        # Check if file exists and get its last modified time as proxy for freshness
+        # For intraday, we want it updated frequently during market hours
+        if not os.path.exists(pkl_path):
+            self.logger.info("Intraday pkl does not exist, creating...")
+            success, _, _ = self.export_intraday_candles_to_pkl(candle_store)
+            return success
+        
+        # Check last modified time
+        mod_time = datetime.fromtimestamp(os.path.getmtime(pkl_path), tz=KOLKATA_TZ)
+        now = datetime.now(KOLKATA_TZ)
+        seconds_old = (now - mod_time).total_seconds()
+        
+        # During market hours, refresh if older than max_stale_seconds
+        is_market_open = self.is_market_open()
+        
+        if is_market_open and seconds_old > max_stale_seconds:
+            self.logger.info(f"Intraday pkl is {seconds_old:.0f}s old (> {max_stale_seconds}s). Refreshing...")
+            success, _, _ = self.export_intraday_candles_to_pkl(candle_store)
+            return success
+        
+        return False
+    
+    def ensure_data_freshness(self, candle_store, max_stale_seconds: int = MAX_STALE_SECONDS) -> Tuple[bool, bool]:
+        """
+        Ensure both daily and intraday pkl files are fresh.
+        
+        This is a convenience method to refresh both data files if needed.
+        
+        Args:
+            candle_store: InMemoryCandleStore instance
+            max_stale_seconds: Maximum allowed staleness in seconds
+            
+        Returns:
+            Tuple of (daily_refreshed, intraday_refreshed)
+        """
+        daily_refreshed = self.refresh_pkl_if_stale(candle_store, max_stale_seconds)
+        intraday_refreshed = self.refresh_intraday_pkl_if_stale(candle_store, max_stale_seconds)
+        
+        if daily_refreshed or intraday_refreshed:
+            self.logger.info(f"Data freshness ensured - Daily: {daily_refreshed}, Intraday: {intraday_refreshed}")
+        
+        return daily_refreshed, intraday_refreshed
+    
+    def download_from_github(self, file_type: str = "daily", validate_freshness: bool = True, 
+                            candle_store=None, max_stale_seconds: int = MAX_STALE_SECONDS) -> Tuple[bool, Optional[str], int]:
         """
         Download pkl file from GitHub actions-data-download branch.
         
@@ -278,12 +400,17 @@ class DataSharingManager:
         - results/Data/stock_data_DDMMYYYY.pkl
         - Also tries recent dates going back up to 10 days
         
+        If the downloaded data is stale and candle_store is provided, it will be
+        refreshed automatically.
+        
         Args:
             file_type: "daily" or "intraday"
-            validate_freshness: If True, check if data is fresh and trigger history download if stale
+            validate_freshness: If True, check if data is fresh
+            candle_store: If provided, refresh stale data
+            max_stale_seconds: Maximum allowed staleness in seconds
             
         Returns:
-            Tuple of (success, file_path)
+            Tuple of (success, file_path, stale_seconds)
         """
         try:
             from datetime import timedelta
@@ -345,14 +472,34 @@ class DataSharingManager:
                             if data and len(data) > 0:
                                 self.logger.info(f"Downloaded {file_type} pkl from GitHub: {url} ({len(data)} instruments)")
                                 
-                                # Validate freshness and trigger history download if stale
-                                if validate_freshness and file_type == "daily":
-                                    is_fresh, data_date, missing_days, trading_date, latest_time, stale_seconds = self.validate_pkl_freshness(output_path)
-                                    if not is_fresh and (missing_days > 0 or stale_seconds > 0):
-                                        self.logger.warning(f"Downloaded pkl is stale by {missing_days} trading days or {stale_seconds} seconds. Triggering history download...")
-                                        self.trigger_history_download_workflow(missing_days)
+                                # Validate freshness and refresh if needed
+                                stale_seconds = 0
+                                if validate_freshness and candle_store and file_type == "daily":
+                                    is_fresh, _, missing_days, _, _, stale_seconds = self.validate_pkl_freshness(output_path)
+                                    
+                                    if not is_fresh and (missing_days > 0 or stale_seconds > max_stale_seconds):
+                                        self.logger.warning(
+                                            f"Downloaded pkl is stale by {missing_days} trading days or "
+                                            f"{stale_seconds} seconds. Refreshing with current candle store..."
+                                        )
+                                        
+                                        # Refresh with current candle store data
+                                        refresh_success, _ = self.export_daily_candles_to_pkl(
+                                            candle_store, merge_with_historical=True
+                                        )
+                                        
+                                        if refresh_success:
+                                            self.logger.info("✅ Stale data refreshed successfully")
+                                            # Re-check freshness
+                                            is_fresh, _, missing_days, _, _, stale_seconds = self.validate_pkl_freshness(output_path)
+                                            if is_fresh:
+                                                self.logger.info("✅ Data is now fresh after refresh")
+                                        
+                                        # If still stale, trigger history download
+                                        if not is_fresh and missing_days > 0:
+                                            self.trigger_history_download_workflow(missing_days)
                                 
-                                return True, output_path
+                                return True, output_path, stale_seconds
                         except (pickle.UnpicklingError, EOFError) as e:
                             self.logger.debug(f"Invalid pkl file from {url}: {e}")
                             continue
@@ -362,23 +509,32 @@ class DataSharingManager:
                     continue
             
             self.logger.warning(f"Could not download {file_type} pkl from GitHub after trying {len(urls_to_try)} URLs")
-            return False, None
+            return False, None, 0
             
         except Exception as e:
             self.logger.error(f"Error downloading from GitHub: {e}")
-            return False, None
+            return False, None, 0
     
     def validate_pkl_freshness(self, pkl_path: str) -> Tuple[bool, Optional[datetime], int, Optional[datetime], Optional[datetime.time], int]:
         """
         Validate if pkl file data is fresh (has data up to current market time).
+        
+        This method checks the latest timestamp in the pkl file and compares it
+        with the expected reference time (current time during market hours, or
+        last market close outside market hours). Data is considered fresh if it's
+        within the acceptable staleness threshold (handled by caller).
         
         Args:
             pkl_path: Path to pkl file
             
         Returns:
             Tuple of (is_fresh, latest_data_date, missing_trading_days, last_trading_date, latest_time, stale_seconds)
-            is_fresh: True if data includes recent ticks (within acceptable delay)
-            stale_seconds: Number of seconds the data is stale (0 if fresh)
+            - is_fresh: True if data includes recent ticks (within caller's threshold)
+            - latest_data_date: Date of most recent data point
+            - missing_trading_days: Number of trading days missing (0 if fresh)
+            - last_trading_date: Last trading date for comparison
+            - latest_time: Time of most recent data point
+            - stale_seconds: Number of seconds the data is stale (0 if fresh)
         """
         try:
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
@@ -449,7 +605,7 @@ class DataSharingManager:
             
             # Define market hours
             MARKET_OPEN_TIME = time(9, 15, 0)
-            MARKET_CLOSE_TIME = time(15, 29, 0)
+            MARKET_CLOSE_TIME = time(15, 30, 0)  # Note: using 15:30, not 15:29
             current_time = now.time()
             current_date = now.date()
             
@@ -478,7 +634,7 @@ class DataSharingManager:
                 # Data is fresh (includes current time or last close)
                 is_fresh = True
                 stale_seconds = 0
-                self.logger.info(f"Pkl data is fresh. Latest: {latest_datetime}, Reference: {reference_datetime}")
+                self.logger.debug(f"Pkl data is fresh. Latest: {latest_datetime}, Reference: {reference_datetime}")
             else:
                 # Data is stale
                 is_fresh = False
@@ -502,7 +658,7 @@ class DataSharingManager:
                                     f"Stale by {stale_seconds} seconds ({stale_seconds/60:.1f} minutes)")
                 elif latest_date == current_date and not is_trading_day:
                     # Today is holiday, data from today (shouldn't happen)
-                    self.logger.warning(f"Pkl data is from today ({current_date}) which is a holiday. "
+                    self.logger.debug(f"Pkl data is from today ({current_date}) which is a holiday. "
                                     f"Last trading day was {last_trading_date}")
                 else:
                     # Outside market hours
@@ -570,14 +726,15 @@ class DataSharingManager:
             self.logger.error(f"Error triggering history download workflow: {e}")
             return False
     
-    def ensure_data_freshness_and_commit(self, pkl_path: str = None) -> bool:
+    def ensure_data_freshness_and_commit(self, pkl_path: str = None, candle_store=None) -> bool:
         """
-        Ensure pkl data is fresh. If stale, trigger history download and commit updated data.
+        Ensure pkl data is fresh. If stale, refresh it and commit updated data.
         
         This is the main entry point for the freshness check workflow.
         
         Args:
             pkl_path: Path to pkl file (defaults to daily pkl)
+            candle_store: InMemoryCandleStore instance (required for refresh)
             
         Returns:
             True if data is fresh or was successfully updated
@@ -593,14 +750,23 @@ class DataSharingManager:
                 return True
             
             if missing_days > 0 or stale_seconds > 0:
-                self.logger.info(f"Data is stale by {missing_days} trading days or {stale_seconds} seconds. Triggering history download...")
+                self.logger.warning(f"Data is stale by {missing_days} trading days or {stale_seconds} seconds. ")
                 
-                # Trigger history download workflow
+                # If we have candle_store, try to refresh immediately
+                if candle_store:
+                    self.logger.info("Attempting to refresh data with current candle store...")
+                    success, _ = self.export_daily_candles_to_pkl(candle_store, merge_with_historical=True)
+                    
+                    if success:
+                        self.logger.info("Data refreshed successfully")
+                        return True
+                
+                # If refresh failed or no candle_store, trigger history download
+                self.logger.info("Triggering history download workflow...")
                 triggered = self.trigger_history_download_workflow(missing_days)
                 
                 if triggered:
                     self.logger.info("History download workflow triggered. Fresh data will be available after workflow completes.")
-                    # Note: The workflow will handle committing the updated pkl file
                     return True
                 else:
                     self.logger.warning("Failed to trigger history download workflow")
@@ -612,12 +778,16 @@ class DataSharingManager:
             self.logger.error(f"Error ensuring data freshness: {e}")
             return False
     
-    def prepare_daily_pkl_for_sending(self, candle_store) -> bool:
+    def prepare_daily_pkl_for_sending(self, candle_store, max_stale_seconds: int = MAX_STALE_SECONDS) -> bool:
         """
         Ensures the daily_candles.pkl file is fresh, updating it if necessary.
         
+        This method should be called before sending the pkl file to ensure the
+        recipient gets the most recent data available.
+        
         Args:
             candle_store: InMemoryCandleStore instance
+            max_stale_seconds: Maximum allowed staleness before refresh
             
         Returns:
             True if the PKL is fresh or was successfully updated, False otherwise.
@@ -625,22 +795,34 @@ class DataSharingManager:
         pkl_path = self.get_daily_pkl_path()
         
         # Check freshness of the existing daily_candles.pkl
-        is_fresh, _, _, _, latest_time, stale_seconds = self.validate_pkl_freshness(pkl_path)
+        is_fresh, data_date, missing_days, trading_date, latest_time, stale_seconds = self.validate_pkl_freshness(pkl_path)
         
-        if is_fresh and os.path.exists(pkl_path):
-            self.logger.info("daily_candles.pkl is already fresh.")
+        # If fresh and within threshold, use as-is
+        if is_fresh and stale_seconds <= max_stale_seconds and os.path.exists(pkl_path):
+            self.logger.info(f"daily_candles.pkl is fresh (stale: {stale_seconds}s <= {max_stale_seconds}s). Ready to send.")
             return True
         
-        self.logger.info("daily_candles.pkl is not fresh or does not exist, regenerating...")
+        # Otherwise, regenerate
+        if stale_seconds > max_stale_seconds:
+            self.logger.info(f"daily_candles.pkl is stale by {stale_seconds}s (>{max_stale_seconds}s). Regenerating...")
+        elif missing_days > 0:
+            self.logger.warning(f"daily_candles.pkl is missing {missing_days} trading days. Regenerating...")
+        else:
+            self.logger.warning("daily_candles.pkl does not exist or is invalid. Regenerating...")
         
         # Regenerate/update the daily PKL with current data from candle_store
         success, _ = self.export_daily_candles_to_pkl(candle_store, merge_with_historical=True)
         
         if success:
-            self.logger.info("Successfully regenerated daily_candles.pkl.")
+            self.logger.info("✅ Successfully regenerated daily_candles.pkl.")
+            
+            # Verify after regeneration
+            is_fresh, data_date, missing_days, trading_date, latest_time, stale_seconds = self.validate_pkl_freshness(pkl_path)
+            self.logger.info(f"Post-regeneration: Fresh={is_fresh}, Date={data_date} {latest_time}, Stale={stale_seconds}s")
+            
             return True
         else:
-            self.logger.error("Failed to regenerate daily_candles.pkl.")
+            self.logger.error("❌ Failed to regenerate daily_candles.pkl.")
             return False
 
     def export_daily_candles_to_pkl(self, candle_store, merge_with_historical: bool = True) -> Tuple[bool, Optional[str]]:
@@ -699,7 +881,7 @@ class DataSharingManager:
             if merge_with_historical:
                 try:
                     self.logger.info("Attempting to download historical pkl from GitHub for merge...")
-                    success, historical_path = self.download_from_github(file_type="daily", validate_freshness=False)
+                    success, historical_path, _ = self.download_from_github(file_type="daily", validate_freshness=False)
                     if success and historical_path and os.path.exists(historical_path):
                         with open(historical_path, 'rb') as f:
                             historical_data = pickle.load(f)
@@ -834,7 +1016,7 @@ class DataSharingManager:
             self.logger.error(traceback.format_exc())
             return False, None
     
-    def export_intraday_candles_to_pkl(self, candle_store) -> Tuple[bool, Optional[str]]:
+    def export_intraday_candles_to_pkl(self, candle_store) -> Tuple[bool, Optional[str], Optional[datetime]]:
         """
         Export 1-minute candles from InMemoryCandleStore to pkl file.
         
@@ -842,7 +1024,7 @@ class DataSharingManager:
             candle_store: InMemoryCandleStore instance
             
         Returns:
-            Tuple of (success, file_path)
+            Tuple of (success, file_path, latest_date)
         """
         try:
             import pandas as pd
@@ -888,7 +1070,7 @@ class DataSharingManager:
                     pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
                 
                 file_size = os.path.getsize(output_path) / (1024 * 1024)  # MB
-                self.logger.info(f"Exported {len(data)} intraday instruments to {output_path} ({file_size:.2f} MB)")
+                self.logger.info(f"Exported {len(data)} intraday instruments to {output_path} ({file_size:.2f} MB), latest: {latest_date}")
                 return True, output_path, latest_date
             else:
                 self.logger.warning("No intraday candle data to export")
@@ -1124,14 +1306,18 @@ class DataSharingManager:
             self.logger.error(f"Error zipping file: {e}")
             return False, None
     
-    def commit_pkl_files(self, branch_name: str = "actions-data-download") -> bool:
+    def commit_pkl_files(self, branch_name: str = "actions-data-download", candle_store=None, max_stale_seconds: int = MAX_STALE_SECONDS) -> bool:
         """
         Commit pkl files to PKScreener's GitHub repository (actions-data-download branch).
+        
+        Ensures data is fresh before committing by refreshing if needed.
         
         Uses GitHub API to commit across repositories.
         
         Args:
             branch_name: Branch to commit to
+            candle_store: If provided, refresh stale data before commit
+            max_stale_seconds: Maximum allowed staleness before refresh
             
         Returns:
             True if commit was successful
@@ -1147,10 +1333,17 @@ class DataSharingManager:
                 self.logger.warning("No GitHub token found, cannot commit pkl files")
                 return False
             
+            # Refresh data if needed before committing
+            if candle_store:
+                self.logger.info("Refreshing data before commit...")
+                daily_refreshed, intraday_refreshed = self.ensure_data_freshness(candle_store, max_stale_seconds)
+                if daily_refreshed or intraday_refreshed:
+                    self.logger.info(f"Data refreshed before commit - Daily: {daily_refreshed}, Intraday: {intraday_refreshed}")
+            
             files_to_commit = []
             from PKDevTools.classes import Archiver
             _ , cache_file_name = Archiver.afterMarketStockDataExists()
-            today_suffix = cache_file_name.replace(".pkl", "").replace("stock_data_", "") #datetime.now(KOLKATA_TZ).strftime('%d%m%Y')
+            today_suffix = cache_file_name.replace(".pkl", "").replace("stock_data_", "")
             
             # Define minimum file sizes (in bytes)
             DAILY_PKL_MIN_SIZE = 25 * 1024 * 1024  # 25 MB
