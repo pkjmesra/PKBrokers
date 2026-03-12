@@ -682,8 +682,8 @@ class PKTickBot:
                 is_fresh, data_date, missing_days, trading_date, latest_time, stale_seconds = data_mgr.validate_pkl_freshness(pkl_path)
                 comparison_date_msg = f"Data date/time: {data_date}/{latest_time}, Trading date: {trading_date}\n"
                 warn_msg = ""
-                if not is_fresh and (missing_days > 0 or stale_seconds > 0):
-                    warn_msg = f"Daily candles pkl is stale by {missing_days} trading days or {stale_seconds} seconds.\n"
+                if not is_fresh or (missing_days > 0 or stale_seconds > 0):
+                    warn_msg = f"Daily candles pkl is stale by {missing_days} trading days and {stale_seconds} seconds.\n"
                 # Zip and send
                 zip_success, zip_path = data_mgr.zip_file(pkl_path)
                 if zip_success and zip_path:
