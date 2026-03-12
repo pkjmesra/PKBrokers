@@ -757,14 +757,19 @@ class InMemoryCandleStore:
                 
                 for candle in day_candles:
                     data.append(candle.to_list())
-                    # Use last_tick_time for the most recent candle, otherwise use start time
+                    
+                    # CRITICAL FIX: For the current candle, use last_tick_time if available
                     if candle.is_complete:
                         # Completed candles use start time
                         dt = datetime.fromtimestamp(candle.timestamp, tz=KOLKATA_TZ)
                     else:
-                        # Current candle uses the most recent tick time
-                        tick_time = candle.last_tick_time if candle.last_tick_time > 0 else candle.timestamp
-                        dt = datetime.fromtimestamp(tick_time, tz=KOLKATA_TZ)
+                        # Current candle MUST use last_tick_time (the actual tick time)
+                        # NOT the candle start time!
+                        if candle.last_tick_time > 0:
+                            dt = datetime.fromtimestamp(candle.last_tick_time, tz=KOLKATA_TZ)
+                        else:
+                            dt = datetime.fromtimestamp(candle.timestamp, tz=KOLKATA_TZ)
+                    
                     index.append(dt.isoformat())
                 
                 # Trim to most recent MAX_DAILY_ROWS for daily data
