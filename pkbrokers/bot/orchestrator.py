@@ -383,15 +383,15 @@ class PKTickOrchestrator:
                             # Force commit if market is open AND if it's been more than 4 cycles (2 minutes) since last commit
                             should_commit = is_market_open and (time_since_last_commit >= 4*CYCLE_TIME_SEC)
                             
-                            logger.info(f"Commit decision: should_commit={should_commit}, is_market_open={is_market_open}, time_since={time_since_last_commit:.1f}s")
+                            logger.debug(f"Commit decision: should_commit={should_commit}, is_market_open={is_market_open}, time_since={time_since_last_commit:.1f}s")
                             
                             if should_commit:
                                 try:
                                     commit_count += 1
-                                    logger.info(f"Attempting commit #{commit_count} at {cur_ist.strftime('%H:%M:%S')}")
+                                    logger.debug(f"Attempting commit #{commit_count} at {cur_ist.strftime('%H:%M:%S')}")
                                     commit_ticks(file_name="ticks.json")
                                     last_ticks_commit = current_time
-                                    logger.info(f"✓ Commit #{commit_count} successful")
+                                    logger.debug(f"✓ Commit #{commit_count} successful")
                                 except Exception as commit_err:
                                     error_count += 1
                                     logger.error(f"✗ Commit #{commit_count} failed (error #{error_count}): {commit_err}", exc_info=True)
