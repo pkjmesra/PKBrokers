@@ -898,137 +898,161 @@ def orchestrate():
     setupLogger()
     logger = default_logger()
     
-    # Check if candle store is empty and try to populate from GitHub
+    # =========================================================================
+    # STEP 1: FORCE POPULATE CANDLE STORE FROM GITHUB (ALWAYS TRY)
+    # =========================================================================
     try:
         from pkbrokers.kite.inMemoryCandleStore import get_candle_store
         from PKDevTools.classes import Archiver
         import requests
         import json
         import time
+        import os
         
         candle_store = get_candle_store()
-        stats = candle_store.get_stats()
         
-        # Check if candle store is empty (no instruments with ticks)
-        instruments_with_ticks = stats.get('instruments_with_ticks', 0)
-        total_instruments = stats.get('instrument_count', 0)
+        # ALWAYS try to populate from GitHub, regardless of current state
+        logger.info("=" * 60)
+        logger.info("ATTEMPTING TO POPULATE CANDLE STORE FROM GITHUB TICKS.JSON")
+        logger.info("=" * 60)
         
-        logger.info(f"Candle store stats before GitHub check - Instruments with ticks: {instruments_with_ticks}, Total instruments: {total_instruments}")
+        # Try multiple possible URLs for ticks.json
+        urls_to_try = [
+            "https://raw.githubusercontent.com/pkjmesra/PKBrokers/refs/heads/main/pkbrokers/kite/examples/results/Data/ticks.json",
+            "https://raw.githubusercontent.com/pkjmesra/PKBrokers/main/pkbrokers/kite/examples/results/Data/ticks.json",
+            "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/ticks.json",
+        ]
         
-        # Populate if empty (no instruments with ticks OR very few compared to expected)
-        if instruments_with_ticks == 0 or total_instruments < 100:
-            logger.info("Candle store is empty or sparse - attempting to populate from GitHub ticks.json")
+        ticks_data = None
+        used_url = None
+        
+        for url in urls_to_try:
+            try:
+                logger.info(f"Trying to download ticks.json from: {url}")
+                response = requests.get(url, timeout=30)
+                
+                if response.status_code == 200:
+                    ticks_data = response.json()
+                    used_url = url
+                    logger.info(f"✅ Successfully downloaded ticks.json from {url} with {len(ticks_data)} instruments")
+                    break
+                else:
+                    logger.warning(f"Failed to download from {url}: HTTP {response.status_code}")
+            except Exception as e:
+                logger.warning(f"Error downloading from {url}: {e}")
+        
+        if ticks_data:
+            # Save locally for future use
+            ticks_path = os.path.join(Archiver.get_user_data_dir(), "ticks.json")
+            try:
+                with open(ticks_path, 'w') as f:
+                    json.dump(ticks_data, f)
+                logger.info(f"✅ Saved ticks.json locally to {ticks_path}")
+            except Exception as e:
+                logger.warning(f"Could not save ticks.json locally: {e}")
             
-            # Try multiple possible URLs for ticks.json
-            urls_to_try = [
-                "https://raw.githubusercontent.com/pkjmesra/PKBrokers/refs/heads/main/pkbrokers/kite/examples/results/Data/ticks.json",
-                "https://raw.githubusercontent.com/pkjmesra/PKBrokers/main/pkbrokers/kite/examples/results/Data/ticks.json",
-                "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/ticks.json",
-            ]
+            # Process ticks and populate candle store
+            logger.info(f"Processing {len(ticks_data)} instruments into candle store...")
+            processed_count = 0
+            error_count = 0
             
-            ticks_data = None
-            used_url = None
-            
-            for url in urls_to_try:
+            for idx, (token_str, tick_info) in enumerate(ticks_data.items()):
                 try:
-                    logger.info(f"Trying to download ticks.json from: {url}")
-                    response = requests.get(url, timeout=30)
+                    # Extract data with proper error handling
+                    instrument_token = int(token_str)
+                    trading_symbol = tick_info.get('trading_symbol', '')
+                    ohlcv = tick_info.get('ohlcv', {})
                     
-                    if response.status_code == 200:
-                        ticks_data = response.json()
-                        used_url = url
-                        logger.info(f"✅ Successfully downloaded ticks.json from {url} with {len(ticks_data)} instruments")
-                        break
-                    else:
-                        logger.debug(f"Failed to download from {url}: HTTP {response.status_code}")
-                except Exception as e:
-                    logger.debug(f"Error downloading from {url}: {e}")
-            
-            if ticks_data:
-                # Save locally for future use
-                ticks_path = os.path.join(Archiver.get_user_data_dir(), "ticks.json")
-                try:
-                    with open(ticks_path, 'w') as f:
-                        json.dump(ticks_data, f)
-                    logger.info(f"Saved ticks.json locally to {ticks_path}")
-                except Exception as e:
-                    logger.warning(f"Could not save ticks.json locally: {e}")
-                
-                # Process ticks and populate candle store
-                logger.info(f"Processing {len(ticks_data)} instruments into candle store...")
-                processed_count = 0
-                
-                for token_str, tick_info in ticks_data.items():
-                    try:
-                        # Extract data with proper error handling
-                        instrument_token = int(token_str)
-                        trading_symbol = tick_info.get('trading_symbol', '')
-                        ohlcv = tick_info.get('ohlcv', {})
-                        
-                        # Skip if no valid price data
-                        close_price = ohlcv.get('close', 0)
-                        if close_price == 0:
-                            continue
-                        
-                        # Parse timestamp - use the tick's timestamp or current time
-                        timestamp_str = ohlcv.get('timestamp')
-                        if timestamp_str:
-                            try:
-                                from dateutil import parser
-                                dt = parser.parse(timestamp_str)
-                                exchange_timestamp = dt.timestamp()
-                            except:
-                                exchange_timestamp = time.time()
-                        else:
-                            exchange_timestamp = time.time()
-                        
-                        # Create tick data in the format expected by process_tick()
-                        tick_for_candle = {
-                            'instrument_token': instrument_token,
-                            'trading_symbol': trading_symbol,
-                            'last_price': close_price,
-                            'day_volume': ohlcv.get('volume', 0),
-                            'oi': tick_info.get('oi', 0),
-                            'exchange_timestamp': exchange_timestamp,
-                            'type': 'tick',
-                            'open_price': ohlcv.get('open', close_price),
-                            'high_price': ohlcv.get('high', close_price),
-                            'low_price': ohlcv.get('low', close_price),
-                            'prev_day_close': tick_info.get('prev_day_close', close_price),
-                            'last_quantity': 0,
-                            'avg_price': close_price,
-                        }
-                        
-                        # Register instrument if not already registered
-                        if trading_symbol:
-                            candle_store.register_instrument(instrument_token, trading_symbol)
-                        
-                        # Process the tick
-                        if candle_store.process_tick(tick_for_candle):
-                            processed_count += 1
-                            
-                    except Exception as e:
-                        logger.debug(f"Error processing tick for {token_str}: {e}")
+                    # Skip if no valid price data
+                    close_price = ohlcv.get('close', 0)
+                    if close_price == 0:
                         continue
-                
-                logger.info(f"✅ Successfully populated candle store with {processed_count} instruments from GitHub ticks.json")
-                
-                # Force a persist to save the populated data
-                try:
-                    candle_store._persist_to_disk()
-                    logger.info("Persisted candle store to disk")
+                    
+                    # Parse timestamp - use the tick's timestamp
+                    timestamp_str = ohlcv.get('timestamp')
+                    if timestamp_str:
+                        try:
+                            from dateutil import parser
+                            dt = parser.parse(timestamp_str)
+                            exchange_timestamp = dt.timestamp()
+                        except:
+                            exchange_timestamp = time.time()
+                    else:
+                        exchange_timestamp = time.time()
+                    
+                    # CRITICAL: Register instrument first
+                    if trading_symbol:
+                        candle_store.register_instrument(instrument_token, trading_symbol)
+                    
+                    # Create tick data in the format expected by process_tick()
+                    tick_for_candle = {
+                        'instrument_token': instrument_token,
+                        'trading_symbol': trading_symbol,
+                        'last_price': close_price,
+                        'day_volume': ohlcv.get('volume', 0),
+                        'oi': tick_info.get('oi', 0),
+                        'exchange_timestamp': exchange_timestamp,
+                        'type': 'tick',
+                        'open_price': ohlcv.get('open', close_price),
+                        'high_price': ohlcv.get('high', close_price),
+                        'low_price': ohlcv.get('low', close_price),
+                        'prev_day_close': tick_info.get('prev_day_close', close_price),
+                        'last_quantity': 0,
+                        'avg_price': close_price,
+                    }
+                    
+                    # Process the tick
+                    if candle_store.process_tick(tick_for_candle):
+                        processed_count += 1
+                        
                 except Exception as e:
-                    logger.warning(f"Could not persist candle store: {e}")
+                    error_count += 1
+                    if error_count < 10:  # Log only first 10 errors
+                        logger.debug(f"Error processing tick for {token_str}: {e}")
+                    continue
                 
-            else:
-                logger.warning("❌ Could not download ticks.json from any GitHub source")
-        
-        else:
-            logger.info(f"Candle store already has data ({instruments_with_ticks} instruments with ticks) - skipping GitHub population")
+                # Log progress every 500 instruments
+                if (idx + 1) % 500 == 0:
+                    logger.info(f"Progress: {idx + 1}/{len(ticks_data)} instruments processed")
             
-    except Exception as e:
-        logger.warning(f"Error checking/populating candle store from GitHub: {e}")
+            logger.info("=" * 60)
+            logger.info(f"✅ SUCCESS: Populated candle store with {processed_count} instruments from GitHub")
+            logger.info(f"   Errors: {error_count}")
+            logger.info("=" * 60)
+            
+            # Force a persist to save the populated data
+            try:
+                candle_store._persist_to_disk()
+                logger.info("✅ Persisted candle store to disk")
+            except Exception as e:
+                logger.warning(f"Could not persist candle store: {e}")
+            
+            # VERIFY the population worked
+            stats = candle_store.get_stats()
+            instruments_with_ticks = stats.get('instruments_with_ticks', 0)
+            logger.info(f"📊 VERIFICATION: After GitHub population - {instruments_with_ticks} instruments with ticks")
+            
+            # If still empty, something went wrong
+            if instruments_with_ticks == 0:
+                logger.error("❌ CRITICAL: Candle store still empty after GitHub population!")
+            else:
+                # Test that timestamps are correct
+                sample_symbols = list(candle_store.symbol_to_token.keys())[:5]
+                logger.info(f"Sample symbols in candle store: {sample_symbols}")
+                
+        else:
+            logger.error("❌ CRITICAL: Could not download ticks.json from any GitHub source")
+            logger.error("Candle store will remain empty - data will be stale!")
         
+    except Exception as e:
+        logger.error(f"FATAL ERROR in GitHub population: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # =========================================================================
+    # STEP 2: NOW PROCEED WITH NORMAL ORCHESTRATION
+    # =========================================================================
+    
     logger.info("Attempting to request data from running PKTickBot instance...")
     
     try:
