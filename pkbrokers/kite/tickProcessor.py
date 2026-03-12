@@ -269,7 +269,7 @@ class TickProcessor:
             count: Number of candles to return
             
         Returns:
-            List of candle dictionaries
+            List of candle dictionaries (includes last_tick_time for current candle)
         """
         return self.candle_store.get_candles(
             instrument_token=instrument_token,

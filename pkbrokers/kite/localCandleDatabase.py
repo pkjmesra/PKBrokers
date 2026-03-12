@@ -363,6 +363,14 @@ class LocalCandleDatabase:
                     )
                     
                     if daily_candle:
+                        # Use last_tick_time if available, otherwise use timestamp
+                        candle_time = daily_candle.get('last_tick_time', daily_candle.get('timestamp', 0))
+                        if candle_time:
+                            dt = datetime.fromtimestamp(candle_time, tz=self.timezone)
+                            timestamp_str = dt.isoformat()
+                        else:
+                            timestamp_str = now
+                            
                         daily_records.append((
                             symbol,
                             today,
@@ -371,6 +379,7 @@ class LocalCandleDatabase:
                             daily_candle.get('low', 0),
                             daily_candle.get('close', 0),
                             daily_candle.get('volume', 0),
+                            timestamp_str,  # Use the actual tick time as updated_at
                             now
                         ))
                     
@@ -380,9 +389,13 @@ class LocalCandleDatabase:
                     )
                     
                     for candle in candles_1m:
-                        timestamp = candle.get('timestamp', '')
-                        if isinstance(timestamp, datetime):
-                            timestamp = timestamp.isoformat()
+                        # Use last_tick_time if available (for current candle), otherwise use timestamp
+                        candle_time = candle.get('last_tick_time', candle.get('timestamp', 0))
+                        if candle_time:
+                            dt = datetime.fromtimestamp(candle_time, tz=self.timezone)
+                            timestamp = dt.isoformat()
+                        else:
+                            timestamp = now
                             
                         intraday_records.append((
                             symbol,
@@ -406,8 +419,8 @@ class LocalCandleDatabase:
                 cursor = conn.cursor()
                 cursor.executemany('''
                     INSERT OR REPLACE INTO daily_candles 
-                    (symbol, date, open, high, low, close, volume, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (symbol, date, open, high, low, close, volume, updated_at, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', daily_records)
                 conn.commit()
                 self.logger.info(f"Updated {len(daily_records)} daily candle records from ticks")

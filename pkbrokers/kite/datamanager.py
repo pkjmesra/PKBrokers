@@ -237,31 +237,33 @@ class InstrumentDataManager:
             
             result = {}
             timezone = pytz.timezone("Asia/Kolkata")
-            today = datetime.now(timezone).strftime('%Y-%m-%d')
             
             for symbol in symbols:
                 try:
                     # Get current candle for the interval
-                    current_candle = candle_store.get_current_candle(
+                    current_candle_dict = candle_store.get_current_candle(
                         trading_symbol=symbol, interval=interval
                     )
                     
-                    if current_candle and current_candle.get('tick_count', 0) > 0:
-                        # Get timestamp
-                        ts = current_candle.get('timestamp', 0)
-                        if isinstance(ts, (int, float)):
-                            dt = datetime.fromtimestamp(ts, tz=timezone)
+                    if current_candle_dict and current_candle_dict.get('tick_count', 0) > 0:
+                        # CRITICAL FIX: Use last_tick_time for the current candle
+                        # This ensures the timestamp reflects the most recent tick time
+                        candle_time = current_candle_dict.get('last_tick_time', 
+                                                            current_candle_dict.get('timestamp', 0))
+                        
+                        if candle_time:
+                            dt = datetime.fromtimestamp(candle_time, tz=timezone)
                             index_str = dt.isoformat()
                         else:
-                            index_str = f"{today}T09:15:00+05:30"
+                            index_str = datetime.now(timezone).isoformat()
                         
                         result[symbol] = {
                             'data': [[
-                                current_candle.get('open', 0),
-                                current_candle.get('high', 0),
-                                current_candle.get('low', 0) if current_candle.get('low', float('inf')) != float('inf') else current_candle.get('open', 0),
-                                current_candle.get('close', 0),
-                                current_candle.get('volume', 0)
+                                current_candle_dict.get('open', 0),
+                                current_candle_dict.get('high', 0),
+                                current_candle_dict.get('low', 0) if current_candle_dict.get('low', float('inf')) != float('inf') else current_candle_dict.get('open', 0),
+                                current_candle_dict.get('close', 0),
+                                current_candle_dict.get('volume', 0)
                             ]],
                             'columns': ['Open', 'High', 'Low', 'Close', 'Volume'],
                             'index': [index_str]
@@ -285,7 +287,7 @@ class InstrumentDataManager:
         
         For each symbol:
         - Keep all historical data
-        - Update/append today's candle from real-time data
+        - Update/append today's candle from real-time data using the correct timestamp
         
         Args:
             historical_data: Symbol-indexed historical data (pickle format)
@@ -302,7 +304,6 @@ class InstrumentDataManager:
         
         merged = {}
         timezone = pytz.timezone("Asia/Kolkata")
-        today_str = datetime.now(timezone).strftime('%Y-%m-%d')
         
         # Process all symbols from historical data
         for symbol, hist_data in historical_data.items():
@@ -326,19 +327,21 @@ class InstrumentDataManager:
                     merged[symbol] = hist_data
                     continue
                 
-                # Check if today's data already exists in historical
-                # Remove today's entry if it exists (we'll replace with real-time)
+                # Extract date from real-time timestamp
+                rt_timestamp_str = rt_index[0] if rt_index else ""
+                rt_date = rt_timestamp_str[:10] if len(rt_timestamp_str) >= 10 else rt_timestamp_str
+                
+                # Remove today's entry if it exists in historical (we'll replace with real-time)
                 new_rows = []
                 new_index = []
                 for idx, row in zip(hist_index, hist_rows):
-                    # Convert index to string to handle both string and Timestamp types
                     idx_str = str(idx)
                     idx_date = idx_str[:10] if len(idx_str) >= 10 else idx_str
-                    if idx_date != today_str:
+                    if idx_date != rt_date:
                         new_rows.append(row)
                         new_index.append(idx)
                 
-                # Append real-time data
+                # Append real-time data (with correct timestamp)
                 new_rows.extend(rt_rows)
                 new_index.extend(rt_index)
                 
@@ -572,6 +575,7 @@ class InstrumentDataManager:
                 from pkbrokers.kite.inMemoryCandleStore import get_candle_store
                 candle_store = get_candle_store()
                 if candle_store.get_all_symbols():
+                    # Use the updated _get_realtime_candle_data that handles last_tick_time
                     realtime_data = self._get_realtime_candle_data(interval='day')
                     if realtime_data:
                         self.logger.info(f"Got {len(realtime_data)} symbols from InMemoryCandleStore")

@@ -918,6 +918,8 @@ class DataSharingManager:
             
             # Now add today's candles from the candle store
             today_count = 0
+            latest_timestamp_any = None  # Track the absolute latest timestamp across all instruments
+
             with candle_store.lock:
                 for token, instrument in candle_store.instruments.items():
                     symbol = candle_store.instrument_symbols.get(token, str(token))
@@ -925,30 +927,45 @@ class DataSharingManager:
                     # Get all daily candles including current
                     day_candles = list(instrument.candles.get('day', []))
                     current_day = instrument.current_candle.get('day')
-                    if current_day and current_day.tick_count > 0:
-                        day_candles.append(current_day)
                     
-                    if not day_candles:
+                    # Determine the most recent daily candle data
+                    latest_candle = None
+                    latest_candle_time = None
+                    
+                    if current_day and current_day.tick_count > 0:
+                        latest_candle = current_day
+                        latest_candle_time = datetime.fromtimestamp(current_day.timestamp, tz=KOLKATA_TZ)
+                    
+                    # Also check completed candles for any more recent ones
+                    for candle in day_candles:
+                        candle_time = datetime.fromtimestamp(candle.timestamp, tz=KOLKATA_TZ)
+                        if latest_candle_time is None or candle_time > latest_candle_time:
+                            latest_candle = candle
+                            latest_candle_time = candle_time
+                    
+                    if latest_candle is None:
                         continue
                     
-                    # Convert to DataFrame with IST timezone-aware timestamps
-                    rows = []
-                    for candle in day_candles:
-                        # Create timezone-aware datetime in IST directly
-                        dt_ist = datetime.fromtimestamp(candle.timestamp, tz=KOLKATA_TZ)
-                        
-                        # Only include today's data from InMemoryCandleStore
-                        if dt_ist.date() == today_trading_date:
-                            rows.append({
-                                'Date': dt_ist,
-                                'Open': candle.open,
-                                'High': candle.high,
-                                'Low': candle.low if candle.low != float('inf') else candle.open,
-                                'Close': candle.close,
-                                'Volume': candle.volume,
-                            })
+                    # Create timezone-aware datetime in IST
+                    dt_ist = datetime.fromtimestamp(latest_candle.timestamp, tz=KOLKATA_TZ)
                     
-                    if rows:
+                    # Track the absolute latest timestamp across all instruments
+                    if latest_timestamp_any is None or dt_ist > latest_timestamp_any:
+                        latest_timestamp_any = dt_ist
+                    
+                    # Only include today's data from InMemoryCandleStore
+                    if dt_ist.date() == today_trading_date:
+                        # For the daily export, we want to use the most recent candle data
+                        # This means using the current candle's close price as the latest price
+                        rows = [{
+                            'Date': dt_ist,
+                            'Open': latest_candle.open,
+                            'High': latest_candle.high,
+                            'Low': latest_candle.low if latest_candle.low != float('inf') else latest_candle.open,
+                            'Close': latest_candle.close,
+                            'Volume': latest_candle.volume,
+                        }]
+                        
                         new_df = pd.DataFrame(rows)
                         new_df.set_index('Date', inplace=True)
                         
@@ -976,6 +993,14 @@ class DataSharingManager:
                         else:
                             data[symbol] = new_df
                         today_count += 1
+
+            # After processing all symbols, update the pkl modification time to match the latest tick
+            if latest_timestamp_any and os.path.exists(output_path):
+                # Update the file's modification time to match the latest tick time
+                # This helps with freshness checks that look at file mtime
+                mod_time = latest_timestamp_any.timestamp()
+                os.utime(output_path, (mod_time, mod_time))
+                self.logger.debug(f"Updated pkl mtime to {latest_timestamp_any}")
             
             if data:
                 # Trim each stock to most recent 251 rows before saving

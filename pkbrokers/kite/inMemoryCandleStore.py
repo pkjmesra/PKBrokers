@@ -134,6 +134,7 @@ class Candle:
     
     Attributes:
         timestamp: Candle start time (Unix timestamp)
+        last_tick_time: Time of the most recent tick (Unix timestamp)
         open: Opening price
         high: Highest price
         low: Lowest price
@@ -144,6 +145,7 @@ class Candle:
         is_complete: Whether candle is complete (closed)
     """
     timestamp: int
+    last_tick_time: int = 0  # NEW: track most recent tick time
     open: float = 0.0
     high: float = 0.0
     low: float = float('inf')
@@ -153,7 +155,7 @@ class Candle:
     tick_count: int = 0
     is_complete: bool = False
     
-    def update_with_tick(self, price: float, volume: int = 0, oi: int = 0):
+    def update_with_tick(self, price: float, volume: int = 0, oi: int = 0, tick_time: int = None):
         """
         Update candle with a new tick (incremental volume mode).
         
@@ -161,6 +163,7 @@ class Candle:
             price: Tick price
             volume: Incremental volume since last tick (will be added)
             oi: Open interest
+            tick_time: Timestamp of this tick (Unix timestamp)
         """
         if self.tick_count == 0:
             self.open = price
@@ -174,8 +177,10 @@ class Candle:
         self.volume += volume  # Add incremental volume
         self.oi = oi  # OI is typically the latest value
         self.tick_count += 1
+        if tick_time is not None and tick_time > self.last_tick_time:
+            self.last_tick_time = tick_time  # Update last tick time
     
-    def update_with_tick_daily(self, price: float, day_volume: int = 0, oi: int = 0):
+    def update_with_tick_daily(self, price: float, day_volume: int = 0, oi: int = 0, tick_time: int = None):
         """
         Update candle with a new tick (cumulative volume mode for daily candles).
         
@@ -186,6 +191,7 @@ class Candle:
             price: Tick price
             day_volume: Cumulative volume for the day (will overwrite)
             oi: Open interest
+            tick_time: Timestamp of this tick (Unix timestamp)
         """
         if self.tick_count == 0:
             self.open = price
@@ -199,11 +205,14 @@ class Candle:
         self.volume = day_volume  # Overwrite with cumulative day volume
         self.oi = oi  # OI is typically the latest value
         self.tick_count += 1
+        if tick_time is not None and tick_time > self.last_tick_time:
+            self.last_tick_time = tick_time  # Update last tick time
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert candle to dictionary."""
         return {
             'timestamp': self.timestamp,
+            'last_tick_time': self.last_tick_time,  # NEW
             'open': self.open,
             'high': self.high,
             'low': self.low if self.low != float('inf') else 0,
@@ -223,6 +232,7 @@ class Candle:
         """Create candle from dictionary."""
         return cls(
             timestamp=data.get('timestamp', 0),
+            last_tick_time=data.get('last_tick_time', 0),  # NEW
             open=data.get('open', 0.0),
             high=data.get('high', 0.0),
             low=data.get('low', float('inf')),
@@ -512,7 +522,7 @@ class InMemoryCandleStore:
                     For intraday candles, this is incremental volume.
             oi: Open interest
             is_daily: If True, volume is cumulative day_volume (overwrite mode).
-                      If False, volume is incremental (additive mode).
+                    If False, volume is incremental (additive mode).
         """
         candle_start = self._get_candle_start_time(timestamp, interval)
         current = instrument.current_candle.get(interval)
@@ -530,13 +540,13 @@ class InMemoryCandleStore:
             instrument.current_candle[interval] = current
             self.stats['candles_created'] += 1
         
-        # Update current candle with tick
+        # Update current candle with tick - PASS THE TIMESTAMP
         if is_daily:
             # For daily candles, volume is cumulative - overwrite
-            current.update_with_tick_daily(price, volume, oi)
+            current.update_with_tick_daily(price, volume, oi, tick_time=timestamp)
         else:
             # For intraday candles, volume is incremental - add
-            current.update_with_tick(price, volume, oi)
+            current.update_with_tick(price, volume, oi, tick_time=timestamp)
     
     def get_candles(
         self,
@@ -743,8 +753,14 @@ class InMemoryCandleStore:
                 
                 for candle in day_candles:
                     data.append(candle.to_list())
-                    # Convert timestamp to ISO format with timezone
-                    dt = datetime.fromtimestamp(candle.timestamp, tz=KOLKATA_TZ)
+                    # Use last_tick_time for the most recent candle, otherwise use start time
+                    if candle.is_complete:
+                        # Completed candles use start time
+                        dt = datetime.fromtimestamp(candle.timestamp, tz=KOLKATA_TZ)
+                    else:
+                        # Current candle uses the most recent tick time
+                        tick_time = candle.last_tick_time if candle.last_tick_time > 0 else candle.timestamp
+                        dt = datetime.fromtimestamp(tick_time, tz=KOLKATA_TZ)
                     index.append(dt.isoformat())
                 
                 # Trim to most recent MAX_DAILY_ROWS for daily data
@@ -775,12 +791,15 @@ class InMemoryCandleStore:
                 current = instrument.current_candle.get('day')
                 
                 if current and current.tick_count > 0:
+                    # Use last_tick_time if available, otherwise use timestamp
+                    tick_time = current.last_tick_time if current.last_tick_time > 0 else current.timestamp
+                    
                     result[str(token)] = {
                         'instrument_token': token,
                         'trading_symbol': symbol,
                         'tick_count': current.tick_count,
                         'ohlcv': {
-                            'timestamp': current.timestamp,
+                            'timestamp': tick_time,  # Use most recent tick time
                             'open': current.open,
                             'high': current.high,
                             'low': current.low if current.low != float('inf') else current.open,
