@@ -415,10 +415,14 @@ class InMemoryCandleStore:
         try:
             instrument_token = tick_data.get('instrument_token')
             price = tick_data.get('last_price', 0)
-            day_volume = tick_data.get('day_volume', 0)  # Cumulative volume for the day
+            day_volume = tick_data.get('day_volume', 0)
             oi = tick_data.get('oi', 0)
             timestamp = tick_data.get('exchange_timestamp')
             trading_symbol = tick_data.get('trading_symbol', '')
+            
+            # Add periodic debug logging
+            if self.stats['ticks_processed'] % 1000 == 0:
+                self.logger.info(f"process_tick called with token={instrument_token}, symbol={trading_symbol}, price={price}, ts={timestamp}")
             
             if instrument_token is None or price is None or price <= 0:
                 return False

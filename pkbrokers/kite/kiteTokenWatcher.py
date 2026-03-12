@@ -984,22 +984,41 @@ class KiteTokenWatcher:
             except Exception as e:
                 self.logger.error(f"Error sending to JSON writer: {e}")
             
-            # Update in-memory candle store for high-performance candle access
+            # FIX: Update in-memory candle store with properly formatted tick data
             try:
                 trading_symbol = ""
                 if instrument_token in self._kite_instruments:
                     trading_symbol = getattr(self._kite_instruments[instrument_token], 'tradingsymbol', '')
                 
+                # IMPORTANT: Create dictionary with EXACT keys expected by process_tick()
                 tick_for_candle = {
                     'instrument_token': latest_tick.instrument_token,
                     'last_price': latest_tick.last_price or 0,
+                    # Use day_volume (cumulative) for daily candles
                     'day_volume': latest_tick.day_volume or 0,
                     'oi': latest_tick.oi or 0,
-                    'exchange_timestamp': latest_tick.exchange_timestamp,
+                    # Use exchange_timestamp for candle aggregation
+                    'exchange_timestamp': latest_tick.exchange_timestamp or time.time(),
                     'trading_symbol': trading_symbol,
                     'type': 'tick',
+                    # Add these additional fields that process_tick might expect
+                    'last_quantity': latest_tick.last_quantity or 0,
+                    'avg_price': latest_tick.avg_price or 0,
+                    'open_price': latest_tick.open_price or 0,
+                    'high_price': latest_tick.high_price or 0,
+                    'low_price': latest_tick.low_price or 0,
+                    'prev_day_close': latest_tick.prev_day_close or 0,
+                    'last_trade_timestamp': latest_tick.last_trade_timestamp or 0,
+                    'oi_day_high': latest_tick.oi_day_high or 0,
+                    'oi_day_low': latest_tick.oi_day_low or 0,
                 }
-                self._candle_store.process_tick(tick_for_candle)
+                
+                # Process the tick in candle store
+                if self._candle_store.process_tick(tick_for_candle):
+                    self.logger.debug(f"Updated candle store for {trading_symbol or instrument_token}")
+                else:
+                    self.logger.debug(f"Failed to update candle store for {trading_symbol or instrument_token}")
+                    
             except Exception as e:
                 self.logger.debug(f"Error updating candle store: {e}")
 
