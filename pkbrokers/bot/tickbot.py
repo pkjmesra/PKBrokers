@@ -788,11 +788,11 @@ class PKTickBot:
             # Send intraday pkl
             self.send_intraday_pkl(update, context)
             
-            # Send db file
-            self.send_zipped_db(update, context)
+            # # Send db file
+            # self.send_zipped_db(update, context)
 
-            # Send instrument_history.db file
-            self.send_zipped_instrument_history(update, context)
+            # # Send instrument_history.db file
+            # self.send_zipped_instrument_history(update, context)
             
             update.message.reply_text("✅ Data transfer complete!")
             self.logger.info("Data sent to requesting instance (with freshness ensured)")

@@ -491,9 +491,9 @@ def pkkite():
                 default_logger().info("Requesting data files from running instance...")
                 orchestrate_consumer(command="/request_data")
                 
-                # Also request individual pkl files
-                orchestrate_consumer(command="/daily_pkl")
-                orchestrate_consumer(command="/intraday_pkl")
+                # # Also request individual pkl files
+                # orchestrate_consumer(command="/daily_pkl")
+                # orchestrate_consumer(command="/intraday_pkl")
                 
                 data_mgr.data_received_from_instance = True
                 default_logger().info("Received data from running instance")
