@@ -497,16 +497,6 @@ class PKTickOrchestrator:
                 processes = [(self.kite_process, "kite process")]
                 self.stop(processes=processes)
             self.kite_process = None
-            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
-
-            cur_ist = PKDateUtilities.currentDateTime()
-            is_non_market_hour = (
-                (cur_ist.hour >= 15 and cur_ist.minute >= 30)
-                or  (cur_ist.hour <= 9 and cur_ist.minute <= 15)
-                or PKDateUtilities.isTodayHoliday()[0]
-            )
-            if is_non_market_hour:
-                commit_ticks(file_name="ticks.db.zip")
 
     def stop(self, processes=[]):
         """Stop both processes gracefully with proper resource cleanup"""
