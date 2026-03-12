@@ -450,7 +450,7 @@ class InMemoryCandleStore:
             
             with self.lock:
                 instrument = self._get_or_create_instrument(instrument_token, trading_symbol)
-                instrument.last_update = time.time()
+                instrument.last_update = datetime.fromtimestamp(timestamp_float, tz=KOLKATA_TZ).isoformat()
                 
                 # Calculate INCREMENTAL volume from cumulative day_volume
                 incremental_volume = 0
@@ -819,7 +819,7 @@ class InMemoryCandleStore:
                     timestamp_iso = dt.isoformat()
                     
                     # Convert last_update to ISO format
-                    last_update_iso = datetime.fromtimestamp(instrument.last_update, tz=KOLKATA_TZ).isoformat() if instrument.last_update else None
+                    # last_update_iso = datetime.fromtimestamp(instrument.last_update, tz=KOLKATA_TZ).isoformat() if instrument.last_update else None
                     
                     result[str(token)] = {
                         'instrument_token': token,
@@ -834,7 +834,7 @@ class InMemoryCandleStore:
                             'volume': current.volume,
                             'oi': current.oi,
                         },
-                        'last_update': last_update_iso,  # ✅ Now ISO format with timezone
+                        'last_update': timestamp_iso, #last_update_iso,  # ✅ Now ISO format with timezone
                     }
         
         return result
