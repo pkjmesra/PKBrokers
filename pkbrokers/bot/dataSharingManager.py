@@ -946,8 +946,11 @@ class DataSharingManager:
                     if latest_candle is None:
                         continue
                     
-                    # Create timezone-aware datetime in IST
-                    dt_ist = datetime.fromtimestamp(latest_candle.timestamp, tz=KOLKATA_TZ)
+                    # Use last_tick_time for current candles, timestamp for completed
+                    if latest_candle.is_complete or latest_candle.last_tick_time == 0:
+                        dt_ist = datetime.fromtimestamp(latest_candle.timestamp, tz=KOLKATA_TZ)
+                    else:
+                        dt_ist = datetime.fromtimestamp(latest_candle.last_tick_time, tz=KOLKATA_TZ)
                     
                     # Track the absolute latest timestamp across all instruments
                     if latest_timestamp_any is None or dt_ist > latest_timestamp_any:
