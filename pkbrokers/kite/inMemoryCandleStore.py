@@ -790,7 +790,7 @@ class InMemoryCandleStore:
         Export data in ticks.json format for PKTickBot.
         
         Returns:
-            Dictionary in ticks.json format
+            Dictionary in ticks.json format with ISO format timestamps
         """
         result = {}
         
@@ -800,15 +800,22 @@ class InMemoryCandleStore:
                 current = instrument.current_candle.get('day')
                 
                 if current and current.tick_count > 0:
-                    # Use last_tick_time if available, otherwise use timestamp
+                    # Get the tick time (Unix timestamp)
                     tick_time = current.last_tick_time if current.last_tick_time > 0 else current.timestamp
+                    
+                    # Convert to ISO format string with timezone
+                    dt = datetime.fromtimestamp(tick_time, tz=KOLKATA_TZ)
+                    timestamp_iso = dt.isoformat()
+                    
+                    # Convert last_update to ISO format
+                    last_update_iso = datetime.fromtimestamp(instrument.last_update, tz=KOLKATA_TZ).isoformat() if instrument.last_update else None
                     
                     result[str(token)] = {
                         'instrument_token': token,
                         'trading_symbol': symbol,
                         'tick_count': current.tick_count,
                         'ohlcv': {
-                            'timestamp': tick_time,  # Use most recent tick time
+                            'timestamp': timestamp_iso,  # ✅ Now ISO format with timezone
                             'open': current.open,
                             'high': current.high,
                             'low': current.low if current.low != float('inf') else current.open,
@@ -816,7 +823,7 @@ class InMemoryCandleStore:
                             'volume': current.volume,
                             'oi': current.oi,
                         },
-                        'last_update': instrument.last_update,
+                        'last_update': last_update_iso,  # ✅ Now ISO format with timezone
                     }
         
         return result
