@@ -486,6 +486,8 @@ class PKTickOrchestrator:
             self.kite_process.daemon = False
             self.kite_process.start()
             logger.info("Kite ticks process started (market hours)")
+            from pkbrokers.kite.examples.pkkite import commit_ticks
+            commit_ticks(file_name="ticks.json")
         else:
             logger.warning(
                 "Kite ticks process not started (outside market hours or holiday)"
@@ -495,9 +497,6 @@ class PKTickOrchestrator:
                 processes = [(self.kite_process, "kite process")]
                 self.stop(processes=processes)
             self.kite_process = None
-            from pkbrokers.kite.examples.pkkite import commit_ticks
-
-            commit_ticks(file_name="ticks.json")
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
             cur_ist = PKDateUtilities.currentDateTime()
