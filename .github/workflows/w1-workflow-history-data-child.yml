@@ -649,7 +649,7 @@ jobs:
         import sys
         
         # Check if today is a holiday
-        is_holiday = PKDateUtilities.isTodayHoliday()
+        is_holiday = PKDateUtilities.isTodayHoliday()[0]
         if is_holiday:
             print('false')
             sys.exit(0)

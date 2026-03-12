@@ -371,17 +371,17 @@ class PKTickOrchestrator:
                             
                             # Market hours: 9:15 AM to 3:30 PM on non-holiday weekdays
                             is_market_open = (
-                                cur_ist.weekday() < 5 and
-                                not PKDateUtilities.isTodayHoliday() and
+                                cur_ist.weekday() < 5 and  # Monday=0, Friday=4
+                                not PKDateUtilities.isTodayHoliday()[0] and
                                 (
-                                    (cur_ist.hour == 9 and cur_ist.minute >= 15) or
-                                    (cur_ist.hour > 9 and cur_ist.hour < 15) or
-                                    (cur_ist.hour == 15 and cur_ist.minute <= 30)
+                                    (cur_ist.hour == 9 and cur_ist.minute >= 15) or  # 9:15 AM to 9:59 AM
+                                    (cur_ist.hour > 9 and cur_ist.hour < 15) or      # 10:00 AM to 2:59 PM
+                                    (cur_ist.hour == 15 and cur_ist.minute <= 30)    # 3:00 PM to 3:30 PM
                                 )
                             )
                             
-                            # Force commit if market is open OR if it's been more than 4 cycles (2 minutes) since last commit
-                            should_commit = is_market_open or (time_since_last_commit >= 4*CYCLE_TIME_SEC)
+                            # Force commit if market is open AND if it's been more than 4 cycles (2 minutes) since last commit
+                            should_commit = is_market_open and (time_since_last_commit >= 4*CYCLE_TIME_SEC)
                             
                             logger.info(f"Commit decision: should_commit={should_commit}, is_market_open={is_market_open}, time_since={time_since_last_commit:.1f}s")
                             
@@ -500,7 +500,7 @@ class PKTickOrchestrator:
             is_non_market_hour = (
                 (cur_ist.hour >= 15 and cur_ist.minute >= 30)
                 or  (cur_ist.hour <= 9 and cur_ist.minute <= 15)
-                or PKDateUtilities.isTodayHoliday()
+                or PKDateUtilities.isTodayHoliday()[0]
             )
             if is_non_market_hour:
                 commit_ticks(file_name="ticks.db.zip")

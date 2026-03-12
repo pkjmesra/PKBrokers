@@ -514,7 +514,7 @@ def pkkite():
             is_non_market_hour = (
                 (cur_ist.hour >= 15 and cur_ist.minute >= 30)
                 or (cur_ist.hour <= 9 and cur_ist.minute <= 15)
-                or PKDateUtilities.isTodayHoliday()
+                or PKDateUtilities.isTodayHoliday()[0]
             )
             if is_non_market_hour:
                 orchestrate_consumer(command="/db")
