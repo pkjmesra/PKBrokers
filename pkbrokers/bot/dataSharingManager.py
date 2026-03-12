@@ -611,32 +611,31 @@ class DataSharingManager:
             current_time = now.time()
             current_date = now.date()
             
-            # Check if today is a trading day
-            is_trading_day = self.is_trading_day(now)
-            
-            # Determine the reference time for freshness comparison
-            if is_trading_day and current_time >= MARKET_OPEN_TIME:
-                # During market hours - compare against current time
+            # Check if market is CURRENTLY open
+            is_market_open_now = self.is_market_open()  # 9:15-15:30 on trading days
+
+            if is_market_open_now:
+                # During market hours - data should be up to current time
                 reference_datetime = now
-                self.logger.debug(f"Market hours - comparing against current time: {reference_datetime}")
+                self.logger.info(f"Market open - comparing against current time: {reference_datetime}")
             else:
-                # Outside market hours or holiday - compare against last market close
+                # Outside market hours - data should be up to last market close
                 last_trading_date = PKDateUtilities.tradingDate()
                 if hasattr(last_trading_date, 'date'):
                     last_trading_date = last_trading_date.date()
                 
                 reference_datetime = KOLKATA_TZ.localize(datetime.combine(
                     last_trading_date, 
-                    MARKET_CLOSE_TIME
+                    MARKET_CLOSE_TIME  # 15:30
                 ))
-                self.logger.debug(f"Non-market hours - comparing against last close: {reference_datetime}")
+                self.logger.info(f"Market closed - comparing against last close: {reference_datetime}")
             
             # Calculate stale seconds
             if latest_datetime >= reference_datetime:
                 # Data is fresh (includes current time or last close)
                 is_fresh = True
                 stale_seconds = 0
-                self.logger.debug(f"Pkl data is fresh. Latest: {latest_datetime}, Reference: {reference_datetime}")
+                self.logger.info(f"Pkl data is fresh. Latest: {latest_datetime}, Reference: {reference_datetime}")
             else:
                 # Data is stale
                 is_fresh = False
@@ -653,12 +652,12 @@ class DataSharingManager:
                     missing_days = 0
                 
                 # Detailed logging based on scenario
-                if is_trading_day and current_time >= MARKET_OPEN_TIME:
+                if is_market_open_now:
                     # During market hours
                     self.logger.warning(f"Pkl data is stale during market hours. "
                                     f"Latest: {latest_datetime}, Current: {now}, "
                                     f"Stale by {stale_seconds} seconds ({stale_seconds/SECONDS_IN_1_MINUTE:.1f} minutes)")
-                elif latest_date == current_date and not is_trading_day:
+                elif latest_date == current_date and not is_market_open_now:
                     # Today is holiday, data from today (shouldn't happen)
                     self.logger.debug(f"Pkl data is from today ({current_date}) which is a holiday. "
                                     f"Last trading day was {last_trading_date}")
