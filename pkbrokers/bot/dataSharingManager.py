@@ -300,12 +300,12 @@ class DataSharingManager:
         # Check freshness
         is_fresh, latest_date, missing_days, last_trading_date, latest_time, stale_seconds = self.validate_pkl_freshness(pkl_path)
         
-        if is_fresh:
+        if is_fresh and stale_seconds <= max_stale_seconds:
             self.logger.debug(f"[Refresh #{self._refresh_count}] Daily pkl is fresh (stale: {stale_seconds}s < {max_stale_seconds}s)")
             return False
         
         # Log staleness details
-        if stale_seconds > 0:
+        if stale_seconds > max_stale_seconds:
             self.logger.warning(
                 f"[Refresh #{self._refresh_count}] Daily pkl is stale by {stale_seconds} seconds "
                 f"(>{max_stale_seconds}s). Latest data from {latest_date} {latest_time or ''}. Refreshing..."
@@ -316,7 +316,39 @@ class DataSharingManager:
                 f"Latest data from {latest_date}. Refreshing..."
             )
         
-        # Refresh the pkl with latest candle data
+        # CRITICAL: Check if candle store itself has recent data
+        candle_stats = candle_store.get_stats()
+        last_tick_time = candle_stats.get('last_tick_time', 0)
+        if last_tick_time > 0:
+            last_tick_datetime = datetime.fromtimestamp(last_tick_time, tz=KOLKATA_TZ)
+            now = datetime.now(KOLKATA_TZ)
+            candle_stale_seconds = (now - last_tick_datetime).total_seconds()
+            self.logger.info(f"Candle store last tick: {last_tick_datetime} ({candle_stale_seconds:.0f}s ago)")    
+            # Force refresh if candle store has newer data than pkl
+            pkl_latest = None
+            if os.path.exists(pkl_path):
+                try:
+                    with open(pkl_path, 'rb') as f:
+                        pkl_data = pickle.load(f)
+                    for symbol, df in pkl_data.items():
+                        if hasattr(df, 'index') and len(df.index) > 0:
+                            if pkl_latest is None or df.index[-1] > pkl_latest:
+                                pkl_latest = df.index[-1]
+                except:
+                    pass
+            
+            if pkl_latest:
+                pkl_latest_dt = pkl_latest if hasattr(pkl_latest, 'tzinfo') else pytz.UTC.localize(pkl_latest)
+                if last_tick_datetime > pkl_latest_dt:
+                    self.logger.info(f"REFRESH: Candle store has newer data ({last_tick_datetime} > {pkl_latest_dt}) - forcing refresh")
+                    is_fresh = False  # Force refresh
+        
+        if is_fresh and stale_seconds <= max_stale_seconds:
+            self.logger.debug(f"REFRESH: Daily pkl is fresh (stale: {stale_seconds}s < {max_stale_seconds}s)")
+            return False
+        
+        # Force refresh by exporting from candle store
+        self.logger.info(f"REFRESH: Exporting daily candles from candle store...")
         start_time = datetime.now()
         success, _ = self.export_daily_candles_to_pkl(candle_store, merge_with_historical=True)
         elapsed = (datetime.now() - start_time).total_seconds()
@@ -326,8 +358,8 @@ class DataSharingManager:
             
             # Verify freshness after refresh
             is_fresh, latest_date, missing_days, last_trading_date, latest_time, stale_seconds = self.validate_pkl_freshness(pkl_path)
-            if is_fresh:
-                self.logger.info(f"[Refresh #{self._refresh_count}] ✓ Post-refresh validation: Fresh - {latest_date} {latest_time}")
+            if is_fresh and stale_seconds <= max_stale_seconds:
+                self.logger.info(f"[Refresh #{self._refresh_count}] ✓ Post-refresh validation: Fresh - {latest_date} {latest_time} (stale: {stale_seconds}s)")
             else:
                 self.logger.warning(f"[Refresh #{self._refresh_count}] ⚠ Post-refresh validation: Still stale by {stale_seconds}s")
             
@@ -848,6 +880,9 @@ class DataSharingManager:
             data = {}
             today_trading_date = PKDateUtilities.tradingDate()
             
+            # DEBUG: Check what's in candle store before export
+            candle_stats = candle_store.get_stats()
+            self.logger.info(f"EXPORT: Candle store has {candle_stats.get('instrument_count', 0)} instruments, last_tick_time: {candle_stats.get('last_tick_time', 0)}")
             # Helper function to normalize timestamps to IST (timezone-aware)
             def normalize_to_ist(df):
                 """Convert DataFrame index to timezone-aware IST."""
@@ -1021,7 +1056,15 @@ class DataSharingManager:
                 
                 if trimmed_count > 0:
                     self.logger.info(f"Trimmed {trimmed_count} stocks to {MAX_DAILY_ROWS} rows each")
+                # DEBUG: Check the latest timestamp in the data being saved
+                latest_timestamp = None
+                for symbol, df in data.items():
+                    if hasattr(df, 'index') and len(df.index) > 0:
+                        last_idx = df.index[-1]
+                        if latest_timestamp is None or last_idx > latest_timestamp:
+                            latest_timestamp = last_idx
                 
+                self.logger.info(f"EXPORT: Saving data with latest timestamp: {latest_timestamp}")
                 with open(output_path, 'wb') as f:
                     pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
                 
@@ -1032,7 +1075,7 @@ class DataSharingManager:
                 for symbol in list(data.keys())[:3]:
                     df = data[symbol]
                     if hasattr(df.index, 'tz'):
-                        self.logger.debug(f"{symbol} timezone: {df.index.tz}")
+                        self.logger.info(f"{symbol} timezone: {df.index.tz}")
                 
                 return True, output_path
             else:

@@ -865,6 +865,17 @@ class InMemoryCandleStore:
         except Exception as e:
             self.logger.error(f"Error saving ticks.json: {e}")
     
+    def has_recent_data(self, max_age_seconds: int = 300) -> bool:
+        """Check if the candle store has data newer than max_age_seconds."""
+        with self.lock:
+            last_tick = self.stats.get('last_tick_time', 0)
+            if last_tick == 0:
+                return False
+            
+            now = time.time()
+            age = now - last_tick
+            return age <= max_age_seconds
+        
     def _persist_to_disk(self):
         """Persist store data to disk for recovery."""
         try:

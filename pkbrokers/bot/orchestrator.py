@@ -662,6 +662,76 @@ class PKTickOrchestrator:
                         
                         if not is_fresh and (stale_seconds > max_stale_seconds or missing_days > 0):
                             logger.info(f"Periodic refresh: Daily pkl stale by {stale_seconds}s or missing {missing_days} days")
+                            
+                            # CRITICAL FIX: If kite process is not running, we need to get fresh data
+                            if not self.kite_process or not self.kite_process.is_alive():
+                                logger.warning("Kite process not running - attempting to refresh from GitHub")
+                                # Download fresh ticks.json from GitHub
+                                import requests
+                                import json
+                                import os
+                                
+                                try:
+                                    # Try to download fresh ticks.json
+                                    urls = [
+                                        "https://raw.githubusercontent.com/pkjmesra/PKBrokers/refs/heads/main/pkbrokers/kite/examples/results/Data/ticks.json",
+                                        "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/ticks.json"
+                                    ]
+                                    
+                                    for url in urls:
+                                        response = requests.get(url, timeout=30)
+                                        if response.status_code == 200:
+                                            fresh_ticks = response.json()
+                                            logger.info(f"Downloaded fresh ticks.json from {url} with {len(fresh_ticks)} instruments")
+                                            
+                                            # Reprocess these ticks into candle store
+                                            processed_count = 0
+                                            for token_str, tick_info in fresh_ticks.items():
+                                                try:
+                                                    instrument_token = int(token_str)
+                                                    trading_symbol = tick_info.get('trading_symbol', '')
+                                                    ohlcv = tick_info.get('ohlcv', {})
+                                                    
+                                                    close_price = ohlcv.get('close', 0)
+                                                    if close_price == 0:
+                                                        continue
+                                                    
+                                                    # Register instrument
+                                                    if trading_symbol:
+                                                        candle_store.register_instrument(instrument_token, trading_symbol)
+                                                    
+                                                    # Get timestamp - could be string or number
+                                                    timestamp_str = ohlcv.get('timestamp')
+                                                    exchange_timestamp = timestamp_str if timestamp_str else time.time()
+                                                    
+                                                    # Create tick data
+                                                    tick_for_candle = {
+                                                        'instrument_token': instrument_token,
+                                                        'trading_symbol': trading_symbol,
+                                                        'last_price': close_price,
+                                                        'day_volume': ohlcv.get('volume', 0),
+                                                        'oi': tick_info.get('oi', 0),
+                                                        'exchange_timestamp': exchange_timestamp,
+                                                        'type': 'tick',
+                                                        'open_price': ohlcv.get('open', close_price),
+                                                        'high_price': ohlcv.get('high', close_price),
+                                                        'low_price': ohlcv.get('low', close_price),
+                                                        'prev_day_close': tick_info.get('prev_day_close', close_price),
+                                                    }
+                                                    
+                                                    if candle_store.process_tick(tick_for_candle):
+                                                        processed_count += 1
+                                                        
+                                                except Exception as e:
+                                                    continue
+                                            
+                                            logger.info(f"Refreshed candle store with {processed_count} instruments from GitHub")
+                                            break
+                                            
+                                except Exception as e:
+                                    logger.error(f"Failed to refresh from GitHub: {e}")
+                            
+                            # Now try to refresh pkl with updated candle store
                             data_mgr.refresh_pkl_if_stale(candle_store, max_stale_seconds)
                         
                         # Check and refresh intraday pkl if stale (based on file age during market hours)
@@ -931,6 +1001,35 @@ def orchestrate():
                 logger.warning(f"Error downloading from {url}: {e}")
         
         if ticks_data:
+            # After downloading ticks.json, check if it's recent enough
+            # Check the timestamps in the data to see if it's recent
+            import random
+            
+            # Sample a few instruments to check timestamps
+            sample_tokens = list(ticks_data.keys())[:10]
+            has_recent = False
+            latest_timestamp = None
+            
+            for token in sample_tokens:
+                tick_info = ticks_data[token]
+                ohlcv = tick_info.get('ohlcv', {})
+                timestamp_str = ohlcv.get('timestamp')
+                if timestamp_str:
+                    try:
+                        dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                        if latest_timestamp is None or dt > latest_timestamp:
+                            latest_timestamp = dt
+                    except:
+                        pass
+            
+            if latest_timestamp:
+                now = datetime.now(pytz.UTC)
+                age_seconds = (now - latest_timestamp).total_seconds()
+                logger.info(f"Downloaded ticks.json latest timestamp: {latest_timestamp} ({age_seconds/60:.1f} minutes old)")
+                
+                if age_seconds > 3600:  # Older than 1 hour
+                    logger.warning(f"⚠️ Downloaded ticks.json is {age_seconds/60:.1f} minutes old - data may be stale!")
+
             # Save locally for future use
             ticks_path = os.path.join(Archiver.get_user_data_dir(), "ticks.json")
             try:
