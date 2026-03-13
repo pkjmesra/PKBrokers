@@ -284,7 +284,7 @@ class JSONFileWriter:
                 return False, parsed, "Data loss during serialization"
             
             # Validate each instrument has required fields
-            required_fields = ['instrument_token', 'trading_symbol', 'ohlcv', 'last_updated']
+            required_fields = ['instrument_token', 'trading_symbol', 'ohlcv' ] # 'last_updated'
             for token, instrument in parsed.items():
                 missing_fields = [f for f in required_fields if f not in instrument]
                 if missing_fields:
@@ -363,14 +363,14 @@ class JSONFileWriter:
             is_valid, validated_data, error_msg = self._validate_json_structure(deduped_data)
             
             if not is_valid:
-                self.logger.error(f"Data validation failed: {error_msg}")
+                self.logger.warning(f"Data validation failed: {error_msg}")
                 if validated_data:
                     # Try to salvage by using the parsed data
                     self.logger.warning("Attempting to salvage by using parsed data")
                     validated_data = self._deduplicate_data(validated_data)
                 else:
                     # Can't salvage, don't save
-                    self.logger.error("Data is corrupted beyond repair, skipping save")
+                    self.logger.warning("Data is corrupted beyond repair, skipping save")
                     return
             
             # Step 4: Acquire lock and write atomically
