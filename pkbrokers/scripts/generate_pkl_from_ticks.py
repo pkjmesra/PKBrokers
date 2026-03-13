@@ -545,43 +545,43 @@ def load_local_ticks_json(data_dir: str, verbose: bool = True, min_instruments: 
                 log(f"⚠️ Error loading {path}: {e}", verbose)
                 continue
     
-    # If no fresh local data found, try generating fresh data with kite_ticks
-    log("🔄 No fresh local data found. Attempting to generate fresh ticks with kite_ticks()...", verbose)
-    try:
-        # Call kite_ticks in test mode - 3 minutes is enough for a sample
-        log("Running kite_ticks(test_mode=True) to generate fresh data...", verbose)
-        from pkbrokers.kite.examples.pkkite import kite_ticks
-        kite_ticks(test_mode=True)  # Keep as test_mode=True as requested
+    # # If no fresh local data found, try generating fresh data with kite_ticks
+    # log("🔄 No fresh local data found. Attempting to generate fresh ticks with kite_ticks()...", verbose)
+    # try:
+    #     # Call kite_ticks in test mode - 3 minutes is enough for a sample
+    #     log("Running kite_ticks(test_mode=True) to generate fresh data...", verbose)
+    #     from pkbrokers.kite.examples.pkkite import kite_ticks
+    #     kite_ticks(test_mode=True)  # Keep as test_mode=True as requested
         
-        # After kite_ticks completes, check the expected output location
-        expected_path = os.path.join(data_dir, "results", "Data", "ticks.json")
+    #     # After kite_ticks completes, check the expected output location
+    #     expected_path = os.path.join(data_dir, "results", "Data", "ticks.json")
         
-        # Also check current directory as fallback
-        possible_paths = [
-            expected_path,
-            os.path.join("results", "Data", "ticks.json"),
-            "ticks.json"
-        ]
+    #     # Also check current directory as fallback
+    #     possible_paths = [
+    #         expected_path,
+    #         os.path.join("results", "Data", "ticks.json"),
+    #         "ticks.json"
+    #     ]
         
-        for path in possible_paths:
-            if os.path.exists(path):
-                log(f"Checking for fresh data at: {path}", verbose)
-                with open(path, 'r') as f:
-                    data = json.load(f)
+    #     for path in possible_paths:
+    #         if os.path.exists(path):
+    #             log(f"Checking for fresh data at: {path}", verbose)
+    #             with open(path, 'r') as f:
+    #                 data = json.load(f)
                 
-                if isinstance(data, dict) and len(data) >= min_instruments:
-                    if is_data_fresh(data, verbose):
-                        log(f"✅ Successfully generated fresh ticks.json: {path} ({len(data)} instruments)", verbose)
-                        return data
-                    else:
-                        log(f"⚠️ Generated ticks.json is stale - something went wrong", verbose)
-                else:
-                    log(f"⚠️ Generated ticks.json has insufficient data", verbose)
+    #             if isinstance(data, dict) and len(data) >= min_instruments:
+    #                 if is_data_fresh(data, verbose):
+    #                     log(f"✅ Successfully generated fresh ticks.json: {path} ({len(data)} instruments)", verbose)
+    #                     return data
+    #                 else:
+    #                     log(f"⚠️ Generated ticks.json is stale - something went wrong", verbose)
+    #             else:
+    #                 log(f"⚠️ Generated ticks.json has insufficient data", verbose)
         
-        log("❌ Could not find valid ticks.json after kite_ticks", verbose)
+    #     log("❌ Could not find valid ticks.json after kite_ticks", verbose)
         
-    except Exception as e:
-        log(f"❌ Failed to generate fresh ticks via kite_ticks: {e}", verbose)
+    # except Exception as e:
+    #     log(f"❌ Failed to generate fresh ticks via kite_ticks: {e}", verbose)
     
     # Final fallback: try to download from GitHub
     log("Attempting to download fresh ticks from GitHub as final fallback...", verbose)
