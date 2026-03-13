@@ -63,7 +63,7 @@ except ImportError:
 DEFAULT_PATH = Archiver.get_user_data_dir()
 
 PING_INTERVAL = 30
-HTTP_400_429_WAIT_TIME = 60
+HTTP_400_429_WAIT_TIME = 120
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
