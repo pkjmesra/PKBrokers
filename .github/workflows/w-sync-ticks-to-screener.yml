@@ -4,9 +4,9 @@ name: Sync Ticks to PKScreener
 # Fetches ticks from pktickbot and pushes to PKScreener's actions-data-download branch
 
 on:
-  schedule:
-    # Every 5 minutes during market hours (IST 9:15-15:30 = UTC 3:45-10:00)
-    - cron: '*/5 3-10 * * 1-5'
+  # schedule:
+  #   # Every 5 minutes during market hours (IST 9:15-15:30 = UTC 3:45-10:00)
+  #   - cron: '*/5 3-10 * * 1-5'
   workflow_dispatch:
 
 jobs:
