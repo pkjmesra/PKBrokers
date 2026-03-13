@@ -26,16 +26,26 @@ SOFTWARE.
 from asyncio.log import logger
 import multiprocessing
 import os
+import json
 import signal
 import sys
 import time
 import pytz
 from datetime import datetime
+import shutil
 from datetime import time as dt_time
 from typing import Optional
-
+from pkbrokers.kite.inMemoryCandleStore import get_candle_store
+from PKDevTools.classes import Archiver
+from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+from datetime import timezone
 import requests
 from PKDevTools.classes.log import default_logger
+from PKDevTools.classes import log
+import threading
+import queue
+from pkbrokers.kite.examples.pkkite import setupLogger
+from PKDevTools.classes.Environment import PKEnvironment
 
 # macOS fork safety
 if sys.platform.startswith("darwin"):
@@ -212,23 +222,15 @@ class PKTickOrchestrator:
         self.bot_process = None
         self.kite_process = None
 
-
-
-
-
     def set_child_pid(self, pid):
         """Method to set the child process PID from the child process"""
         self.child_process_ref.value = pid
-        from PKDevTools.classes.log import default_logger
         logger = default_logger()
         logger.debug(f"Child process PID set to: {pid}")
 
     def is_market_hours(self):
         """Check if current time is within NSE market hours (9:15 AM to 3:30 PM IST)"""
         try:
-            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
-            from datetime import timezone
-
             # Get current time in IST (UTC+5:30)
             utc_now = datetime.now(timezone.utc)
             ist_now = PKDateUtilities.utc_to_ist(
@@ -244,7 +246,6 @@ class PKTickOrchestrator:
             return market_start <= current_time <= market_end
 
         except Exception as e:
-            from PKDevTools.classes.log import default_logger
             logger = default_logger()
             logger.debug(f"Error checking market hours: {e}")
             return False
@@ -272,7 +273,6 @@ class PKTickOrchestrator:
             return False
 
         except Exception as e:
-            from PKDevTools.classes.log import default_logger
             logger = default_logger()
             logger.debug(f"Error checking trading holidays: {e}")
             return False  # Assume not holiday if we can't check
@@ -293,18 +293,11 @@ class PKTickOrchestrator:
     def run_kite_ticks(bot_token: Optional[str], ticks_file_path: Optional[str], chat_id: Optional[str], shared_stats: dict, stats_queue, child_process_ref, ws_stop_event, stop_queue):
         """Run kite_ticks in a separate process"""
         # Initialize logger in this process
-        from PKDevTools.classes import log
-        import threading
-        from pkbrokers.kite.examples.pkkite import setupLogger
         setupLogger()
         logger = log.default_logger()
         # Debug - log the shared_stats at entry
         logger.debug(f"run_kite_ticks received shared_stats: {dict(shared_stats) if shared_stats else 'None'}")
         logger.debug(f"shared_stats type: {type(shared_stats)}")
-
-        # Initialize environment variables
-        from PKDevTools.classes import Archiver
-        from PKDevTools.classes.Environment import PKEnvironment
 
         env = PKEnvironment()
         bot_token = bot_token or env.TBTOKEN # this is not used here but for consistency
@@ -369,7 +362,6 @@ class PKTickOrchestrator:
                             logger.debug(f"Commit check: {time_since_last_commit:.1f}s since last commit")
                             
                             from pkbrokers.kite.examples.pkkite import commit_ticks
-                            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
                             
                             cur_ist = PKDateUtilities.currentDateTime()
                             
@@ -414,15 +406,10 @@ class PKTickOrchestrator:
     def run_telegram_bot(bot_token: Optional[str], ticks_file_path: Optional[str], chat_id: Optional[str], shared_stats: dict):
         """Run Telegram bot in a separate process"""
         # Initialize logger in this process
-        from PKDevTools.classes import log
-        from pkbrokers.kite.examples.pkkite import setupLogger
         setupLogger()
         logger = log.default_logger()
 
         # Initialize environment variables
-        from PKDevTools.classes import Archiver
-        from PKDevTools.classes.Environment import PKEnvironment
-
         env = PKEnvironment()
         bot_token = bot_token or env.TBTOKEN
         chat_id = chat_id or env.CHAT_ID
@@ -449,7 +436,6 @@ class PKTickOrchestrator:
     def start(self):
         """Start both processes based on market conditions"""
         # Initialize logger in main process
-        from PKDevTools.classes.log import default_logger
         logger = default_logger()
         logger.info("Starting PKTick Orchestrator...")
         # self.stats_collector.start()
@@ -500,7 +486,6 @@ class PKTickOrchestrator:
 
     def stop(self, processes=[]):
         """Stop both processes gracefully with proper resource cleanup"""
-        from PKDevTools.classes.log import default_logger
         logger = default_logger()
         logger.warning("Stopping processes...")
         # self.stats_collector.stop()
@@ -573,13 +558,11 @@ class PKTickOrchestrator:
                     except BaseException:
                         pass
         except Exception as e:
-            from PKDevTools.classes.log import default_logger
             logger = default_logger()
             logger.debug(f"Resource cleanup note: {e}")
 
     def restart_kite_process_if_needed(self):
         """Restart kite process if market conditions change"""
-        from PKDevTools.classes.log import default_logger
         logger = default_logger()
         if self.test_mode:
             logger.warn("Running in TEST mode! Skipping test to re-run/stop Kite process!")
@@ -612,9 +595,6 @@ class PKTickOrchestrator:
     def run(self):
         """Main run method with graceful shutdown handling and periodic data refresh."""
         try:
-            from PKDevTools.classes.log import default_logger
-            import threading
-            import queue
             logger = default_logger()
             
             # Start a thread to read from stats_queue and update shared_stats
@@ -644,8 +624,7 @@ class PKTickOrchestrator:
                 while not self.shutdown_requested:
                     try:
                         time.sleep(refresh_interval)
-                        
-                        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+
                         from pkbrokers.kite.inMemoryCandleStore import get_candle_store
                         from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
                         
@@ -667,9 +646,6 @@ class PKTickOrchestrator:
                             if not self.kite_process or not self.kite_process.is_alive():
                                 logger.warning("Kite process not running - attempting to refresh from GitHub")
                                 # Download fresh ticks.json from GitHub
-                                import requests
-                                import json
-                                import os
                                 
                                 try:
                                     # Try to download fresh ticks.json
@@ -816,7 +792,6 @@ class PKTickOrchestrator:
                     try:
                         from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
                         from pkbrokers.kite.inMemoryCandleStore import get_candle_store
-                        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
                         
                         data_mgr = get_data_sharing_manager()
                         
@@ -863,8 +838,6 @@ class PKTickOrchestrator:
                     
                     # If it's around 7:30AM IST, let's re-generate the kite token once a day each morning
                     # https://kite.trade/forum/discussion/7759/access-token-validity
-                    from PKDevTools.classes.Environment import PKEnvironment
-                    from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
                     cur_ist = PKDateUtilities.currentDateTime()
                     is_token_generation_hour = (
@@ -925,16 +898,12 @@ class PKTickOrchestrator:
 
     def signal_handler(self, signum, frame):
         """Handle shutdown signals"""
-        from PKDevTools.classes.log import default_logger
         logger = default_logger()
         logger.warning(f"Received signal {signum}. Shutting down gracefully...")
         self.shutdown_requested = True
 
     def get_consumer(self):
         """Get a consumer instance to interact with the bot"""
-        from PKDevTools.classes import Archiver
-        from PKDevTools.classes.Environment import PKEnvironment
-
         env = PKEnvironment()
         bot_token = self.bot_token or env.TBTOKEN
         bridge_bot_token = self.bridge_bot_token or env.BBTOKEN
@@ -952,8 +921,6 @@ def orchestrate():
     orchestrator = PKTickOrchestrator(None, None, None, None)
     
     # Try to get data from running instance before starting
-    from PKDevTools.classes.log import default_logger
-    from pkbrokers.kite.examples.pkkite import setupLogger
     setupLogger()
     logger = default_logger()
     
@@ -961,13 +928,6 @@ def orchestrate():
     # STEP 1: FORCE POPULATE CANDLE STORE FROM GITHUB (ALWAYS TRY)
     # =========================================================================
     try:
-        from pkbrokers.kite.inMemoryCandleStore import get_candle_store
-        from PKDevTools.classes import Archiver
-        import requests
-        import json
-        import time
-        import os
-        
         candle_store = get_candle_store()
         
         # ALWAYS try to populate from GitHub, regardless of current state
@@ -1158,7 +1118,6 @@ def orchestrate():
             
             # Commit the received data immediately during market hours
             try:
-                from PKDevTools.classes.PKDateUtilities import PKDateUtilities
                 if PKDateUtilities.isTradingTime():
                     logger.info("Market is trading - committing received pkl files...")
                     from pkbrokers.kite.inMemoryCandleStore import get_candle_store
@@ -1183,12 +1142,9 @@ def orchestrate():
                 
                 # Copy downloaded pkl files to results/Data for workflow to commit
                 # This ensures the data is available even if candle store loading fails
-                import shutil
-                from datetime import datetime
                 results_dir = os.path.join(os.getcwd(), "results", "Data")
                 os.makedirs(results_dir, exist_ok=True)
                 
-                from PKDevTools.classes import Archiver
                 _, file_name = Archiver.afterMarketStockDataExists()
                 if file_name is not None and len(file_name) > 0:
                     today_suffix = file_name.replace(".pkl", "").replace("stock_data_", "")
@@ -1236,10 +1192,6 @@ def orchestrate():
 
 
 def orchestrate_consumer(command: str = "/ticks"):
-    import json
-
-    from PKDevTools.classes import Archiver
-
     from pkbrokers.bot.consumer import try_get_command_response_from_bot
 
     # Programmatic usage with zip handling
@@ -1264,7 +1216,6 @@ def orchestrate_consumer(command: str = "/ticks"):
         print("We can also get photo")
     elif response["type"] in ["text"]:
         if command in ["/token", "refresh_token"]:
-            from PKDevTools.classes.Environment import PKEnvironment
 
             from pkbrokers.envupdater import env_update_context
 
