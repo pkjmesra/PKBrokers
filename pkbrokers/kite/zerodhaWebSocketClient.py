@@ -63,6 +63,7 @@ except ImportError:
 DEFAULT_PATH = Archiver.get_user_data_dir()
 
 PING_INTERVAL = 30
+HTTP_400_429_WAIT_TIME = 60
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
@@ -343,6 +344,11 @@ class WebSocketProcess:
                 self.logger.error(
                     f"Websocket_index:{self.websocket_index}: WebSocket connection error: {str(e)}. Reconnecting in 5 seconds..."
                 )
+                if "http 400" in str(e).lower() or "http 429" in str(e).lower():
+                    self.logger.warning(
+                        f"Websocket_index:{self.websocket_index}: Hit rate limit or bad request. Waiting longer before reconnecting..."
+                    )
+                    await asyncio.sleep(HTTP_400_429_WAIT_TIME)  #  Longer wait for rate limits
                 if ("http 403" in str(e).lower() or "enctoken" in str(e).lower()) and not self.encToken_invalidated:
                     self.encToken_invalidated = True
                     from pkbrokers.kite.examples.externals import kite_auth

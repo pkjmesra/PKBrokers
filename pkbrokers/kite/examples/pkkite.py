@@ -131,7 +131,7 @@ except BaseException as e:
 
 args = argsv[0]
 
-TEST_WAIT_TIME_SEC = 180
+TEST_WAIT_TIME_SEC = 60  # Time to wait before auto-stopping the watcher in test mode, can be adjusted as needed
 
 
 def validate_credentials():
