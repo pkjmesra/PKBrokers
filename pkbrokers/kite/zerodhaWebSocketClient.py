@@ -64,6 +64,8 @@ DEFAULT_PATH = Archiver.get_user_data_dir()
 
 PING_INTERVAL = 30
 HTTP_400_429_WAIT_TIME = 120
+NETWORK_WAIT_TIME = 5
+GENERAL_WAIT_TIME = 1
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
@@ -209,7 +211,7 @@ class WebSocketProcess:
                 f"Websocket_index:{self.websocket_index}: Sending mode message: {mode_msg}"
             )
             await websocket.send(json.dumps(mode_msg))
-            await asyncio.sleep(1)  # Respect rate limits
+            await asyncio.sleep(GENERAL_WAIT_TIME)  # Respect rate limits
 
     async def _connect_websocket(self):
         """Establish and maintain WebSocket connection for this process."""
@@ -242,7 +244,7 @@ class WebSocketProcess:
                                 self.logger.info(
                                     f"Websocket_index:{self.websocket_index}: Received initial message: {data}"
                                 )
-                            await asyncio.sleep(1)
+                            await asyncio.sleep(GENERAL_WAIT_TIME)
 
                     # Subscribe to instruments
                     await self._subscribe_instruments(websocket)
@@ -339,10 +341,10 @@ class WebSocketProcess:
                     self.logger.error(
                         f"Websocket_index:{self.websocket_index}: Connection closed: {e.code} - {e.reason}"
                     )
-                await asyncio.sleep(5)
+                await asyncio.sleep(NETWORK_WAIT_TIME)
             except Exception as e:
                 self.logger.error(
-                    f"Websocket_index:{self.websocket_index}: WebSocket connection error: {str(e)}. Reconnecting in 5 seconds..."
+                    f"Websocket_index:{self.websocket_index}: WebSocket connection error: {str(e)}. Reconnecting in {HTTP_400_429_WAIT_TIME} seconds..."
                 )
                 if "http 400" in str(e).lower() or "http 429" in str(e).lower():
                     self.logger.warning(
@@ -355,7 +357,7 @@ class WebSocketProcess:
                     kite_auth()
                     self.enctoken = PKEnvironment().KTOKEN
                     self.encToken_invalidated = len(PKEnvironment().KTOKEN) == 0
-                await asyncio.sleep(5)
+                await asyncio.sleep(NETWORK_WAIT_TIME)
 
     def setupLogger(self):
         if self.log_level > 0:
@@ -682,7 +684,7 @@ class ZerodhaWebSocketClient:
                         new_p.start()
                         self.ws_processes[i] = new_p
 
-                time.sleep(5)
+                time.sleep(NETWORK_WAIT_TIME)
 
         except KeyboardInterrupt:
             self.stop()
