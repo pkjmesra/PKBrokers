@@ -625,7 +625,6 @@ class PKTickOrchestrator:
                     try:
                         time.sleep(refresh_interval)
 
-                        from pkbrokers.kite.inMemoryCandleStore import get_candle_store
                         from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
                         
                         # Only refresh during trading hours
@@ -790,9 +789,7 @@ class PKTickOrchestrator:
                     
                     # Check if we should commit pkl files (market close detection or periodic during trading)
                     try:
-                        from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
-                        from pkbrokers.kite.inMemoryCandleStore import get_candle_store
-                        
+                        from pkbrokers.bot.dataSharingManager import get_data_sharing_manager                        
                         data_mgr = get_data_sharing_manager()
                         
                         # Check for market close commit
@@ -1120,7 +1117,6 @@ def orchestrate():
             try:
                 if PKDateUtilities.isTradingTime():
                     logger.info("Market is trading - committing received pkl files...")
-                    from pkbrokers.kite.inMemoryCandleStore import get_candle_store
                     candle_store = get_candle_store()
                     
                     # Export and commit pkl files
@@ -1169,7 +1165,6 @@ def orchestrate():
                 
                 # Load the downloaded pkl data into the candle store
                 try:
-                    from pkbrokers.kite.inMemoryCandleStore import get_candle_store
                     candle_store = get_candle_store()
                     
                     if success_daily and daily_path:
