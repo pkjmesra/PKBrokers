@@ -24,9 +24,9 @@
 # """
 name: 0. 24x7 bot Ticks Runner
 on:
-  schedule:
-    # Every 4 hours and 30 minutes as a backup/fallback
-    - cron: '30 */4 * * *'
+  # schedule:
+  #   # Every 4 hours and 30 minutes as a backup/fallback
+  #   - cron: '30 */4 * * *'
   workflow_dispatch:  # Allow manual triggering
     inputs:
       logLevel:
