@@ -625,7 +625,7 @@ class PKTickBot:
                 info_msg = (
                     "✅ Other instance is likely running! This instance will continue."
                 )
-                logger.warn(info_msg)
+                logger.warning(info_msg)
                 context.bot.send_message(
                     chat_id=int(f"-{Channel_Id}"), text=info_msg, parse_mode="HTML"
                 )

@@ -107,7 +107,7 @@ class TickMonitor:
             stale_instruments
             and time.time() - self.last_alert_time > self.alert_interval
         ):
-            self.logger.warn(
+            self.logger.warning(
                 f"Stale instruments detected ({len(stale_instruments)}): {stale_instruments}"
             )
             self.last_alert_time = time.time()
@@ -115,6 +115,6 @@ class TickMonitor:
         return []
 
     async def _handle_stale_instruments(self, stale):
-        self.logger.warn(
+        self.logger.warning(
             f"Following instruments ({len(stale)}) have stale updates:\n{stale}"
         )

@@ -272,7 +272,7 @@ class HighPerformanceTursoWriter:
 
         try:
             conn.close()
-            self.logger.warn(f"Writer {self.writer_id}: Closed connection")
+            self.logger.warning(f"Writer {self.writer_id}: Closed connection")
         except BaseException:
             pass
 
@@ -438,7 +438,7 @@ class HighPerformanceTursoWriter:
             and time.time() - self.last_stats_time > MAX_LOG_STATS_INTERVAL_SEC
         ):
             queue_size = self.data_queue.qsize()
-            self.logger.warn(
+            self.logger.warning(
                 f"Writer {self.writer_id}: Queue {queue_size} full, dropped {dropped_count} ticks"
             )
             self.last_stats_time = time.time()
@@ -722,7 +722,7 @@ class ThreadSafeDatabase:
 
         # Log performance occasionally
         if total_dropped > 0:
-            self.logger.warn(f"Dropped {total_dropped} ticks due to full queues")
+            self.logger.warning(f"Dropped {total_dropped} ticks due to full queues")
 
     def _insert_ticks_local(self, ticks: List[Dict[str, Any]]):
         """Local SQLite implementation as fallback"""
@@ -817,7 +817,7 @@ class ThreadSafeDatabase:
 
     def close_all(self):
         """Close all connections and writers"""
-        self.logger.warn("Stopping all writers...")
+        self.logger.warning("Stopping all writers...")
         for writer in self.turso_writers:
             writer.stop()
         self.turso_writers = []

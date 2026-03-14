@@ -565,7 +565,7 @@ class PKTickOrchestrator:
         """Restart kite process if market conditions change"""
         logger = default_logger()
         if self.test_mode:
-            logger.warn("Running in TEST mode! Skipping test to re-run/stop Kite process!")
+            logger.warning("Running in TEST mode! Skipping test to re-run/stop Kite process!")
             return
         current_should_run = self.should_run_kite_process()
         kite_running = self.kite_process and self.kite_process.is_alive()
@@ -753,12 +753,12 @@ class PKTickOrchestrator:
                 if self.bot_process and not self.bot_process.is_alive():
                     # Check if bot died due to conflict
                     if self._check_bot_exit_status():
-                        logger.warn(
+                        logger.warning(
                             "Bot process died due to conflict. Shutting down orchestrator..."
                         )
                         break
                     else:
-                        logger.warn("Bot process died, restarting...")
+                        logger.warning("Bot process died, restarting...")
                         self.bot_process = self.mp_context.Process(
                             target=PKTickOrchestrator.run_telegram_bot, 
                             args=(self.bot_token, self.ticks_file_path, self.chat_id, self.shared_stats,), 

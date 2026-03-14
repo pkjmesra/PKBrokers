@@ -309,7 +309,7 @@ class WebSocketProcess:
                                     data = json.loads(message)
                                     # Handle text messages if needed
                                 except json.JSONDecodeError:
-                                    self.logger.warn(
+                                    self.logger.warning(
                                         f"Websocket_index:{self.websocket_index}: Invalid JSON message: {message}"
                                     )
 
@@ -379,7 +379,7 @@ class WebSocketProcess:
         if hasattr(self, "websocket") and self.websocket:
             try:
                 await self.websocket.close()
-                self.logger.warn(f"Websocket_index:{self.websocket_index} closed!")
+                self.logger.warning(f"Websocket_index:{self.websocket_index} closed!")
             except BaseException:
                 pass
 
@@ -672,7 +672,7 @@ class ZerodhaWebSocketClient:
                 # Check WebSocket processes
                 for i, p in enumerate(self.ws_processes):
                     if not p.is_alive():
-                        self.logger.warn(f"Websocket_index:{i} died, restarting...")
+                        self.logger.warning(f"Websocket_index:{i} died, restarting...")
                         base_args = process_args[i]
                         # FIX: Create full args with ws_stop_event and wrap in a single-element tuple
                         full_args = base_args + (self.ws_stop_event,)
@@ -759,7 +759,7 @@ class ZerodhaWebSocketClient:
 
     def stop(self):
         """Graceful shutdown of the WebSocket client."""
-        self.logger.warn("Stopping Zerodha WebSocket client")
+        self.logger.warning("Stopping Zerodha WebSocket client")
         self.stop_event.set()
 
         # Terminate all processes
@@ -770,7 +770,7 @@ class ZerodhaWebSocketClient:
 
             # Force terminate if still alive after graceful period
             if p.is_alive():
-                self.logger.warn(f"Process {i} not responding, terminating...")
+                self.logger.warning(f"Process {i} not responding, terminating...")
                 p.terminate()
                 p.join(timeout=5)
 
@@ -789,4 +789,4 @@ class ZerodhaWebSocketClient:
         if hasattr(self, "manager"):
             self.manager.shutdown()
 
-        self.logger.warn("Shutdown complete")
+        self.logger.warning("Shutdown complete")

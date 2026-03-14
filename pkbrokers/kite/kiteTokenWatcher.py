@@ -458,7 +458,7 @@ class JSONFileWriter:
 
         # Final save
         self._save_to_file(data)
-        self.logger.warn("JSON writer process stopped")
+        self.logger.warning("JSON writer process stopped")
 
     def _update_instrument_data(self, data, tick_data):
         """Update instrument data with latest tick information"""
@@ -530,7 +530,7 @@ class JSONFileWriter:
             self.data_queue.put(tick_data, timeout=0.1)
             return True
         except Exception:
-            self.logger.warn("JSON writer queue full, dropping tick")
+            self.logger.warning("JSON writer queue full, dropping tick")
             return False
 
     def stop(self):
@@ -909,7 +909,7 @@ class KiteTokenWatcher:
             self.client.start()
 
         except KeyboardInterrupt:
-            self.logger.warn("Keyboard interrupt received, shutting down...")
+            self.logger.warning("Keyboard interrupt received, shutting down...")
             self.stop()
         except Exception as e:
             self.logger.error(f"Error in client: {e}")
@@ -1120,7 +1120,7 @@ class KiteTokenWatcher:
                         self._last_processed_instruments.clear()
                 
             except KeyboardInterrupt:
-                self.logger.warn("Keyboard interrupt received in processing thread")
+                self.logger.warning("Keyboard interrupt received in processing thread")
                 break
             except Exception as e:
                 self.logger.error(f"Unexpected error in tick processing: {e}")
@@ -1139,7 +1139,7 @@ class KiteTokenWatcher:
             )
 
         self._db_queue.put(None)  # Signal database thread to exit
-        self.logger.warn("Exiting tick processing thread")
+        self.logger.warning("Exiting tick processing thread")
 
     def _process_db_operations(self):
         """
@@ -1177,7 +1177,7 @@ class KiteTokenWatcher:
                 self.logger.error(f"Database thread error: {e}")
                 continue
 
-        self.logger.warn("Exiting database processing thread")
+        self.logger.warning("Exiting database processing thread")
 
     def _process_batch_fallback(self, tick_batch):
         """
@@ -1489,12 +1489,12 @@ class KiteTokenWatcher:
         if self._processing_thread and self._processing_thread.is_alive():
             self._processing_thread.join(timeout=thread_timeout)
             if self._processing_thread.is_alive():
-                self.logger.warn("Processing thread did not terminate gracefully")
+                self.logger.warning("Processing thread did not terminate gracefully")
 
         if self._db_thread and self._db_thread.is_alive():
             self._db_thread.join(timeout=thread_timeout)
             if self._db_thread.is_alive():
-                self.logger.warn("Database thread did not terminate gracefully")
+                self.logger.warning("Database thread did not terminate gracefully")
 
         self.logger.info("Shutdown complete")
 

@@ -452,7 +452,7 @@ class KiteInstruments:
                 )
                 self.logger.debug(f"{self._nse_trading_symbols}")
             except Exception as e:
-                self.logger.warn(f"Failed to fetch NSE symbols: {str(e)}")
+                self.logger.warning(f"Failed to fetch NSE symbols: {str(e)}")
                 self._nse_trading_symbols = []
 
         return self._nse_trading_symbols
@@ -547,7 +547,7 @@ class KiteInstruments:
                 nse_stock=is_nse_stock,
             )
         except (ValueError, KeyError) as e:
-            self.logger.warn(f"Skipping malformed instrument: {str(e)}")
+            self.logger.warning(f"Skipping malformed instrument: {str(e)}")
             return None
 
     def _normalize_expiry(self, expiry: Optional[str]) -> Optional[str]:
@@ -565,7 +565,7 @@ class KiteInstruments:
         try:
             return datetime.strptime(expiry, "%Y-%m-%d").strftime("%Y-%m-%d")
         except ValueError:
-            self.logger.warn(f"Invalid expiry format: {expiry}")
+            self.logger.warning(f"Invalid expiry format: {expiry}")
             return None
 
     def _filter_instrument(self, instrument: Instrument) -> bool:
@@ -697,7 +697,7 @@ class KiteInstruments:
             better performance. Handles both new inserts and updates.
         """
         if not instruments:
-            self.logger.warn("No instruments to store")
+            self.logger.warning("No instruments to store")
             return
 
         self.logger.info(f"Updating/Inserting {len(instruments)} instruments")
@@ -1073,7 +1073,7 @@ class KiteInstruments:
         try:
             nse_symbols = self._get_nse_trading_symbols()
             if not nse_symbols:
-                self.logger.warn("No NSE symbols available for migration")
+                self.logger.warning("No NSE symbols available for migration")
                 return False
 
             with self._get_connection() as conn:

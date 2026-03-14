@@ -388,7 +388,7 @@ class KiteTickerHistory:
             >>> self._save_to_database(256265, data, "minute")
         """
         if not data or "candles" not in data or not data["candles"]:
-            self.logger.warn(
+            self.logger.warning(
                 f"No candle data available for {instrument_token} for interval:{interval}"
             )
             return
