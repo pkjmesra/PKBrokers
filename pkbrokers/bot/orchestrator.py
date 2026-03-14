@@ -1106,10 +1106,13 @@ def orchestrate():
         
         data_mgr = get_data_sharing_manager()
         
-        # Request data from running instance
-        response = try_get_command_response_from_bot(command="/request_data")
+        if data_mgr.data_received_from_instance:
+            logger.info("Data was already received from instance, skipping request")
+        else:
+            # Request data from running instance
+            response = try_get_command_response_from_bot(command="/request_data")
         
-        if response.get("success"):
+        if response.get("success") or data_mgr.data_received_from_instance:
             logger.info("Successfully received data from running instance")
             data_mgr.data_received_from_instance = True
             
@@ -1215,9 +1218,10 @@ def orchestrate_consumer(command: str = "/ticks"):
             from pkbrokers.envupdater import env_update_context
 
             prev_token = PKEnvironment().KTOKEN
-            with env_update_context(os.path.join(os.getcwd(), ".env.dev")) as updater:
-                updater.update_values({"KTOKEN": response["content"]})
-                updater.reload_env()
-                new_token = PKEnvironment().KTOKEN
-            print(f"Token updated:{prev_token != new_token}")
+            if len(response["content"]) > 0 and response["content"].strip() != "N/A":
+                with env_update_context(os.path.join(os.getcwd(), ".env.dev")) as updater:
+                    updater.update_values({"KTOKEN": response["content"]})
+                    updater.reload_env()
+            new_token = PKEnvironment().KTOKEN
+            print(f"Token updated:{prev_token != new_token and len(new_token) > 0} New token length: {len(new_token)}")
         return response["content"]

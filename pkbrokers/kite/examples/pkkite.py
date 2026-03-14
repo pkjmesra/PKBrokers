@@ -479,6 +479,7 @@ def pkkite():
         setupLogger()
         
         data_mgr = get_data_sharing_manager()
+        data_mgr.data_received_from_instance = False  # Reset the flag before trying to get data from running instance
         
         try:
             # Let's try and get the latest ticks file from an existing running bot.
@@ -490,11 +491,7 @@ def pkkite():
             try:
                 default_logger().info("Requesting data files from running instance...")
                 orchestrate_consumer(command="/request_data")
-                
-                # # Also request individual pkl files
-                # orchestrate_consumer(command="/daily_pkl")
-                # orchestrate_consumer(command="/intraday_pkl")
-                
+                                
                 data_mgr.data_received_from_instance = True
                 default_logger().info("Received data from running instance")
             except Exception as pkl_error:

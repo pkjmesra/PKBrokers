@@ -266,7 +266,7 @@ async def get_pktickbot_response_command(command: str = "/ticks"):
 
                 elif event.message.text:
                     response["type"] = "text"
-                    response["content"] = event.message.text
+                    response["content"] = event.message.text if (len(event.message.text) > 0 and event.message.text.strip() != "N/A") else ""
 
                 elif event.message.photo:
                     response["type"] = "photo"

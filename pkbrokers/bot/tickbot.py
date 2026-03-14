@@ -99,15 +99,25 @@ class PKTickBot:
         """Send welcome message"""
         update.message.reply_text(
             "📊 PKTickBot is running!\n"
-            "Use /ticks to get the latest market data JSON file (zipped)\n"
-            "Use /status to check bot status\n"
-            "Use /top to Get top 20 ticking symbols\n"
-            "Use /token to get the most recent token\n"
-            "Use /refresh_token to generate and receive a new token\n"
-            "Use /db to get the most recent db file\n"
-            "Use /test_ticks to get a test ticks.json file\n"
-            "Use /help for more information"
-            "Use /start to start the bot\n"
+            "🤖 PKTickBot Commands:\n"
+            "/start - Start the bot\n"
+            "/ticks - Get zipped market data file\n"
+            "/status - Check bot and data status\n"
+            "/top - Get top 20 ticking symbols\n"
+            "/token - Sends the most recent saved token from environment\n"
+            "/refresh_token - Generates, saves and sends the token\n"
+            "/restart - Refresh token AND restart tick watcher\n"
+            "/db - Get the most recent local SQLite DB file (ticks.db)\n"
+            "/instrument_history - Get instrument history database file\n"  # NEW
+            "/test_ticks - Starts ticks for 3 minutes (test mode)\n"
+            "/candles - Get aggregated candle data for all timeframes\n"
+            "/daily_pkl - Get daily candles pkl file\n"
+            "/intraday_pkl - Get 1-minute candles pkl file\n"
+            "/request_data - Request all pkl/db files (includes instrument_history.db)\n"  # UPDATED
+            "/help - Show this help message\n\n"
+            "📦 Files are automatically compressed to reduce size. "
+            "If the file is too large, it will be split into multiple parts.\n\n"
+            "💡 If ticks.json is empty, try /restart to refresh token and restart watcher."
         )
 
     def help_command(self, update: Update, context: CallbackContext) -> None:
@@ -152,7 +162,8 @@ class PKTickBot:
             kite_auth()
             update.message.reply_text(PKEnvironment().KTOKEN)
         except Exception as e:
-            update.message.reply_text(f"Could not generate/refresh token:{e}")
+            self.logger.error(f"Could not generate/refresh token:{e}")
+            update.message.reply_text("N/A")
 
     def send_token(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
@@ -160,7 +171,7 @@ class PKTickBot:
                 update.message.reply_text(APOLOGY_TEXT)
             return
         """Send token"""
-        update.message.reply_text(PKEnvironment().KTOKEN)
+        update.message.reply_text(PKEnvironment().KTOKEN if len(PKEnvironment().KTOKEN) > 0 else "N/A")
 
     def test_ticks(self, update: Update, context: CallbackContext) -> None:
         if self._shouldAvoidResponse(update):
@@ -810,6 +821,8 @@ class PKTickBot:
                 
                 # Only process pkl files from authorized sources
                 if not self._shouldAvoidResponse(update):
+                    if update is not None:
+                        update.message.reply_text(APOLOGY_TEXT)
                     return
                 
                 # Check if it's a pkl file we want
@@ -921,7 +934,7 @@ class PKTickBot:
                         chat_id=self.chat_id, text="🚀 PKTickBot started successfully!"
                     )
                 except Exception as e:
-                    self.logger.warn(f"Could not send startup message: {e}")
+                    self.logger.warning(f"Could not send startup message: {e}")
 
             # Start polling
             self.updater.start_polling()
