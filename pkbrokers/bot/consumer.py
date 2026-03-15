@@ -32,7 +32,7 @@ import zipfile
 from typing import List, Optional, Tuple
 
 import requests
-from PKDevTools.classes import Archiver
+from PKDevTools.classes import Archiver, log
 from PKDevTools.classes.Environment import PKEnvironment
 from telethon import TelegramClient, events
 
@@ -46,7 +46,7 @@ class PKTickBotConsumer:
         self.bridge_bot_token = bridge_bot_token
         self.chat_id = chat_id
         self.bridge_base_url = f"https://api.telegram.org/bot{bridge_bot_token}"
-        self.logger = logging.getLogger(__name__)
+        self.logger = log.default_logger()
 
     def get_updates(
         self, timeout: int = 30, offset: Optional[int] = None
@@ -247,7 +247,7 @@ async def get_pktickbot_response_command(command: str = "/ticks"):
         # Send command to the bot
         bot_username = "@pktickbot"
         await client.send_message(bot_username, command)
-        print(f"Command '{command}' sent to bot")
+        log.default_logger().info(f"Command '{command}' sent to bot")
 
         # Handler for bot responses
         @client.on(events.NewMessage(from_users=bot_username))
@@ -291,7 +291,7 @@ async def get_pktickbot_response_command(command: str = "/ticks"):
             response = await response_queue.get()
 
             # Process file downloads if needed
-            if response["type"] in ["file", "photo"] and not response.get("content"):
+            if response and response["type"] in ["file", "photo"] and not response.get("content"):
                 file_path = await response["raw_message"].download_media(
                     file=Archiver.get_user_data_dir()
                 )
@@ -309,6 +309,7 @@ async def get_pktickbot_response_command(command: str = "/ticks"):
             return response
 
         except asyncio.TimeoutError:
+            log.default_logger().warning(f"No response from bot within {MAX_NETWORK_TIMEOUT} seconds for command '{command}'")
             return {
                 "type": "timeout",
                 "content": f"No response from bot within {MAX_NETWORK_TIMEOUT} seconds",

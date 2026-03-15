@@ -1099,7 +1099,7 @@ def orchestrate():
     # =========================================================================
     
     logger.info("Attempting to request data from running PKTickBot instance...")
-    
+    response = None
     try:
         from pkbrokers.bot.consumer import try_get_command_response_from_bot
         from pkbrokers.bot.dataSharingManager import get_data_sharing_manager
@@ -1112,7 +1112,7 @@ def orchestrate():
             # Request data from running instance
             response = try_get_command_response_from_bot(command="/request_data")
         
-        if response.get("success") or data_mgr.data_received_from_instance:
+        if data_mgr.data_received_from_instance or (response and response.get("success")):
             logger.info("Successfully received data from running instance")
             data_mgr.data_received_from_instance = True
             
