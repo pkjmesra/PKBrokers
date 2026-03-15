@@ -30,8 +30,9 @@ import multiprocessing
 import os
 import sys
 
-from PKDevTools.classes import log
+from PKDevTools.classes import log, Archiver
 from PKDevTools.classes.log import default_logger
+from PKDevTools.classes.DebugConfig import DebugConfigManager
 
 LOG_LEVEL = (
     logging.INFO
@@ -303,7 +304,6 @@ def try_refresh_token():
 
 def _save_update_environment(access_token: str = None):
     try:
-        import os
 
         from PKDevTools.classes.Environment import PKEnvironment
         from PKDevTools.classes.log import default_logger
@@ -323,9 +323,7 @@ def _save_update_environment(access_token: str = None):
 
 
 def commit_ticks(file_name="ticks.json", branch_name="main"):
-    import os
 
-    from PKDevTools.classes import Archiver
     from PKDevTools.classes.Committer import Committer
     from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
@@ -364,9 +362,6 @@ def save_optimized_format(ticks_data, output_dir=None):
     """
     import gzip
     import json
-    import os
-
-    from PKDevTools.classes import Archiver
 
     if output_dir is None:
         output_dir = Archiver.get_user_data_dir()
@@ -399,7 +394,6 @@ def remote_bot_auth_token():
     except Exception as e:
         default_logger().error(f"Error while fetching remote auth token from bot: {e}")
 
-
 def pkkite():
     if sys.platform.startswith("darwin"):
         try:
@@ -408,6 +402,9 @@ def pkkite():
             )
         except RuntimeError:  # pragma: no cover
             pass
+
+    manager = DebugConfigManager()
+    config = manager.load_from_file(os.path.join(Archiver.get_user_data_dir(), "debug_config.ini"))
 
     if not validate_credentials():
         sys.exit()
@@ -422,7 +419,6 @@ def pkkite():
         kite_ticks(test_mode=True if args.test else False)
 
     if args.history:
-        import os
 
         from pkbrokers.kite.instrumentHistory import Historical_Interval
 
@@ -459,9 +455,7 @@ def pkkite():
         remote_bot_auth_token()
         success = kite_fetch_save_pickle()
         if success:
-            import os
 
-            from PKDevTools.classes import Archiver
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
             exists, pickle_path = Archiver.afterMarketStockDataExists(date_suffix=True)
@@ -524,7 +518,6 @@ def pkkite():
         args.token = True
 
     if args.token:
-        import os
 
         from pkbrokers.bot.orchestrator import orchestrate_consumer
 
