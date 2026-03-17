@@ -634,7 +634,6 @@ class DataSharingManager:
                 return False, None, 0, None, None, 0
             
             # Get current time in IST
-            KOLKATA_TZ = pytz.timezone('Asia/Kolkata')
             now = datetime.now(KOLKATA_TZ)
             
             # Define market hours
