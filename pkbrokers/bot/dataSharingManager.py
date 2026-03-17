@@ -586,9 +586,9 @@ class DataSharingManager:
             
             # Find the latest date and time across all stocks
             latest_date = None
-            latest_datetime = None
+            latest_datetime = None  # Full datetime with timezone
             latest_time = None
-
+            
             for symbol, df in data.items():
                 if hasattr(df, 'index') and len(df.index) > 0:
                     stock_last_idx = df.index[-1]
@@ -605,10 +605,6 @@ class DataSharingManager:
                         # Convert string or datetime
                         if isinstance(stock_last_idx, str):
                             try:
-                                # Parse ISO format string
-                                # If it ends with Z, it's UTC
-                                if stock_last_idx.endswith('Z'):
-                                    stock_last_idx = stock_last_idx.replace('Z', '+00:00')
                                 stock_datetime = datetime.fromisoformat(stock_last_idx)
                             except:
                                 continue
@@ -618,19 +614,11 @@ class DataSharingManager:
                     if stock_datetime is None:
                         continue
                     
-                    # CRITICAL FIX: Handle timezone correctly
-                    if hasattr(stock_datetime, 'tzinfo'):
-                        if stock_datetime.tzinfo is None:
-                            # If naive, assume it's UTC and convert to IST
-                            stock_datetime = pytz.UTC.localize(stock_datetime).astimezone(KOLKATA_TZ)
-                        else:
-                            # If it has timezone, convert to IST for display
-                            stock_datetime = stock_datetime.astimezone(KOLKATA_TZ)
-                    else:
-                        # Fallback - assume UTC and convert
-                        stock_datetime = pytz.UTC.localize(stock_datetime).astimezone(KOLKATA_TZ)
+                    # Ensure timezone-aware (assume IST if naive)
+                    # if hasattr(stock_datetime, 'tzinfo') and stock_datetime.tzinfo is None:
+                    #     stock_datetime = pytz.timezone('Asia/Kolkata').localize(stock_datetime)
                     
-                    # Now get IST date and time
+                    # Get date and time
                     stock_date = stock_datetime.date()
                     stock_time = stock_datetime.time()
                     
