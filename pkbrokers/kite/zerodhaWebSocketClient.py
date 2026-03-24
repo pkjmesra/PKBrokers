@@ -323,8 +323,13 @@ class WebSocketProcess:
                             # Check stop events on timeout
                             continue
                         except asyncio.exceptions.IncompleteReadError:
-                            self.logger.error(
+                            self.logger.warning(
                                 f"Websocket_index:{self.websocket_index}: Connection lost (IncompleteReadError)"
+                            )
+                            break
+                        except websockets.exceptions.ConnectionClosedError as e:
+                            self.logger.warning(
+                                f"Websocket_index:{self.websocket_index}: Connection lost (websockets.exceptions.ConnectionClosedError)"
                             )
                             break
                         except Exception as e:
@@ -338,7 +343,7 @@ class WebSocketProcess:
             #     raise  # Propagate cancellation
             except websockets.exceptions.ConnectionClosedError as e:
                 if hasattr(e, "code"):
-                    self.logger.error(
+                    self.logger.warning(
                         f"Websocket_index:{self.websocket_index}: Connection closed: {e.code} - {e.reason}"
                     )
                 await asyncio.sleep(NETWORK_WAIT_TIME)

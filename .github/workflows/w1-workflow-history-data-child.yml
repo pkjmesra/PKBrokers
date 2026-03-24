@@ -954,16 +954,16 @@ jobs:
           echo "No changes to commit"
         fi
 
-    - name: Send notification about the completion
-      # Step: Send Telegram notification about successful completion
-      shell: bash
-      env:
-          THIS_KITE_PERIOD : ${{ inputs.period }}
-          THIS_KITE_TOKEN: ${{ github.event.inputs.kiteToken || secrets.KTOKEN }}
-      run: |
-        cp .env.dev pkbrokers/kite/examples/.env.dev
-        cd pkbrokers/kite/examples/
-        python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('✅ Successfully finished child job with valid Kite token:(' + os.environ['THIS_KITE_TOKEN'] + ') for period: '+os.environ['THIS_KITE_PERIOD']+'\n');"
+    # - name: Send notification about the completion
+    #   # Step: Send Telegram notification about successful completion
+    #   shell: bash
+    #   env:
+    #       THIS_KITE_PERIOD : ${{ inputs.period }}
+    #       THIS_KITE_TOKEN: ${{ github.event.inputs.kiteToken || secrets.KTOKEN }}
+    #   run: |
+    #     cp .env.dev pkbrokers/kite/examples/.env.dev
+    #     cd pkbrokers/kite/examples/
+    #     python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('✅ Successfully finished child job with valid Kite token:(' + os.environ['THIS_KITE_TOKEN'] + ') for period: '+os.environ['THIS_KITE_PERIOD']+'\n');"
 
   trigger-next-child-job:
     # Job: Chain to the next time period (day -> minute)
@@ -1076,10 +1076,10 @@ jobs:
       if: steps.next-period.outputs.should_exit == 'true'
       run: |
         echo "✅ All periods have been processed. Workflow completed."
-        cp .env.dev pkbrokers/kite/examples/.env.dev
-        cd pkbrokers/kite/examples/
-        pip install pkdevtools
-        python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('✅ All periods for historical data jobs have been processed. Workflow completed.');"
+        # cp .env.dev pkbrokers/kite/examples/.env.dev
+        # cd pkbrokers/kite/examples/
+        # pip install pkdevtools
+        # python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('✅ All periods for historical data jobs have been processed. Workflow completed.');"
         exit 0
 
     - name: Trigger next child job
