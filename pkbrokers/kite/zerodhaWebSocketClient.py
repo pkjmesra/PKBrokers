@@ -121,8 +121,25 @@ class WebSocketProcess:
         self.websocket = None
         self.encToken_invalidated = False
         self.ws_stop_event = ws_stop_event
-        # print(f"Websocket_index:{websocket_index}: ws_stop_event in process = {ws_stop_event}")
+        self._shutdown_requested = False
         self.multiprocessingForWindows()
+
+    def _is_stop_requested(self):
+        """Safely check if stop is requested without risking BrokenPipeError."""
+        try:
+            if self.stop_event and self.stop_event.is_set():
+                return True
+            if self.ws_stop_event:
+                # Use a timeout to avoid hanging on broken pipe
+                try:
+                    return self.ws_stop_event.is_set()
+                except (BrokenPipeError, EOFError, AttributeError, OSError):
+                    # Parent process likely terminated
+                    return True
+        except (BrokenPipeError, EOFError, AttributeError, OSError):
+            # Parent process likely terminated
+            return True
+        return False
 
     def _build_websocket_url(self):
         """Build WebSocket URL for this process."""
@@ -164,7 +181,7 @@ class WebSocketProcess:
 
     async def _subscribe_instruments(self, websocket, subscribe_all_indices=False):
         """Subscribe to instruments for this process."""
-        if self.stop_event.is_set():
+        if self._is_stop_requested():
             return
 
         if self.websocket_index == 0:
@@ -211,11 +228,11 @@ class WebSocketProcess:
                 f"Websocket_index:{self.websocket_index}: Sending mode message: {mode_msg}"
             )
             await websocket.send(json.dumps(mode_msg))
-            await asyncio.sleep(GENERAL_WAIT_TIME)  # Respect rate limits
+            await asyncio.sleep(GENERAL_WAIT_TIME)
 
     async def _connect_websocket(self):
         """Establish and maintain WebSocket connection for this process."""
-        while not self.stop_event.is_set() and not (self.ws_stop_event and self.ws_stop_event.is_set()):
+        while not self._is_stop_requested():
             try:
                 async with websockets.connect(
                     self._build_websocket_url(),
@@ -230,13 +247,18 @@ class WebSocketProcess:
                         f"Websocket_index:{self.websocket_index}: Connected successfully"
                     )
                     self.websocket = websocket
+                    
                     # Wait for initial messages
                     initial_messages = []
                     max_wait_counter = 2
                     wait_counter = 0
-                    while len(initial_messages) < 2 and wait_counter < max_wait_counter:
+                    while len(initial_messages) < 2 and wait_counter < max_wait_counter and not self._is_stop_requested():
                         wait_counter += 1
-                        message = await websocket.recv()
+                        try:
+                            message = await asyncio.wait_for(websocket.recv(), timeout=10)
+                        except asyncio.TimeoutError:
+                            continue
+                            
                         if isinstance(message, str):
                             data = json.loads(message)
                             if data.get("type") in ["instruments_meta", "app_code"]:
@@ -254,7 +276,8 @@ class WebSocketProcess:
                     last_tick_log = time.time()
                     total_ticks_received = 0
                     tick_batch = 0
-                    while not self.stop_event.is_set() and not (self.ws_stop_event and self.ws_stop_event.is_set()):
+                    
+                    while not self._is_stop_requested():
                         try:
                             message = await asyncio.wait_for(
                                 websocket.recv(), timeout=10
@@ -270,7 +293,7 @@ class WebSocketProcess:
                                 )
                                 total_ticks_received += len(ticks)
                                 tick_batch += len(ticks)
-                                # if tick_batch > 0 and tick_batch % 200 >= 0:
+                                
                                 if time.time() - last_tick_log > 4 * PING_INTERVAL:
                                     self.logger.info(
                                         f"Websocket_index:{self.websocket_index}: Total Running Count of Ticks:{total_ticks_received}"
@@ -302,7 +325,12 @@ class WebSocketProcess:
                                         "depth": tick.depth,
                                         "websocket_index": self.websocket_index,
                                     }
-                                    self.data_queue.put(tick_data)
+                                    
+                                    # Safely put in queue (non-blocking)
+                                    try:
+                                        self.data_queue.put(tick_data, timeout=1)
+                                    except Exception:
+                                        self.logger.warning(f"Queue full, dropping tick")
 
                             elif isinstance(message, str):
                                 try:
@@ -320,7 +348,6 @@ class WebSocketProcess:
 
                         except asyncio.TimeoutError:
                             await websocket.ping()
-                            # Check stop events on timeout
                             continue
                         except asyncio.exceptions.IncompleteReadError:
                             self.logger.warning(
@@ -329,39 +356,44 @@ class WebSocketProcess:
                             break
                         except websockets.exceptions.ConnectionClosedError as e:
                             self.logger.warning(
-                                f"Websocket_index:{self.websocket_index}: Connection lost (websockets.exceptions.ConnectionClosedError)"
+                                f"Websocket_index:{self.websocket_index}: Connection closed: {e.code} - {e.reason}"
                             )
                             break
                         except Exception as e:
-                            if not self.stop_event.is_set() and not (self.ws_stop_event and self.ws_stop_event.is_set()):
+                            if not self._is_stop_requested():
                                 self.logger.error(
                                     f"Websocket_index:{self.websocket_index}: Message processing error: {str(e)}"
                                 )
                             break
+                            
                     await self._async_cleanup()
-            # except asyncio.CancelledError:
-            #     raise  # Propagate cancellation
+                    
             except websockets.exceptions.ConnectionClosedError as e:
-                if hasattr(e, "code"):
-                    self.logger.warning(
-                        f"Websocket_index:{self.websocket_index}: Connection closed: {e.code} - {e.reason}"
-                    )
+                if not self._is_stop_requested():
+                    if hasattr(e, "code"):
+                        self.logger.warning(
+                            f"Websocket_index:{self.websocket_index}: Connection closed: {e.code} - {e.reason}"
+                        )
                 await asyncio.sleep(NETWORK_WAIT_TIME)
             except Exception as e:
-                self.logger.error(
-                    f"Websocket_index:{self.websocket_index}: WebSocket connection error: {str(e)}. Reconnecting in {HTTP_400_429_WAIT_TIME} seconds..."
-                )
+                if not self._is_stop_requested():
+                    self.logger.error(
+                        f"Websocket_index:{self.websocket_index}: WebSocket connection error: {str(e)}. Reconnecting in {HTTP_400_429_WAIT_TIME} seconds..."
+                    )
                 if "http 400" in str(e).lower() or "http 429" in str(e).lower():
                     self.logger.warning(
                         f"Websocket_index:{self.websocket_index}: Hit rate limit or bad request. Waiting longer before reconnecting..."
                     )
-                    await asyncio.sleep(HTTP_400_429_WAIT_TIME)  #  Longer wait for rate limits
+                    await asyncio.sleep(HTTP_400_429_WAIT_TIME)
                 if ("http 403" in str(e).lower() or "enctoken" in str(e).lower()) and not self.encToken_invalidated:
                     self.encToken_invalidated = True
-                    from pkbrokers.kite.examples.externals import kite_auth
-                    kite_auth()
-                    self.enctoken = PKEnvironment().KTOKEN
-                    self.encToken_invalidated = len(PKEnvironment().KTOKEN) == 0
+                    try:
+                        from pkbrokers.kite.examples.externals import kite_auth
+                        kite_auth()
+                        self.enctoken = PKEnvironment().KTOKEN
+                        self.encToken_invalidated = len(PKEnvironment().KTOKEN) == 0
+                    except Exception:
+                        pass
                 await asyncio.sleep(NETWORK_WAIT_TIME)
 
     def setupLogger(self):
@@ -377,7 +409,11 @@ class WebSocketProcess:
 
     def close(self):
         """Synchronous cleanup method."""
-        asyncio.run(self._async_cleanup())
+        self._shutdown_requested = True
+        try:
+            asyncio.run(self._async_cleanup())
+        except Exception:
+            pass
 
     async def _async_cleanup(self):
         """Async cleanup tasks."""
@@ -397,7 +433,14 @@ class WebSocketProcess:
         self.logger.debug(
             f"Websocket_index:{self.websocket_index}: Starting WebSocket process."
         )
-        asyncio.run(self._connect_websocket())
+        try:
+            asyncio.run(self._connect_websocket())
+        except KeyboardInterrupt:
+            self.logger.warning("Keyboard interrupt received")
+        except Exception as e:
+            self.logger.error(f"WebSocket process error: {e}")
+        finally:
+            self.logger.warning(f"Websocket_index:{self.websocket_index}: Process exiting")
 
     def multiprocessingForWindows(self):
         if sys.platform.startswith("win"):
@@ -439,9 +482,6 @@ def websocket_process_worker(args):
         ws_stop_event,
     ) = args
 
-    # Optional: Add debug log
-    # print(f"Websocket_index:{websocket_index}: Starting with ws_stop_event={ws_stop_event}")
-
     process = WebSocketProcess(
         enctoken=enctoken,
         user_id=user_id,
@@ -459,21 +499,15 @@ def websocket_process_worker(args):
         from PKDevTools.classes.log import default_logger
         default_logger().error(f"WebSocket process {websocket_index} error: {e}")
     finally:
-        # Ensure clean shutdown
         if hasattr(process, "close"):
             try:
                 process.close()
             except BaseException:
                 pass
-        from PKDevTools.classes.log import default_logger
-        default_logger().warning(f"WebSocket process {websocket_index} stopped")
 
 
 class ZerodhaWebSocketClient:
-    """
-    A WebSocket client for connecting to Zerodha's trading API to receive real-time market data.
-    Now uses multiprocessing to handle each WebSocket connection in separate processes.
-    """
+    """WebSocket client for Zerodha's trading API with multiprocessing support."""
 
     def __init__(self, enctoken, user_id, api_key="kitefront", token_batches=[], 
                  watcher_queue=None, db_conn=None, ws_stop_event=None):
@@ -482,27 +516,23 @@ class ZerodhaWebSocketClient:
         self.user_id = user_id
         self.api_key = api_key
         self.logger = default_logger()
-        self.ws_stop_event = ws_stop_event  # Add this
-        self.logger.debug(f"ZerodhaWebSocketClient initialized with ws_stop_event: {ws_stop_event}")
+        self.ws_stop_event = ws_stop_event
+        self.logger.debug(f"ZerodhaWebSocketClient initialized")
 
-        # Use consistent multiprocessing context
         self.mp_context = multiprocessing.get_context("spawn")
         self.manager = self.mp_context.Manager()
-        self.data_queue = self.manager.Queue(maxsize=0)
+        self.data_queue = self.manager.Queue(maxsize=10000)  # Limit queue size
         self.stop_event = self.mp_context.Event()
 
         self.db_conn = db_conn
         self.token_batches = token_batches
-        self.token_timestamp = 0
         self.ws_processes = []
-        self.process_pool = None
+        self._stop_requested = False
 
     def _build_tokens(self):
-        """Build token batches by fetching available instruments from Zerodha."""
+        """Build token batches by fetching available instruments."""
         import os
-
         from PKDevTools.classes.Environment import PKEnvironment
-
         from pkbrokers.kite.instruments import KiteInstruments
 
         API_KEY = "kitefront"
@@ -530,8 +560,7 @@ class ZerodhaWebSocketClient:
 
     def _convert_tick_data_to_object(self, tick_data):
         """Convert tick data dictionary back to Tick object."""
-        # Create a Tick object with all required parameters
-        tick = Tick(
+        return Tick(
             instrument_token=tick_data.get("instrument_token", 0),
             last_price=tick_data.get("last_price", 0),
             last_quantity=tick_data.get("last_quantity", 0),
@@ -554,22 +583,21 @@ class ZerodhaWebSocketClient:
             ),
             depth=tick_data.get("depth", {}),
         )
-        return tick
 
     def _process_ticks(self):
         """Process ticks from queue and store in database."""
         batch = []
+        last_flush = time.time()
 
         while not self.stop_event.is_set() or not self.data_queue.empty():
             try:
-                # Use non-blocking get with timeout
                 try:
                     tick_data = self.data_queue.get(timeout=1)
                 except queue.Empty:
-                    # Flush any remaining ticks if queue is empty
-                    if batch:
+                    if batch and (time.time() - last_flush > 5):
                         self._flush_to_db(batch)
                         batch = []
+                        last_flush = time.time()
                     continue
 
                 if tick_data is None or tick_data.get("type") != "tick":
@@ -589,67 +617,49 @@ class ZerodhaWebSocketClient:
                     "timestamp": datetime.fromtimestamp(
                         tick.exchange_timestamp, tz=pytz.timezone("Asia/Kolkata")
                     ),
-                    "last_price": tick.last_price if tick.last_price is not None else 0,
-                    "day_volume": tick.day_volume if tick.day_volume is not None else 0,
-                    "oi": tick.oi if tick.oi is not None else 0,
-                    "buy_quantity": tick.buy_quantity
-                    if tick.buy_quantity is not None
-                    else 0,
-                    "sell_quantity": tick.sell_quantity
-                    if tick.sell_quantity is not None
-                    else 0,
-                    "high_price": tick.high_price if tick.high_price is not None else 0,
-                    "low_price": tick.low_price if tick.low_price is not None else 0,
-                    "open_price": tick.open_price if tick.open_price is not None else 0,
-                    "prev_day_close": tick.prev_day_close
-                    if tick.prev_day_close is not None
-                    else 0,
+                    "last_price": tick.last_price or 0,
+                    "day_volume": tick.day_volume or 0,
+                    "oi": tick.oi or 0,
+                    "buy_quantity": tick.buy_quantity or 0,
+                    "sell_quantity": tick.sell_quantity or 0,
+                    "high_price": tick.high_price or 0,
+                    "low_price": tick.low_price or 0,
+                    "open_price": tick.open_price or 0,
+                    "prev_day_close": tick.prev_day_close or 0,
                 }
 
                 if tick.depth:
                     processed["depth"] = {
                         "bid": [
                             {
-                                "price": b.get("price", 0)
-                                if isinstance(b, dict)
-                                else (b.price if b.price is not None else 0),
-                                "quantity": b.get("quantity", 0)
-                                if isinstance(b, dict)
-                                else (b.quantity if b.quantity is not None else 0),
-                                "orders": b.get("orders", 0)
-                                if isinstance(b, dict)
-                                else (b.orders if b.orders is not None else 0),
+                                "price": b.get("price", 0) if isinstance(b, dict) else (b.price or 0),
+                                "quantity": b.get("quantity", 0) if isinstance(b, dict) else (b.quantity or 0),
+                                "orders": b.get("orders", 0) if isinstance(b, dict) else (b.orders or 0),
                             }
                             for b in tick.depth.get("bid", [])[:5]
                         ],
                         "ask": [
                             {
-                                "price": a.get("price", 0)
-                                if isinstance(a, dict)
-                                else (a.price if a.price is not None else 0),
-                                "quantity": a.get("quantity", 0)
-                                if isinstance(a, dict)
-                                else (a.quantity if a.quantity is not None else 0),
-                                "orders": a.get("orders", 0)
-                                if isinstance(a, dict)
-                                else (a.orders if a.orders is not None else 0),
+                                "price": a.get("price", 0) if isinstance(a, dict) else (a.price or 0),
+                                "quantity": a.get("quantity", 0) if isinstance(a, dict) else (a.quantity or 0),
+                                "orders": a.get("orders", 0) if isinstance(a, dict) else (a.orders or 0),
                             }
                             for a in tick.depth.get("ask", [])[:5]
                         ],
                     }
                 batch.append(processed)
 
-                # Send to watcher queue if available
                 if self.watcher_queue is not None:
                     self.watcher_queue.put(tick)
 
-                self._flush_to_db(batch)
-                batch = []
+                if len(batch) >= 100:
+                    self._flush_to_db(batch)
+                    batch = []
+                    last_flush = time.time()
 
             except Exception as e:
                 self.logger.error(f"Error processing ticks: {str(e)}")
 
-        # Flush any remaining ticks
         if batch:
             self._flush_to_db(batch)
 
@@ -665,25 +675,23 @@ class ZerodhaWebSocketClient:
             traceback.print_exc()
 
     def _monitor_processes(self, process_args):
-        """Monitor and restart failed processes - with external stop check"""
+        """Monitor and restart failed processes."""
         try:
             while not self.stop_event.is_set():
-                # Check if external stop requested
                 if self.ws_stop_event and self.ws_stop_event.is_set():
                     self.logger.warning("External stop requested, shutting down WebSocket processes...")
                     self.stop_event.set()
                     break
                     
-                # Check WebSocket processes
                 for i, p in enumerate(self.ws_processes):
                     if not p.is_alive():
-                        self.logger.warning(f"Websocket_index:{i} died, restarting...")
+                        exitcode = p.exitcode
+                        self.logger.warning(f"Websocket_index:{i} died (exitcode: {exitcode}), restarting...")
                         base_args = process_args[i]
-                        # FIX: Create full args with ws_stop_event and wrap in a single-element tuple
                         full_args = base_args + (self.ws_stop_event,)
                         new_p = self.mp_context.Process(
                             target=websocket_process_worker, 
-                            args=(full_args,)  # Note the comma - this is a tuple containing the full_args tuple
+                            args=(full_args,)
                         )
                         new_p.daemon = True
                         new_p.start()
@@ -691,33 +699,24 @@ class ZerodhaWebSocketClient:
 
                 time.sleep(NETWORK_WAIT_TIME)
 
-        except KeyboardInterrupt:
-            self.stop()
         except Exception as e:
-            self.logger.error(f"Error in multiprocessing: {str(e)}")
+            self.logger.error(f"Error in monitor: {str(e)}")
+        finally:
             self.stop()
 
     def start(self):
         """Start WebSocket client with multiprocessing."""
-        self.logger.debug("Starting Zerodha WebSocket client with multiprocessing")
-        self.logger.debug(f"ws_stop_event in start(): {self.ws_stop_event}")
+        self.logger.debug("Starting Zerodha WebSocket client")
 
-        # Build tokens if not provided
         if len(self.token_batches) == 0:
             self._build_tokens()
 
-        # Start one WebSocket process per batch (Zerodha requires separate connections)
         num_batches = len(self.token_batches)
         total_instruments = sum(len(batch) for batch in self.token_batches)
+        self.logger.debug(f"Starting {num_batches} processes for {total_instruments} instruments")
 
-        self.logger.debug(
-            f"Starting {num_batches} WebSocket processes for {total_instruments} instruments"
-        )
-
-        # Start processing thread for database inserts first
-        self.processor_thread = threading.Thread(
-            target=self._process_ticks, daemon=True
-        )
+        # Start processing thread
+        self.processor_thread = threading.Thread(target=self._process_ticks, daemon=True)
         self.processor_thread.start()
 
         # Prepare arguments for each batch - one process per batch
@@ -726,9 +725,8 @@ class ZerodhaWebSocketClient:
         process_args = []
         for i in range(num_batches):
             token_batch = self.token_batches[i]
-            self.logger.debug(f"Batch {i} will handle {len(token_batch)} instruments")
+            self.logger.debug(f"Batch {i}: {len(token_batch)} instruments")
             
-            # Create base args tuple (without ws_stop_event)
             base_args = (
                 self.enctoken,
                 self.user_id,
@@ -737,54 +735,45 @@ class ZerodhaWebSocketClient:
                 i,
                 self.data_queue,
                 self.stop_event,
-                0
-                if "PKDevTools_Default_Log_Level" not in os.environ.keys()
+                0 if "PKDevTools_Default_Log_Level" not in os.environ.keys()
                 else int(os.environ["PKDevTools_Default_Log_Level"]),
             )
-            # Store the base args - we'll add ws_stop_event when starting/restarting
             process_args.append(base_args)
 
-        # Start WebSocket processes using the same context
         self.ws_processes = []
-
         for base_args in process_args:
-            # Create full args with ws_stop_event and wrap in a single-element tuple
             full_args = base_args + (self.ws_stop_event,)
-            self.logger.debug(f"Creating process with ws_stop_event: {self.ws_stop_event}")
             p = self.mp_context.Process(
                 target=websocket_process_worker, 
-                args=(full_args,)  # Note the comma - this is a tuple containing the full_args tuple
+                args=(full_args,)
             )
             p.daemon = True
             p.start()
             self.ws_processes.append(p)
 
-        # Monitor processes
         self._monitor_processes(process_args)
 
     def stop(self):
         """Graceful shutdown of the WebSocket client."""
-        self.logger.warning("Stopping Zerodha WebSocket client")
+        if self._stop_requested:
+            return
+        self._stop_requested = True
+        
+        self.logger.warning("Stopping WebSocket client")
         self.stop_event.set()
 
-        # Terminate all processes
         for i, p in enumerate(self.ws_processes):
-            if p.is_alive():
-                # Wait for graceful shutdown
-                p.join(timeout=10)  # Increased timeout for graceful shutdown
+            if p and p.is_alive():
+                p.join(timeout=10)
+                if p.is_alive():
+                    self.logger.warning(f"Process {i} not responding, terminating...")
+                    p.terminate()
+                    p.join(timeout=5)
 
-            # Force terminate if still alive after graceful period
-            if p.is_alive():
-                self.logger.warning(f"Process {i} not responding, terminating...")
-                p.terminate()
-                p.join(timeout=5)
-
-        # Close database connections
         if self.db_conn:
             self.db_conn.close_all()
 
-        # Wait for processor thread
-        if hasattr(self, "processor_thread"):
+        if hasattr(self, "processor_thread") and self.processor_thread.is_alive():
             self.processor_thread.join(timeout=5)
 
         if hasattr(self, "watcher_queue") and self.watcher_queue is not None:
