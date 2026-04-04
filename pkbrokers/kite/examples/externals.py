@@ -48,24 +48,41 @@ def kite_fetch_save_pickle():
     return success
 
 def kite_auth():
-    # Configuration - load from environment in production
+    """Authenticate and save token to both environment and .env.dev file."""
     import os
     from PKDevTools.classes.Environment import PKEnvironment
-
     from pkbrokers.kite.authenticator import KiteAuthenticator
+    from pkbrokers.envupdater import env_update_context
 
     local_secrets = PKEnvironment().allSecrets
     credentials = {
         "api_key": "kitefront",
-        "username": os.environ.get(
-            "KUSER", local_secrets.get("KUSER", "You need your Kite username")
-        ),
-        "password": os.environ.get(
-            "KPWD", local_secrets.get("KPWD", "You need your Kite password")
-        ),
-        "totp": os.environ.get(
-            "KTOTP", local_secrets.get("KTOTP", "You need your Kite TOTP")
-        ),
+        "username": os.environ.get("KUSER", local_secrets.get("KUSER", "")),
+        "password": os.environ.get("KPWD", local_secrets.get("KPWD", "")),
+        "totp": os.environ.get("KTOTP", local_secrets.get("KTOTP", "")),
     }
+    
     authenticator = KiteAuthenticator(timeout=10)
-    authenticator.get_enctoken(**credentials)
+    enctoken = authenticator.get_enctoken(**credentials)
+    
+    if enctoken and len(enctoken) > 10:
+        # Update environment for current process
+        os.environ["KTOKEN"] = enctoken
+        
+        # Persist to .env.dev file for future processes
+        try:
+            with env_update_context(os.path.join(os.getcwd(), ".env.dev")) as updater:
+                updater.update_values({"KTOKEN": enctoken})
+                updater.reload_env()
+        except Exception as e:
+            print(f"Warning: Could not save token to .env.dev: {e}")
+        
+        # Also update PKEnvironment singleton
+        try:
+            PKEnvironment().KTOKEN = enctoken
+        except:
+            pass
+        
+        return enctoken
+    
+    return None

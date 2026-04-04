@@ -107,8 +107,10 @@ class WebSocketProcess:
     """
 
     def __init__(self, enctoken, user_id, api_key, token_batch, websocket_index,
-                 data_queue, stop_event, log_level=None, watcher_queue=None, ws_stop_event=None):
+                 data_queue, stop_event, log_level=None, watcher_queue=None, 
+                 token_refresh_callback=None, ws_stop_event=None):
         self.enctoken = enctoken
+        self.token_refresh_callback = token_refresh_callback
         self.user_id = user_id
         self.api_key = api_key
         self.token_batch = token_batch
@@ -147,13 +149,41 @@ class WebSocketProcess:
             raise ValueError("API Key must not be blank")
         if self.user_id is None or len(self.user_id) == 0:
             raise ValueError("user_id must not be blank")
-        if self.enctoken is None or len(self.enctoken) == 0 or len(PKEnvironment().KTOKEN) == 0:
+        # CRITICAL FIX: Try multiple sources for token
+        enctoken = self.enctoken
+        
+        # If stored token is empty, try environment
+        if not enctoken or len(enctoken) == 0:
+            import os
+            enctoken = os.environ.get("KTOKEN", "")
+            
+            # If still empty, try PKEnvironment
+            if not enctoken or len(enctoken) == 0:
+                try:
+                    from PKDevTools.classes.Environment import PKEnvironment
+                    enctoken = PKEnvironment().KTOKEN
+                except:
+                    pass
+            
+            # Update stored token if found
+            if enctoken and len(enctoken) > 0:
+                self.enctoken = enctoken
+        
+        if not enctoken or len(enctoken) == 0:
+            # Log helpful debug info
+            import os
+            self.logger.error(f"KTOKEN in env: {bool(os.environ.get('KTOKEN'))}")
+            try:
+                from PKDevTools.classes.Environment import PKEnvironment
+                self.logger.error(f"KTOKEN in PKEnvironment: {bool(PKEnvironment().KTOKEN)}")
+            except:
+                pass
             raise ValueError("enctoken must not be blank")
 
         base_params = {
             "api_key": self.api_key,
             "user_id": self.user_id,
-            "enctoken": quote(PKEnvironment().KTOKEN),
+            "enctoken": quote(enctoken),  # Use the resolved token
             "uid": str(int(time.time() * 1000)),
             "user-agent": "kite3-web",
             "version": "3.0.0",
@@ -387,13 +417,30 @@ class WebSocketProcess:
                     await asyncio.sleep(HTTP_400_429_WAIT_TIME)
                 if ("http 403" in str(e).lower() or "enctoken" in str(e).lower()) and not self.encToken_invalidated:
                     self.encToken_invalidated = True
+                    # Try callback first (if available)
+                    if self.token_refresh_callback:
+                        try:
+                            new_token = self.token_refresh_callback()
+                            if new_token and len(new_token) > 0:
+                                self.enctoken = new_token
+                                self.logger.info("Token refreshed via callback")
+                                self.encToken_invalidated = False  # Reset on success
+                                continue  # Retry with new token
+                        except Exception as callback_err:
+                            self.logger.error(f"Token refresh callback failed: {callback_err}")
+                    
+                    # Fallback to direct auth if callback fails or not available
                     try:
                         from pkbrokers.kite.examples.externals import kite_auth
+                        from PKDevTools.classes.Environment import PKEnvironment
                         kite_auth()
                         self.enctoken = PKEnvironment().KTOKEN
-                        self.encToken_invalidated = len(PKEnvironment().KTOKEN) == 0
-                    except Exception:
-                        pass
+                        if self.enctoken and len(self.enctoken) > 0:
+                            self.logger.info("Token refreshed via direct auth")
+                            self.encToken_invalidated = False
+                            continue
+                    except Exception as auth_err:
+                        self.logger.error(f"Direct auth failed: {auth_err}")
                 await asyncio.sleep(NETWORK_WAIT_TIME)
 
     def setupLogger(self):
@@ -479,6 +526,7 @@ def websocket_process_worker(args):
         data_queue,
         stop_event,
         log_level,
+        token_refresh_callback,
         ws_stop_event,
     ) = args
 
@@ -491,6 +539,7 @@ def websocket_process_worker(args):
         data_queue=data_queue,
         stop_event=stop_event,
         log_level=log_level,
+        token_refresh_callback=token_refresh_callback,
         ws_stop_event=ws_stop_event,
     )
     try:
@@ -528,7 +577,32 @@ class ZerodhaWebSocketClient:
         self.token_batches = token_batches
         self.ws_processes = []
         self._stop_requested = False
+        self.token_refresh_callback = self._refresh_token
 
+    def _refresh_token(self):
+        """Callback function to refresh token - runs in parent context"""
+        try:
+            from pkbrokers.kite.examples.externals import kite_auth
+            from PKDevTools.classes.Environment import PKEnvironment
+            
+            # Refresh token
+            kite_auth()
+            new_token = PKEnvironment().KTOKEN
+            
+            if new_token and len(new_token) > 0:
+                # Update all child processes' tokens
+                self.enctoken = new_token
+                
+                # Also update environment for future processes
+                import os
+                os.environ["KTOKEN"] = new_token
+                
+                return new_token
+        except Exception as e:
+            self.logger.error(f"Token refresh failed: {e}")
+        
+        return None
+    
     def _build_tokens(self):
         """Build token batches by fetching available instruments."""
         import os
@@ -708,6 +782,22 @@ class ZerodhaWebSocketClient:
         """Start WebSocket client with multiprocessing."""
         self.logger.debug("Starting Zerodha WebSocket client")
 
+        # Validate token before starting any processes
+        from PKDevTools.classes.Environment import PKEnvironment
+        token = PKEnvironment().KTOKEN
+        
+        if not token or len(token) < 10:
+            self.logger.warning("Token invalid, refreshing...")
+            try:
+                from pkbrokers.kite.examples.externals import kite_auth
+                kite_auth()
+                token = PKEnvironment().KTOKEN
+            except Exception as e:
+                self.logger.error(f"Failed to refresh token: {e}")
+                return
+        
+        # Pass token to all child processes
+        self.enctoken = token  # Store in parent
         if len(self.token_batches) == 0:
             self._build_tokens()
 
@@ -737,6 +827,7 @@ class ZerodhaWebSocketClient:
                 self.stop_event,
                 0 if "PKDevTools_Default_Log_Level" not in os.environ.keys()
                 else int(os.environ["PKDevTools_Default_Log_Level"]),
+                self.token_refresh_callback,
             )
             process_args.append(base_args)
 
