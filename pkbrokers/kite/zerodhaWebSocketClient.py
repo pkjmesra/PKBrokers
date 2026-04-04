@@ -100,6 +100,16 @@ OTHER_INDICES = [
     281865,
 ]
 
+# At module level in zerodhaWebSocketClient.py
+def _global_token_refresh_callback():
+    """Global callback function that can be pickled"""
+    try:
+        from pkbrokers.kite.examples.externals import kite_auth
+        from PKDevTools.classes.Environment import PKEnvironment
+        kite_auth()
+        return PKEnvironment().KTOKEN
+    except Exception as e:
+        return None
 
 class WebSocketProcess:
     """
@@ -577,7 +587,7 @@ class ZerodhaWebSocketClient:
         self.token_batches = token_batches
         self.ws_processes = []
         self._stop_requested = False
-        self.token_refresh_callback = self._refresh_token
+        self.token_refresh_callback = _global_token_refresh_callback
 
     def _refresh_token(self):
         """Callback function to refresh token - runs in parent context"""
