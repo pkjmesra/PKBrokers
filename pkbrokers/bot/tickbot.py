@@ -37,7 +37,7 @@ except ImportError:
     import _thread as thread
 
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from PKDevTools.classes.Environment import PKEnvironment
@@ -695,6 +695,16 @@ class PKTickBot:
             
             if pkl_path and os.path.exists(pkl_path):
                 is_fresh, data_date, missing_days, trading_date, latest_time, stale_seconds = data_mgr.validate_pkl_freshness(pkl_path)
+                if latest_time:
+                    # Update latest_time by reducing it by 5 hours 30 minutes if it's not None and is of type datetime.time
+                    if isinstance(latest_time, datetime.time):
+                        # Convert to datetime for subtraction, then back to time
+                        temp_datetime = datetime.combine(datetime.today(), latest_time)
+                        adjusted_datetime = temp_datetime - timedelta(hours=5, minutes=30)
+                        latest_time = adjusted_datetime.time()
+                    else:
+                        # If it's not a time object, log a warning
+                        self.logger.warning(f"latest_time is not a datetime.time object: {type(latest_time)}")
                 comparison_date_msg = f"Data date/time: {data_date} {latest_time or ''}, Trading date: {trading_date}\n"
                 freshness_msg = f"Freshness: {'✓ Fresh' if is_fresh else f'⚠ Stale by {stale_seconds}s'}\n"
                 
