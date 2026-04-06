@@ -531,15 +531,15 @@ class PKTickBot:
             status_msg = self._update_stats(
                 "ticks.json", self.ticks_file_path, status_msg
             )
-            status_msg = self._update_stats("ticks.db", self.ticks_db_path, status_msg)
+            # status_msg = self._update_stats("ticks.db", self.ticks_db_path, status_msg)
             
-            # Add instrument_history.db status
-            from PKDevTools.classes import Archiver
-            instrument_history_path = os.path.join(Archiver.get_user_data_dir(), "instrument_history.db")
-            if os.path.exists(instrument_history_path):
-                status_msg = self._update_stats("instrument_history.db", instrument_history_path, status_msg)
-            else:
-                status_msg += "❌ instrument_history.db: Not found\n"
+            # # Add instrument_history.db status
+            # from PKDevTools.classes import Archiver
+            # instrument_history_path = os.path.join(Archiver.get_user_data_dir(), "instrument_history.db")
+            # if os.path.exists(instrument_history_path):
+            #     status_msg = self._update_stats("instrument_history.db", instrument_history_path, status_msg)
+            # else:
+            #     status_msg += "❌ instrument_history.db: Not found\n"
             
             update.message.reply_text(status_msg)
 
