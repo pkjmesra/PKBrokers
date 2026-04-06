@@ -67,6 +67,8 @@ INTRADAY_PKL_FILE = "intraday_1m_candles.pkl"
 DAILY_DB_FILE = "daily_candles.db"
 INTRADAY_DB_FILE = "intraday_candles.db"
 
+USE_ENHANCED_FRESHNESS_VALIDATION = os.environ.get("PK_USE_ENHANCED_FRESHNESS", "false").lower() == "true"
+
 # Market hours (IST)
 MARKET_OPEN_HOUR = 9
 MARKET_OPEN_MINUTE = 15
@@ -557,7 +559,7 @@ class DataSharingManager:
         with the expected reference time (current time during market hours, or
         last market close outside market hours). Data is considered fresh if it's
         within the acceptable staleness threshold (handled by caller).
-        
+        Set environment variable PK_USE_ENHANCED_FRESHNESS=true to use enhanced timestamp parsing.
         Args:
             pkl_path: Path to pkl file
             
@@ -569,6 +571,15 @@ class DataSharingManager:
             - last_trading_date: Last trading date for comparison
             - latest_time: Time of most recent data point
             - stale_seconds: Number of seconds the data is stale (0 if fresh)
+        """
+        if USE_ENHANCED_FRESHNESS_VALIDATION:
+            return self._validate_pkl_freshness_enhanced(pkl_path)
+        else:
+            return self._validate_pkl_freshness_original(pkl_path)
+    
+    def _validate_pkl_freshness_original(self, pkl_path: str) -> Tuple[bool, Optional[datetime], int, Optional[datetime], Optional[datetime.time], int]:
+        """
+        Original validation logic - preserve exactly as it was.
         """
         try:
             from PKDevTools.classes.PKDateUtilities import PKDateUtilities
@@ -789,6 +800,169 @@ class DataSharingManager:
             
         except Exception as e:
             self.logger.error(f"Error validating pkl freshness: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return False, None, 0, None, None, 0
+    
+    def _validate_pkl_freshness_enhanced(self, pkl_path: str) -> Tuple[bool, Optional[datetime], int, Optional[datetime], Optional[datetime.time], int]:
+        """
+        Enhanced validation logic with proper timestamp parsing for current candles.
+        
+        This version correctly handles:
+        - ISO format strings with timezone
+        - Current candle timestamps (using last_tick_time from export)
+        - Pandas Timestamp objects
+        """
+        try:
+            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+            from datetime import datetime, time, timedelta
+            import pytz
+            import pandas as pd
+            
+            if not os.path.exists(pkl_path):
+                return False, None, 0, None, None, 0
+            
+            # Check file size first - if too small, it's definitely corrupted
+            file_size = os.path.getsize(pkl_path)
+            if file_size < 1024:
+                self.logger.warning(f"Pkl file too small ({file_size} bytes): {pkl_path}")
+                return False, None, 0, None, None, 0
+            
+            # Load data with error handling
+            data = None
+            try:
+                with open(pkl_path, 'rb') as f:
+                    data = pickle.load(f)
+            except Exception as e:
+                self.logger.error(f"Failed to load pkl: {e}")
+                return False, None, 0, None, None, 0
+            
+            if not data:
+                return False, None, 0, None, None, 0
+            
+            # ENHANCED: Debug logging to see what we're getting
+            self.logger.info("=== ENHANCED FRESHNESS VALIDATION ===")
+            
+            # Find the latest timestamp across all stocks with proper parsing
+            latest_datetime = None
+            latest_date = None
+            latest_time = None
+            
+            sample_count = 0
+            for symbol, df in data.items():
+                if hasattr(df, 'index') and len(df.index) > 0:
+                    last_idx = df.index[-1]
+                    
+                    # ENHANCED: Parse timestamp correctly
+                    dt = None
+                    
+                    if isinstance(last_idx, str):
+                        # Parse ISO format string to datetime
+                        try:
+                            # Handle ISO format with timezone
+                            dt = datetime.fromisoformat(last_idx.replace('Z', '+00:00'))
+                            # Ensure it's timezone-aware
+                            if dt.tzinfo is None:
+                                dt = KOLKATA_TZ.localize(dt)
+                            else:
+                                dt = dt.astimezone(KOLKATA_TZ)
+                            self.logger.debug(f"Parsed string timestamp for {symbol}: {dt}")
+                        except (ValueError, TypeError) as e:
+                            # Try other formats
+                            try:
+                                dt = pd.to_datetime(last_idx).to_pydatetime()
+                                if dt.tzinfo is None:
+                                    dt = KOLKATA_TZ.localize(dt)
+                                self.logger.debug(f"Parsed via pandas for {symbol}: {dt}")
+                            except Exception as e2:
+                                self.logger.debug(f"Failed to parse timestamp for {symbol}: {e2}")
+                                continue
+                    elif hasattr(last_idx, 'to_pydatetime'):
+                        # Pandas Timestamp
+                        dt = last_idx.to_pydatetime()
+                        if dt.tzinfo is None:
+                            dt = KOLKATA_TZ.localize(dt)
+                        else:
+                            dt = dt.astimezone(KOLKATA_TZ)
+                        self.logger.debug(f"Pandas Timestamp for {symbol}: {dt}")
+                    elif isinstance(last_idx, datetime):
+                        dt = last_idx
+                        if dt.tzinfo is None:
+                            dt = KOLKATA_TZ.localize(dt)
+                        else:
+                            dt = dt.astimezone(KOLKATA_TZ)
+                        self.logger.debug(f"Datetime for {symbol}: {dt}")
+                    else:
+                        self.logger.debug(f"Unknown timestamp type for {symbol}: {type(last_idx)}")
+                        continue
+                    
+                    if dt and (latest_datetime is None or dt > latest_datetime):
+                        latest_datetime = dt
+                        latest_date = dt.date()
+                        latest_time = dt.time()
+                        sample_count += 1
+                        
+                        if sample_count <= 5:  # Log first 5 symbols
+                            self.logger.info(f"Latest from {symbol}: {dt}")
+            
+            if latest_datetime is None:
+                self.logger.warning(f"No valid timestamps found in pkl: {pkl_path}")
+                return False, None, 0, None, None, 0
+            
+            self.logger.info(f"Overall latest timestamp: {latest_datetime}")
+            
+            # Get current time in IST
+            now = datetime.now(KOLKATA_TZ)
+            
+            # Define market hours
+            MARKET_OPEN_TIME = time(9, 15, 0)
+            MARKET_CLOSE_TIME = time(15, 30, 0)
+            
+            # Determine reference time for comparison
+            is_market_open_now = self.is_market_open()
+            
+            if is_market_open_now:
+                # During market hours - data should be up to current time
+                reference_datetime = now
+                self.logger.info(f"Market open - comparing latest data {latest_datetime} against current time {reference_datetime}")
+            else:
+                # Outside market hours - data should be up to last market close
+                last_trading_date = PKDateUtilities.tradingDate()
+                if hasattr(last_trading_date, 'date'):
+                    last_trading_date = last_trading_date.date()
+                
+                reference_datetime = KOLKATA_TZ.localize(datetime.combine(
+                    last_trading_date, 
+                    MARKET_CLOSE_TIME
+                ))
+                self.logger.info(f"Market closed - comparing latest data {latest_datetime} against last close {reference_datetime}")
+            
+            # Calculate stale seconds
+            if latest_datetime >= reference_datetime:
+                is_fresh = True
+                stale_seconds = 0
+                self.logger.info(f"✅ Data is fresh. Latest: {latest_datetime}, Reference: {reference_datetime}")
+            else:
+                is_fresh = False
+                stale_seconds = int((reference_datetime - latest_datetime).total_seconds())
+                self.logger.warning(f"⚠️ Data is stale by {stale_seconds} seconds. Latest: {latest_datetime}, Reference: {reference_datetime}")
+            
+            # Calculate missing trading days
+            last_trading_date = PKDateUtilities.tradingDate()
+            if hasattr(last_trading_date, 'date'):
+                last_trading_date = last_trading_date.date()
+            
+            if latest_date and latest_date < last_trading_date:
+                missing_days = PKDateUtilities.trading_days_between(latest_date, last_trading_date)
+            else:
+                missing_days = 0
+            
+            self.logger.info(f"=== ENHANCED VALIDATION COMPLETE: Fresh={is_fresh}, Stale={stale_seconds}s ===")
+            
+            return is_fresh, latest_date, missing_days, last_trading_date, latest_time, stale_seconds
+            
+        except Exception as e:
+            self.logger.error(f"Error in enhanced validation: {e}")
             import traceback
             self.logger.error(traceback.format_exc())
             return False, None, 0, None, None, 0

@@ -163,6 +163,7 @@ jobs:
       env:
         PYTHONUNBUFFERED: 1  # Force unbuffered output
         PKDevTools_Default_Log_Level: ${{ env.PKDevTools_Default_Log_Level }}
+        PK_USE_ENHANCED_FRESHNESS: "true"
       run: |
         # Run pkkite directly from the source module
         echo "Running pkkite --orchestrate from PKBrokers source..."
