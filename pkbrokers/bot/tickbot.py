@@ -41,7 +41,7 @@ from datetime import datetime, time, timedelta
 from typing import Optional
 
 from PKDevTools.classes.Environment import PKEnvironment
-from PKDevTools.classes import PKDateUtilities
+from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 from telegram import Update
 from telegram.ext import CallbackContext, CommandHandler, MessageHandler, Filters, Updater
 
