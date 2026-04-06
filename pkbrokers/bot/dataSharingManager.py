@@ -592,6 +592,13 @@ class DataSharingManager:
             try:
                 with open(pkl_path, 'rb') as f:
                     data = pickle.load(f)
+                # Debug: Print first few symbols' last timestamps
+                self.logger.info("=== PKL Timestamp Debug ===")
+                for symbol, df in list(data.items())[:5]:
+                    if hasattr(df, 'index') and len(df.index) > 0:
+                        last_idx = df.index[-1]
+                        self.logger.info(f"{symbol}: last index = {last_idx} (type: {type(last_idx)})")
+                self.logger.info("==========================")
             except (pickle.UnpicklingError, EOFError, ValueError) as e:
                 load_error = e
                 self.logger.warning(f"Failed to load pkl (attempt 1): {e}")
@@ -633,8 +640,14 @@ class DataSharingManager:
                     try:
                         with open(backup_path, 'rb') as f:
                             data = pickle.load(f)
+                        # Debug: Print first few symbols' last timestamps
+                        self.logger.info("=== Backup PKL Timestamp Debug ===")
+                        for symbol, df in list(data.items())[:5]:
+                            if hasattr(df, 'index') and len(df.index) > 0:
+                                last_idx = df.index[-1]
+                                self.logger.info(f"{symbol}: last index = {last_idx} (type: {type(last_idx)})")
                         self.logger.info(f"✅ Successfully loaded backup pkl from {backup_path}")
-                        
+                        self.logger.info("==========================")
                         # Copy backup to original location for future use
                         import shutil
                         shutil.copy2(backup_path, pkl_path)

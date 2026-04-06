@@ -177,8 +177,8 @@ class Candle:
         self.volume += volume  # Add incremental volume
         self.oi = oi  # OI is typically the latest value
         self.tick_count += 1
-        if tick_time is not None and tick_time > self.last_tick_time:
-            self.last_tick_time = tick_time  # Update last tick time
+        if tick_time is not None:
+            self.last_tick_time = max(self.last_tick_time, tick_time)
     
     def update_with_tick_daily(self, price: float, day_volume: int = 0, oi: int = 0, tick_time: int = None):
         """
