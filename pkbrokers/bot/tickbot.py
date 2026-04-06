@@ -41,6 +41,7 @@ from datetime import datetime, time, timedelta
 from typing import Optional
 
 from PKDevTools.classes.Environment import PKEnvironment
+from PKDevTools.classes import PKDateUtilities
 from telegram import Update
 from telegram.ext import CallbackContext, CommandHandler, MessageHandler, Filters, Updater
 
@@ -700,10 +701,11 @@ class PKTickBot:
                 if latest_time:
                     if isinstance(latest_time, time):
                         # Create a temporary datetime for calculation
-                        temp_datetime = datetime.combine(datetime.today(), latest_time)
-                        adjusted_datetime = temp_datetime - timedelta(hours=5, minutes=30)
-                        latest_time = adjusted_datetime.time()
-                        self.logger.debug(f"Adjusted latest_time from original to {latest_time} (subtracted 5h30m)")
+                        temp_datetime = datetime.combine(datetime.today(), latest_time, tzinfo=KOLKATA_TZ)
+                        if temp_datetime > PKDateUtilities.currentDateTime():
+                            adjusted_datetime = temp_datetime - timedelta(hours=5, minutes=30)
+                            latest_time = adjusted_datetime.time()
+                            self.logger.debug(f"Adjusted latest_time from original to {latest_time} (subtracted 5h30m)")
                     else:
                         self.logger.debug(f"latest_time is not a time object: {type(latest_time)}")
                 

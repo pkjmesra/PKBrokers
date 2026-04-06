@@ -209,8 +209,10 @@ class KiteInstruments:
         self.kite_instruments = {}
         self.base_url = "https://api.kite.trade"
         self.logger = default_logger()
+        user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+        user_agent = self._sanitize_header_value(user_agent)
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+            "User-Agent": user_agent,
             "X-Kite-Version": "3",
             "Authorization": f"token {self.api_key}:{self.access_token}",
         }
@@ -220,6 +222,34 @@ class KiteInstruments:
             self._init_db(drop_table=recreate_schema)
         except Exception as e:
             self.logger.warning(f"Initial DB setup failed: {e}")
+
+    def _sanitize_header_value(self, value: str) -> str:
+        """
+        Sanitize header value to ensure it can be encoded as ASCII/latin-1.
+        
+        Args:
+            value: Header value string
+            
+        Returns:
+            Sanitized string with only ASCII characters
+        """
+        # Replace common problematic characters
+        replacements = {
+            '•': '-',      # bullet point
+            '—': '-',      # em dash
+            '–': '-',      # en dash
+            '…': '...',    # ellipsis
+            '"': "'",      # smart quotes
+            '"': "'",
+            ''': "'",
+            ''': "'",
+        }
+        
+        for bad_char, good_char in replacements.items():
+            value = value.replace(bad_char, good_char)
+        
+        # Remove any remaining non-ASCII characters
+        return value.encode('ascii', 'ignore').decode('ascii')
 
     def _is_after_8_30_am_ist(self, last_updated_str: str) -> bool:
         """
@@ -626,7 +656,7 @@ class KiteInstruments:
                 else False
             )
 
-    def fetch_instruments(self) -> List[Instrument]:
+    def fetch_instruments(self, reTrial=False) -> List[Instrument]:
         """
         Fetch instruments from Kite Connect API.
 
@@ -683,6 +713,14 @@ class KiteInstruments:
         #     }
         except Exception as e:
             self.logger.error(f"Unexpected error processing instruments: {str(e)}")
+            if not reTrial and "codec can't encode character" in str(e):
+                self.logger.error("Encoding error likely due to non-ASCII characters in API response. Consider sanitizing headers or checking API data.")
+                self.headers = {
+                    "User-Agent": "Python-urllib/3.13",
+                    "X-Kite-Version": "3",
+                    "Authorization": f"token {self.api_key}:{self.access_token}",
+                }
+                return self.fetch_instruments(reTrial=True)
             raise
 
     def _store_instruments(self, instruments: List[Instrument]) -> None:
