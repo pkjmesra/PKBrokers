@@ -31,6 +31,7 @@ import signal
 import sys
 import time
 import pytz
+import pickle
 from datetime import datetime
 import shutil
 from datetime import time as dt_time
@@ -1136,6 +1137,35 @@ def orchestrate():
             success_daily, daily_path = data_mgr.download_from_github(file_type="daily")
             success_intraday, intraday_path = data_mgr.download_from_github(file_type="intraday")
             
+            # After downloading or loading pkl files, validate them
+            if success_daily and daily_path and os.path.exists(daily_path):
+                # Validate the downloaded pkl before using
+                try:
+                    with open(daily_path, 'rb') as f:
+                        test_data = pickle.load(f)
+                    if test_data and len(test_data) > 0:
+                        logger.info(f"✅ Validated daily pkl: {daily_path} with {len(test_data)} instruments")
+                    else:
+                        logger.warning(f"⚠️ Daily pkl is empty or invalid: {daily_path}")
+                        success_daily = False
+                except Exception as val_err:
+                    logger.error(f"❌ Daily pkl validation failed: {val_err}")
+                    success_daily = False
+            
+            # Similar validation for intraday pkl
+            if success_intraday and intraday_path and os.path.exists(intraday_path):
+                try:
+                    with open(intraday_path, 'rb') as f:
+                        test_data = pickle.load(f)
+                    if test_data and len(test_data) > 0:
+                        logger.info(f"✅ Validated intraday pkl: {intraday_path} with {len(test_data)} instruments")
+                    else:
+                        logger.warning(f"⚠️ Intraday pkl is empty or invalid: {intraday_path}")
+                        success_intraday = False
+                except Exception as val_err:
+                    logger.error(f"❌ Intraday pkl validation failed: {val_err}")
+                    success_intraday = False
+
             if success_daily or success_intraday:
                 logger.info("Downloaded data from GitHub actions-data-download branch")
                 

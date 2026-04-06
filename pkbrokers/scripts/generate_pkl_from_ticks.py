@@ -49,6 +49,39 @@ KOLKATA_TZ = pytz.timezone("Asia/Kolkata")
 # Global cache for token-to-symbol mapping
 _token_to_symbol_cache: Dict[int, str] = {}
 
+def safe_pickle_save(data: Dict, filepath: str, verbose: bool = True) -> bool:
+    """Safely save pickle with validation."""
+    import tempfile
+    import shutil
+    
+    temp_fd, temp_path = tempfile.mkstemp(
+        suffix='.pkl.tmp',
+        dir=os.path.dirname(filepath) or '.'
+    )
+    
+    try:
+        with os.fdopen(temp_fd, 'wb') as f:
+            pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            f.flush()
+            os.fsync(f.fileno())
+        
+        # Verify the file is valid
+        with open(temp_path, 'rb') as f:
+            test_data = pickle.load(f)
+        
+        if len(test_data) != len(data):
+            log(f"⚠️ Data mismatch during save!", verbose)
+            return False
+        
+        shutil.move(temp_path, filepath)
+        log(f"✅ Saved pickle: {filepath}", verbose)
+        return True
+        
+    except Exception as e:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+        log(f"❌ Failed to save pickle: {e}", verbose)
+        return False
 
 def get_token_to_symbol_mapping(verbose: bool = True) -> Dict[int, str]:
     """
@@ -970,8 +1003,8 @@ def trigger_history_download(missing_days: int, verbose: bool = True) -> bool:
 
 
 def save_pkl_files(data: Dict, data_dir: str, verbose: bool = True) -> Tuple[str, str]:
-    """Save pkl files with both generic and dated names.
-    
+    """
+    Save pkl files with both generic and dated names using atomic writes.
     Daily data is trimmed to 251 rows per stock before saving.
     """
     os.makedirs(data_dir, exist_ok=True)
@@ -983,24 +1016,24 @@ def save_pkl_files(data: Dict, data_dir: str, verbose: bool = True) -> Tuple[str
     # Trim daily data to 251 rows per stock before saving
     data = trim_daily_data_to_251_rows(data, verbose)
     
-    # Save daily pkl
+    # Save daily pkl using safe atomic write
     daily_path = os.path.join(data_dir, f"stock_data_{today_str}.pkl")
-    with open(daily_path, 'wb') as f:
-        pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+    if not safe_pickle_save(data, daily_path, verbose):
+        log(f"❌ Failed to save daily pkl to {daily_path}", verbose)
+        return "", ""
     
     daily_size = os.path.getsize(daily_path) / (1024 * 1024)
     log(f"✅ Saved daily pkl: {daily_path} ({daily_size:.2f} MB, {len(data)} instruments)", verbose)
     
-    # Also save as generic name
+    # Also save as generic name using atomic write
     generic_path = os.path.join(data_dir, "daily_candles.pkl")
-    with open(generic_path, 'wb') as f:
-        pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+    safe_pickle_save(data, generic_path, verbose)
     
     return daily_path, generic_path
 
 
 def save_intraday_pkl(ticks_candles: Dict, data_dir: str, verbose: bool = True) -> str:
-    """Save intraday pkl from today's ticks."""
+    """Save intraday pkl from today's ticks using atomic writes."""
     
     os.makedirs(data_dir, exist_ok=True)
     
@@ -1013,16 +1046,16 @@ def save_intraday_pkl(ticks_candles: Dict, data_dir: str, verbose: bool = True) 
         today = datetime.now().strftime('%d%m%Y')
 
     intraday_path = os.path.join(data_dir, f"intraday_stock_data_{today}.pkl")
-    with open(intraday_path, 'wb') as f:
-        pickle.dump(ticks_candles, f, protocol=pickle.HIGHEST_PROTOCOL)
+    if not safe_pickle_save(ticks_candles, intraday_path, verbose):
+        log(f"❌ Failed to save intraday pkl to {intraday_path}", verbose)
+        return ""
     
     size = os.path.getsize(intraday_path) / (1024 * 1024)
     log(f"✅ Saved intraday pkl: {intraday_path} ({size:.2f} MB, {len(ticks_candles)} instruments)", verbose)
     
     # Also save as generic name
     generic_path = os.path.join(data_dir, "intraday_1m_candles.pkl")
-    with open(generic_path, 'wb') as f:
-        pickle.dump(ticks_candles, f, protocol=pickle.HIGHEST_PROTOCOL)
+    safe_pickle_save(ticks_candles, generic_path, verbose)
     
     return intraday_path
 

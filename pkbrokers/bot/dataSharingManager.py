@@ -578,11 +578,80 @@ class DataSharingManager:
             if not os.path.exists(pkl_path):
                 return False, None, 0, None, None, 0
             
-            with open(pkl_path, 'rb') as f:
-                data = pickle.load(f)
+            # Check file size first - if too small, it's definitely corrupted
+            file_size = os.path.getsize(pkl_path)
+            if file_size < 1024:  # Less than 1KB - likely corrupted or empty
+                self.logger.warning(f"Pkl file too small ({file_size} bytes): {pkl_path}")
+                return False, None, 0, None, None, 0
+            
+            # Try to load with error handling and recovery attempts
+            data = None
+            load_error = None
+            
+            # Attempt 1: Normal load
+            try:
+                with open(pkl_path, 'rb') as f:
+                    data = pickle.load(f)
+            except (pickle.UnpicklingError, EOFError, ValueError) as e:
+                load_error = e
+                self.logger.warning(f"Failed to load pkl (attempt 1): {e}")
+                
+                # Attempt 2: Try to load with protocol auto-detection
+                try:
+                    with open(pkl_path, 'rb') as f:
+                        # Try reading with different pickle protocols
+                        import pickletools
+                        # First, check if we can at least read the header
+                        header = f.read(10)
+                        f.seek(0)
+                        
+                        # If file looks like it might be recoverable, try to load
+                        if header.startswith(b'\x80'):
+                            data = pickle.load(f)
+                            self.logger.info("Successfully loaded pkl on second attempt")
+                except Exception as e2:
+                    self.logger.warning(f"Failed to load pkl (attempt 2): {e2}")
+                    
+                    # Attempt 3: Try to load as gzipped pickle (some files might be compressed)
+                    try:
+                        import gzip
+                        with gzip.open(pkl_path, 'rb') as f:
+                            data = pickle.load(f)
+                        self.logger.info("Successfully loaded pkl as gzipped file")
+                    except Exception as e3:
+                        self.logger.warning(f"Failed to load as gzipped: {e3}")
+            
+            # If still no data, try to recover from backup or recreate
+            if data is None:
+                self.logger.error(f"❌ Pkl file is corrupted and unrecoverable: {pkl_path}")
+                self.logger.error(f"   Error: {load_error}")
+                
+                # Try to find a backup or dated version
+                backup_path = self._find_backup_pkl(pkl_path)
+                if backup_path and os.path.exists(backup_path):
+                    self.logger.info(f"Attempting to use backup: {backup_path}")
+                    try:
+                        with open(backup_path, 'rb') as f:
+                            data = pickle.load(f)
+                        self.logger.info(f"✅ Successfully loaded backup pkl from {backup_path}")
+                        
+                        # Copy backup to original location for future use
+                        import shutil
+                        shutil.copy2(backup_path, pkl_path)
+                        self.logger.info(f"Restored corrupted pkl from backup")
+                    except Exception as backup_e:
+                        self.logger.error(f"Backup also corrupted: {backup_e}")
+                        return False, None, 0, None, None, 0
+                else:
+                    # No backup found - return stale so it will be regenerated
+                    self.logger.warning(f"No backup found for corrupted pkl. Will regenerate.")
+                    return False, None, 0, None, None, 0
             
             if not data:
                 return False, None, 0, None, None, 0
+            
+            # Rest of your existing validation logic...
+            # (Keep your existing code for finding latest dates, etc.)
             
             # Find the latest date and time across all stocks
             latest_date = None
@@ -638,7 +707,7 @@ class DataSharingManager:
             
             # Define market hours
             MARKET_OPEN_TIME = time(9, 15, 0)
-            MARKET_CLOSE_TIME = time(15, 30, 0)  # Note: using 15:30, not 15:29
+            MARKET_CLOSE_TIME = time(15, 30, 0)
             current_time = now.time()
             current_date = now.date()
             
@@ -707,7 +776,60 @@ class DataSharingManager:
             
         except Exception as e:
             self.logger.error(f"Error validating pkl freshness: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return False, None, 0, None, None, 0
+
+    def _find_backup_pkl(self, pkl_path: str) -> Optional[str]:
+        """
+        Find a backup pickle file when the primary is corrupted.
+        
+        Looks for:
+        1. Dated versions of the same file (stock_data_*.pkl)
+        2. Previous day's file
+        3. Generic fallback files (daily_candles.pkl)
+        """
+        try:
+            from PKDevTools.classes import Archiver
+            import glob
+            
+            directory = os.path.dirname(pkl_path)
+            basename = os.path.basename(pkl_path)
+            
+            # Look for dated versions (stock_data_*.pkl)
+            pattern = os.path.join(directory, "stock_data_*.pkl")
+            dated_files = glob.glob(pattern)
+            
+            if dated_files:
+                # Sort by modification time (newest first)
+                dated_files.sort(key=os.path.getmtime, reverse=True)
+                for backup in dated_files:
+                    if backup != pkl_path and os.path.getsize(backup) > 1024 * 1024:  # > 1MB
+                        # Verify it's loadable
+                        try:
+                            with open(backup, 'rb') as f:
+                                pickle.load(f)
+                            self.logger.info(f"Found valid backup: {backup}")
+                            return backup
+                        except:
+                            continue
+            
+            # Look for generic daily_candles.pkl
+            generic_path = os.path.join(directory, "daily_candles.pkl")
+            if os.path.exists(generic_path) and generic_path != pkl_path:
+                try:
+                    with open(generic_path, 'rb') as f:
+                        pickle.load(f)
+                    self.logger.info(f"Found valid generic backup: {generic_path}")
+                    return generic_path
+                except:
+                    pass
+            
+            return None
+            
+        except Exception as e:
+            self.logger.debug(f"Error finding backup: {e}")
+            return None
     
     def trigger_history_download_workflow(self, past_offset: int = 1) -> bool:
         """

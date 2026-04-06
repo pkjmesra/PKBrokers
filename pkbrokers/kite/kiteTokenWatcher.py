@@ -32,6 +32,7 @@ import threading
 import time
 import pytz
 import fcntl
+import pickle
 
 # Define IST timezone once
 IST = pytz.timezone('Asia/Kolkata')
@@ -39,6 +40,7 @@ IST = pytz.timezone('Asia/Kolkata')
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from queue import Empty, Queue
+from typing import Any, Dict, List, Optional, Tuple
 
 from PKDevTools.classes import Archiver, log
 from PKDevTools.classes.Environment import PKEnvironment
@@ -1283,6 +1285,36 @@ class KiteTokenWatcher:
 
         return depth
 
+    def _atomic_pickle_dump(self, data: Dict, filepath: str):
+        """Atomically write pickle file using temporary file."""
+        import tempfile
+        import shutil
+        
+        temp_fd, temp_path = tempfile.mkstemp(
+            suffix='.pkl.tmp',
+            prefix=os.path.basename(filepath) + '.',
+            dir=os.path.dirname(filepath)
+        )
+        
+        try:
+            with os.fdopen(temp_fd, 'wb') as f:
+                pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+                f.flush()
+                os.fsync(f.fileno())
+            
+            # Verify the temp file is valid
+            with open(temp_path, 'rb') as f:
+                test_data = pickle.load(f)
+            
+            # Replace original with temp file
+            shutil.move(temp_path, filepath)
+            self.logger.info(f"Atomically saved pickle to {filepath}")
+            
+        except Exception as e:
+            os.unlink(temp_path)
+            self.logger.error(f"Failed to atomically save pickle: {e}")
+            raise
+        
     def get_candles(
         self,
         symbol: str = None,
@@ -1419,21 +1451,25 @@ class KiteTokenWatcher:
             # Export daily candles to pkl (with historical merge)
             self.logger.info("Starting daily pkl export with historical merge...")
             success_daily, daily_path = data_mgr.export_daily_candles_to_pkl(self._candle_store, merge_with_historical=True)
-            _, file_name = Archiver.afterMarketStockDataExists()
-            if file_name is not None and len(file_name) > 0:
-                today_suffix = file_name.replace('.pkl','').replace('stock_data_','')
-            else:
-                today_suffix = datetime.now().strftime('%d%m%Y')
             
             if success_daily and daily_path:
                 file_size = os.path.getsize(daily_path) / (1024 * 1024)
                 self.logger.info(f"Exported daily candles to: {daily_path} ({file_size:.2f} MB)")
                 
-                # Also create date-suffixed copy
+                # USE ATOMIC WRITE for the date-suffixed copy
+                _, file_name = Archiver.afterMarketStockDataExists()
+                if file_name is not None and len(file_name) > 0:
+                    today_suffix = file_name.replace('.pkl','').replace('stock_data_','')
+                else:
+                    today_suffix = datetime.now().strftime('%d%m%Y')
+                
                 dest_daily = os.path.join(results_dir, f"stock_data_{today_suffix}.pkl")
                 if daily_path != dest_daily:
-                    shutil.copy(daily_path, dest_daily)
-                    self.logger.info(f"Created date-suffixed copy: stock_data_{today_suffix}.pkl")
+                    # Read the file and write atomically
+                    with open(daily_path, 'rb') as src:
+                        data = pickle.load(src)
+                    self._atomic_pickle_dump(data, dest_daily)
+                    self.logger.info(f"Created date-suffixed copy using atomic write: stock_data_{today_suffix}.pkl")
             else:
                 self.logger.warning("Daily pkl export failed or no data")
             
