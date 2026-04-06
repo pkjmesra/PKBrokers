@@ -913,6 +913,7 @@ class DataSharingManager:
             
             # Get current time in IST
             now = datetime.now(KOLKATA_TZ)
+            current_date = now.date()
             
             # Define market hours
             MARKET_OPEN_TIME = time(9, 15, 0)
@@ -920,13 +921,36 @@ class DataSharingManager:
             
             # Determine reference time for comparison
             is_market_open_now = self.is_market_open()
+            is_trading_day = self.is_trading_day(now)
             
             if is_market_open_now:
-                # During market hours - data should be up to current time
+                # DURING MARKET HOURS:
+                # For data from today, we only expect it to be up to the current time
+                # But we should allow a reasonable buffer (e.g., 5 minutes) for processing delay
                 reference_datetime = now
                 self.logger.info(f"Market open - comparing latest data {latest_datetime} against current time {reference_datetime}")
+                if latest_date == current_date and is_trading_day:
+                    # Data is from today during market hours
+                    # Calculate seconds since latest data point
+                    seconds_since_last_tick = int((now - latest_datetime).total_seconds())
+                    
+                    # If data is within 10 minutes, consider it fresh (allows for processing delays)
+                    if seconds_since_last_tick <= 300:  # 5 minutes buffer
+                        is_fresh = True
+                        stale_seconds = 0
+                        self.logger.info(f"✅ Data is fresh (market hours). Latest: {latest_datetime}, Current: {now}, Gap: {seconds_since_last_tick}s")
+                    else:
+                        is_fresh = False
+                        stale_seconds = seconds_since_last_tick
+                        self.logger.warning(f"⚠️ Data is stale during market hours. Latest: {latest_datetime}, Current: {now}, Gap: {seconds_since_last_tick}s")
+                else:
+                    # Data from a previous day - stale
+                    is_fresh = False
+                    stale_seconds = int((now - latest_datetime).total_seconds())
+                    self.logger.warning(f"⚠️ Data from previous day ({latest_date}) during market hours. Stale by {stale_seconds}s")
             else:
-                # Outside market hours - data should be up to last market close
+                # OUTSIDE MARKET HOURS:
+                # Data should be up to the last market close
                 last_trading_date = PKDateUtilities.tradingDate()
                 if hasattr(last_trading_date, 'date'):
                     last_trading_date = last_trading_date.date()
@@ -935,17 +959,16 @@ class DataSharingManager:
                     last_trading_date, 
                     MARKET_CLOSE_TIME
                 ))
-                self.logger.info(f"Market closed - comparing latest data {latest_datetime} against last close {reference_datetime}")
-            
-            # Calculate stale seconds
-            if latest_datetime >= reference_datetime:
-                is_fresh = True
-                stale_seconds = 0
-                self.logger.info(f"✅ Data is fresh. Latest: {latest_datetime}, Reference: {reference_datetime}")
-            else:
-                is_fresh = False
-                stale_seconds = int((reference_datetime - latest_datetime).total_seconds())
-                self.logger.warning(f"⚠️ Data is stale by {stale_seconds} seconds. Latest: {latest_datetime}, Reference: {reference_datetime}")
+                self.logger.info(f"Market closed - comparing against last close: {reference_datetime}")
+                
+                if latest_datetime >= reference_datetime:
+                    is_fresh = True
+                    stale_seconds = 0
+                    self.logger.info(f"✅ Data is fresh. Latest: {latest_datetime}, Reference: {reference_datetime}")
+                else:
+                    is_fresh = False
+                    stale_seconds = int((reference_datetime - latest_datetime).total_seconds())
+                    self.logger.warning(f"⚠️ Data is stale by {stale_seconds} seconds. Latest: {latest_datetime}, Reference: {reference_datetime}")
             
             # Calculate missing trading days
             last_trading_date = PKDateUtilities.tradingDate()
@@ -957,7 +980,7 @@ class DataSharingManager:
             else:
                 missing_days = 0
             
-            self.logger.info(f"=== ENHANCED VALIDATION COMPLETE: Fresh={is_fresh}, Stale={stale_seconds}s ===")
+            self.logger.info(f"=== ENHANCED VALIDATION COMPLETE: Fresh={is_fresh}, Stale={stale_seconds}s, MissingDays={missing_days} ===")
             
             return is_fresh, latest_date, missing_days, last_trading_date, latest_time, stale_seconds
             
