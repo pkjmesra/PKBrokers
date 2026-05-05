@@ -4,8 +4,8 @@ gitpython #>=3.1.43
 # libsql==0.1.6
 numpy==1.26.4
 pandas==2.2.3
-PKDevTools>=0.13.20260505.341
-PKNSETools>=0.1.20260430.151
+PKDevTools>=0.13.20260505.342
+PKNSETools>=0.1.20260505.153
 pygithub
 pyotp
 python-telegram-bot[all]>=13.4,<20.0
