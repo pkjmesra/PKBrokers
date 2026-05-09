@@ -1,20 +1,117 @@
 #!/usr/bin/env python3
 """
-Unified PKL generator for PKBrokers - handles both ticks.json and SQLite sources.
+===============================================================================
+PKL Generator for PKBrokers - Unified Historical & Intraday Data Processor
+===============================================================================
 
-This script:
-1. Downloads existing historical pkl from GitHub (~37MB)
-2. Loads new data from ticks.json OR SQLite database
-3. Converts to candle format
-4. Merges with historical data
-5. Saves as dated pkl files (~37MB+)
+DESCRIPTION
+-----------
+This script generates processed stock data files (PKL format) from multiple
+sources including GitHub historical data, ticks.json (real-time/streaming),
+and SQLite databases. It serves as the core data pipeline for the PKBrokers
+trading system, producing both daily aggregated candles and intraday 1-minute
+candles.
 
-Usage:
+ARCHITECTURE OVERVIEW
+---------------------
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         INPUT SOURCES                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│  • GitHub Historical PKL (last 30 days, ~37MB)                          │
+│  • Local/Remote ticks.json (real-time tick data)                        │
+│  • SQLite Database (instrument_history.db)                              │
+│  • InMemoryCandleStore (real-time aggregated candles)                   │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         PROCESSING PIPELINE                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│  1. Download/Load historical base data from GitHub                       │
+│  2. Retrieve current day's aggregated data from InMemoryCandleStore     │
+│  3. Load/Download fresh ticks.json data                                 │
+│  4. Convert ticks → 1-minute OHLCV candles                              │
+│  5. Merge with historical data (deduplication by timestamp)             │
+│  6. Trim daily data to 251 rows per stock (1 trading year)              │
+│  7. Save as daily_candles.pkl & stock_data_<DDMMYYYY>.pkl               │
+│  8. Save intraday_1m_candles.pkl & intraday_stock_data_<DDMMYYYY>.pkl   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+KEY FEATURES
+------------
+• **Intelligent Freshness Detection**: Determines if data needs updates based on
+  trading dates, market hours, and actual data timestamps
+• **Token-to-Symbol Mapping**: Converts numeric instrument tokens to readable
+  trading symbols using KiteInstruments
+• **Atomic Writes**: Uses temporary files + rename for safe pickle saves
+• **Data Quality Validation**: Validates row counts (≥248 rows per stock) before
+  accepting historical data
+• **Graceful Fallbacks**: Falls back to alternative sources if primary fails
+• **Timezone Normalization**: Converts all timestamps to Asia/Kolkata (IST)
+
+USAGE
+-----
     # From ticks.json (default - for market hours with tick merging)
     python generate_pkl_from_ticks.py [--data-dir PATH] [--verbose]
     
     # From SQLite database (for after-market hours, no tick merging)
     python generate_pkl_from_ticks.py --from-db [--db-path PATH] [--data-dir PATH] [--verbose]
+    
+    # Trigger history download workflow if data is stale
+    python generate_pkl_from_ticks.py --trigger-history --past-offset 30
+
+ARGUMENTS
+---------
+    --data-dir PATH         Output directory for pkl files (default: results/Data)
+    --from-db               Load data from SQLite database instead of ticks.json
+    --db-path PATH          Path to SQLite database (auto-detected if not specified)
+    --trigger-history       Trigger GitHub Actions workflow to download historical data
+    --past-offset DAYS      Days to look back for existing pkl files (default: 30)
+    --verbose, -v           Verbose output (default: True)
+
+DATA FORMATS
+------------
+Daily PKL Format (stock_data_<DDMMYYYY>.pkl):
+    {
+        "RELIANCE": pd.DataFrame with columns ['Open', 'High', 'Low', 'Close', 'Volume'],
+        "TCS": pd.DataFrame,
+        ...
+    }
+
+Intraday PKL Format (intraday_stock_data_<DDMMYYYY>.pkl):
+    {
+        "RELIANCE": pd.DataFrame with 1-minute OHLCV candles,
+        "TCS": pd.DataFrame,
+        ...
+    }
+
+Ticks.json Format:
+    {
+        "instrument_token": {
+            "trading_symbol": "RELIANCE",
+            "last_updated": "2026-05-09T15:29:00",
+            "ohlcv": {
+                "open": 2450.5,
+                "high": 2460.0,
+                "low": 2445.0,
+                "close": 2455.5,
+                "volume": 1234567,
+                "timestamp": "2026-05-09T15:29:00"
+            }
+        }
+    }
+
+DEPENDENCIES
+------------
+    • pandas
+    • numpy
+    • requests
+    • pytz
+    • sqlite3 (built-in)
+    • PKDevTools (custom)
+    • pkbrokers (custom)
+
+===============================================================================
 """
 
 import argparse
@@ -38,6 +135,7 @@ from pkbrokers.kite.examples.pkkite import kite_ticks
 
 
 def log(msg: str, verbose: bool = True):
+    """Print timestamped log message if verbose mode is enabled."""
     if verbose:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
@@ -45,12 +143,26 @@ def log(msg: str, verbose: bool = True):
 KOLKATA_TZ = pytz.timezone("Asia/Kolkata")
 
 
-
 # Global cache for token-to-symbol mapping
 _token_to_symbol_cache: Dict[int, str] = {}
 
+
 def safe_pickle_save(data: Dict, filepath: str, verbose: bool = True) -> bool:
-    """Safely save pickle with validation."""
+    """
+    Safely save pickle with validation using atomic write pattern.
+    
+    This function writes to a temporary file first, verifies the data can be
+    read back, then atomically renames to the target path. This prevents
+    corruption from partial writes or interruptions.
+    
+    Args:
+        data: Dictionary to pickle
+        filepath: Target file path
+        verbose: Whether to log progress
+        
+    Returns:
+        True if save successful, False otherwise
+    """
     import tempfile
     import shutil
     
@@ -82,6 +194,7 @@ def safe_pickle_save(data: Dict, filepath: str, verbose: bool = True) -> bool:
             os.unlink(temp_path)
         log(f"❌ Failed to save pickle: {e}", verbose)
         return False
+
 
 def get_token_to_symbol_mapping(verbose: bool = True) -> Dict[int, str]:
     """
@@ -196,8 +309,10 @@ def trim_daily_data_to_251_rows(data: Dict, verbose: bool = True) -> Dict:
     """
     Trim daily stock data to keep only the most recent 251 rows per stock.
     
-    This ensures consistent file sizes and keeps approximately 1 year of trading data.
-    Only applies to daily data (stock_data_*.pkl), not intraday data.
+    251 rows represents approximately 1 year of trading data (251 trading days
+    per year in Indian markets). This ensures consistent file sizes and removes
+    stale historical data.
+    
     Also filters out numeric keys (instrument tokens) which have incomplete/stale data.
     
     Args:
@@ -261,9 +376,17 @@ def get_last_trading_date(verbose: bool = True):
 
 
 def calculate_missing_trading_days(data: Dict, verbose: bool = True) -> int:
-    """Calculate how many trading days are missing from the pkl data.
+    """
+    Calculate how many trading days are missing from the pkl data.
     
     Checks the actual date index in the data, not just the filename.
+    
+    Args:
+        data: Dictionary containing stock data with datetime indices
+        verbose: Whether to log progress
+        
+    Returns:
+        Number of missing trading days (0 if current)
     """
     try:
         from PKDevTools.classes.PKDateUtilities import PKDateUtilities
@@ -344,10 +467,19 @@ def calculate_missing_trading_days(data: Dict, verbose: bool = True) -> int:
 
 
 def download_historical_pkl(verbose: bool = True, past_offset: int = 30) -> Tuple[Optional[Dict], int]:
-    """Download the most recent historical pkl from GitHub.
+    """
+    Download the most recent historical pkl from GitHub.
     
+    Searches through the last `past_offset` days to find a valid PKL file with
+    quality data (≥248 rows per sample stock). Validates data freshness and
+    quality before accepting.
+    
+    Args:
+        verbose: Whether to log progress
+        past_offset: Number of days to look back for PKL files
+        
     Returns:
-        Tuple of (data_dict, missing_trading_days)
+        Tuple of (data_dict, missing_trading_days) or (None, 0) if not found
     """
     
     # Try multiple locations and date formats
@@ -356,7 +488,7 @@ def download_historical_pkl(verbose: bool = True, past_offset: int = 30) -> Tupl
         "https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/results/Data/",
     ]
     
-    # Try last 30 days
+    # Try last `past_offset` days
     today = datetime.now()
     # Look back up to 30 days to find a valid pkl file with quality data
     for days_back in range(past_offset if past_offset > 0 else 30):
@@ -366,8 +498,6 @@ def download_historical_pkl(verbose: bool = True, past_offset: int = 30) -> Tupl
         # Try different date formats
         date_formats = [
             check_date.strftime('%d%m%Y'),  # 25022026
-            # check_date.strftime('%d%m%y'),   # 250226
-            # f"{check_date.day}{check_date.strftime('%m%y')}",  # 250226 without leading zero
         ]
         
         for base_url in base_urls:
@@ -406,7 +536,6 @@ def download_historical_pkl(verbose: bool = True, past_offset: int = 30) -> Tupl
                                 continue
                             
                             # Also validate that the actual data date is close to the filename date
-                            # If data is too old (> 20 trading days behind), skip and look for better file
                             actual_missing = calculate_missing_trading_days(data, verbose)
                             if actual_missing > 20:
                                 log(f"⚠️ Skipping {url} - data too stale ({actual_missing} trading days behind)", verbose)
@@ -423,7 +552,18 @@ def download_historical_pkl(verbose: bool = True, past_offset: int = 30) -> Tupl
 
 
 def is_data_fresh(data: Dict, verbose: bool = True) -> bool:
-    """Check if the ticks data is from today's trading date"""
+    """
+    Check if the ticks data is from today's trading date.
+    
+    Compares the latest timestamp in the data against today's trading date.
+    
+    Args:
+        data: Ticks data dictionary
+        verbose: Whether to log progress
+        
+    Returns:
+        True if data contains today's trading date, False otherwise
+    """
     if not data or not isinstance(data, dict):
         return False
     
@@ -462,6 +602,7 @@ def is_data_fresh(data: Dict, verbose: bool = True) -> bool:
         return False
     
     return False
+
 
 def download_ticks_json(verbose: bool = True) -> Optional[Dict]:
     """Download ticks.json from GitHub with freshness check."""
@@ -515,8 +656,10 @@ def download_ticks_json(verbose: bool = True) -> Optional[Dict]:
     log("❌ Could not download fresh ticks.json from GitHub", verbose)
     return None
 
+
 def load_local_ticks_json(data_dir: str, verbose: bool = True, min_instruments: int = 10) -> Optional[Dict]:
-    """Load ticks.json from local path with freshness check.
+    """
+    Load ticks.json from local path with freshness check.
     
     Args:
         data_dir: Directory to search for ticks.json
@@ -536,7 +679,7 @@ def load_local_ticks_json(data_dir: str, verbose: bool = True, min_instruments: 
     paths = [
         os.path.join(data_dir, "ticks.json"),
         os.path.join(data_dir, "results", "Data", "ticks.json"),
-        os.path.join(data_dir, "results", "Data", "ticks.json.zip"),  # Also check for zip
+        os.path.join(data_dir, "results", "Data", "ticks.json.zip"),
         "ticks.json",
         "results/Data/ticks.json",
     ]
@@ -577,50 +720,6 @@ def load_local_ticks_json(data_dir: str, verbose: bool = True, min_instruments: 
             except Exception as e:
                 log(f"⚠️ Error loading {path}: {e}", verbose)
                 continue
-    
-    # # If no fresh local data found, try generating fresh data with kite_ticks
-    # log("🔄 No fresh local data found. Attempting to generate fresh ticks with kite_ticks()...", verbose)
-    # try:
-    #     # Call kite_ticks in test mode - 3 minutes is enough for a sample
-    #     log("Running kite_ticks(test_mode=True) to generate fresh data...", verbose)
-    #     from pkbrokers.kite.examples.pkkite import kite_ticks
-    #     kite_ticks(test_mode=True)  # Keep as test_mode=True as requested
-        
-    #     # After kite_ticks completes, check the expected output location
-    #     expected_path = os.path.join(data_dir, "results", "Data", "ticks.json")
-        
-    #     # Also check current directory as fallback
-    #     possible_paths = [
-    #         expected_path,
-    #         os.path.join("results", "Data", "ticks.json"),
-    #         "ticks.json"
-    #     ]
-        
-    #     for path in possible_paths:
-    #         if os.path.exists(path):
-    #             log(f"Checking for fresh data at: {path}", verbose)
-    #             with open(path, 'r') as f:
-    #                 data = json.load(f)
-                
-    #             if isinstance(data, dict) and len(data) >= min_instruments:
-    #                 if is_data_fresh(data, verbose):
-    #                     log(f"✅ Successfully generated fresh ticks.json: {path} ({len(data)} instruments)", verbose)
-    #                     return data
-    #                 else:
-    #                     log(f"⚠️ Generated ticks.json is stale - something went wrong", verbose)
-    #             else:
-    #                 log(f"⚠️ Generated ticks.json has insufficient data", verbose)
-        
-    #     log("❌ Could not find valid ticks.json after kite_ticks", verbose)
-        
-    # except Exception as e:
-    #     log(f"❌ Failed to generate fresh ticks via kite_ticks: {e}", verbose)
-    
-    # Final fallback: try to download from GitHub
-    log("Attempting to download fresh ticks from GitHub as final fallback...", verbose)
-    github_data = download_ticks_json(verbose)
-    if github_data:
-        return github_data
     
     return None
 
@@ -870,7 +969,12 @@ def convert_ticks_to_candles(ticks_data: Dict, verbose: bool = True) -> Dict:
 
 
 def _normalize_index_tz(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize DataFrame index to timezone-aware IST for consistent merging."""
+    """
+    Normalize DataFrame index to timezone-aware IST for consistent merging.
+    
+    This ensures all DataFrames have timezone-aware indices in Asia/Kolkata
+    timezone, allowing proper concatenation and comparison operations.
+    """
     if df is None or not hasattr(df, 'index'):
         return df
 
@@ -890,7 +994,20 @@ def _normalize_index_tz(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
-    """Merge today's candles with historical data."""
+    """
+    Merge today's candles with historical data.
+    
+    Combines two dictionaries of DataFrames, removing duplicate timestamps
+    (keeping the most recent) and ensuring consistent timezone handling.
+    
+    Args:
+        historical: Base historical data dictionary
+        today: New data to merge in
+        verbose: Whether to log progress
+        
+    Returns:
+        Merged dictionary
+    """
     
     if not historical:
         log("No historical data to merge with", verbose)
@@ -956,7 +1073,8 @@ def merge_candles(historical: Dict, today: Dict, verbose: bool = True) -> Dict:
 
 
 def trigger_history_download(missing_days: int, verbose: bool = True) -> bool:
-    """Trigger the history download workflow via GitHub API.
+    """
+    Trigger the history download workflow via GitHub API.
     
     Args:
         missing_days: Number of trading days to fetch
@@ -1005,7 +1123,16 @@ def trigger_history_download(missing_days: int, verbose: bool = True) -> bool:
 def save_pkl_files(data: Dict, data_dir: str, verbose: bool = True) -> Tuple[str, str]:
     """
     Save pkl files with both generic and dated names using atomic writes.
+    
     Daily data is trimmed to 251 rows per stock before saving.
+    
+    Args:
+        data: Dictionary of stock data
+        data_dir: Output directory
+        verbose: Whether to log progress
+        
+    Returns:
+        Tuple of (daily_path, generic_path) or ("", "") on failure
     """
     os.makedirs(data_dir, exist_ok=True)
 
@@ -1061,6 +1188,7 @@ def save_intraday_pkl(ticks_candles: Dict, data_dir: str, verbose: bool = True) 
 
 
 def main():
+    """Main entry point for the PKL generator."""
     parser = argparse.ArgumentParser(description="Generate pkl files from ticks.json or SQLite database")
     parser.add_argument("--data-dir", default="results/Data", help="Output directory for pkl files")
     parser.add_argument("--from-db", action="store_true", help="Load data from SQLite database instead of ticks.json")
@@ -1158,8 +1286,8 @@ def main():
         if historical_data:
             historical_data = merge_candles(historical_data, current_day_data_from_store, verbose)
         else:
-            historical_data = current_day_data_from_store # If no historical, current day is the only data
-    
+            historical_data = current_day_data_from_store
+
     # Step 2: Load new data based on mode
     log("\n[Step 2] Loading new data...", verbose)
     
