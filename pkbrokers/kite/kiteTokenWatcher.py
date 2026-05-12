@@ -34,6 +34,8 @@ import pytz
 import fcntl
 import pickle
 
+from collections import defaultdict
+
 # Define IST timezone once
 IST = pytz.timezone('Asia/Kolkata')
 
@@ -57,6 +59,8 @@ OPTIMAL_BATCH_TICK_WAIT_TIME_SEC = 5
 DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 0.5
 JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 1
 OPTIMAL_MAX_QUEUE_SIZE = 10000
+STALE_THRESHOLD_SECONDS=120
+TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD = 30
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
 OTHER_INDICES = [
@@ -124,6 +128,312 @@ def ensure_ist_datetime(dt_value):
         
         # Default fallback
         return datetime.now(IST)
+
+class TickHealthMonitor:
+    """
+    Monitors tick reception health across all registered instruments.
+    Triggers warnings and recovery actions if no ticks received for too long.
+    """
+    
+    def __init__(self, watcher, stale_threshold_seconds: int = 120):
+        """
+        Initialize the health monitor.
+        
+        Args:
+            watcher: KiteTokenWatcher instance
+            stale_threshold_seconds: Seconds without ticks before triggering action (default 120)
+        """
+        self.watcher = watcher
+        self.stale_threshold = stale_threshold_seconds
+        self.last_tick_time = {}  # instrument_token -> last tick timestamp
+        self.last_any_tick_time = time.time()
+        self.logger = default_logger()
+        self._monitor_thread = None
+        self._stop_event = threading.Event()
+        self._recovering = False
+        self._recovery_attempts = 0
+        self._max_recovery_attempts = 3
+        
+        # Tracking for warning intervals (to avoid spam)
+        self._last_warning_time = 0
+        self._warning_interval = 30  # seconds between warnings
+    
+    def start(self):
+        """Start the health monitor thread."""
+        if self._monitor_thread is not None and self._monitor_thread.is_alive():
+            return
+        
+        self._stop_event.clear()
+        self._monitor_thread = threading.Thread(
+            target=self._monitor_loop,
+            daemon=True,
+            name="TickHealthMonitor"
+        )
+        self._monitor_thread.start()
+        self.logger.info(f"TickHealthMonitor started (threshold: {self.stale_threshold}s)")
+    
+    def stop(self):
+        """Stop the health monitor."""
+        self._stop_event.set()
+        if self._monitor_thread:
+            self._monitor_thread.join(timeout=5)
+    
+    def record_tick(self, instrument_token: int):
+        """Record that a tick was received for an instrument."""
+        current_time = time.time()
+        self.last_tick_time[instrument_token] = current_time
+        self.last_any_tick_time = current_time
+        
+        # Reset recovery attempts on successful tick reception
+        if self._recovery_attempts > 0:
+            self._recovery_attempts = 0
+            self.logger.info("✅ Tick received - Recovery attempts reset")
+        
+        # Reset recovering flag if it was set
+        if self._recovering:
+            self._recovering = False
+    
+    def _get_stale_instruments(self) -> list:
+        """Get list of instruments that haven't received ticks recently."""
+        if not self.last_tick_time:
+            return []
+        
+        current_time = time.time()
+        stale = []
+        
+        for token, last_time in self.last_tick_time.items():
+            if current_time - last_time > self.stale_threshold:
+                stale.append(token)
+        
+        return stale
+    
+    def _get_total_instruments(self) -> int:
+        """Get total number of registered instruments."""
+        if hasattr(self.watcher, 'token_batches'):
+            total = sum(len(batch) for batch in self.watcher.token_batches)
+            return total
+        return len(self.last_tick_time)
+    
+    def _log_warning(self, stale_count: int, total_count: int):
+        """Log warning about stale instruments (with rate limiting) - only during market hours."""
+        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+        
+        # Only log warnings during market hours
+        if not PKDateUtilities.isTradingTime():
+            # Reset warning timer to avoid logging when market reopens
+            self._last_warning_time = time.time()
+            return
+        
+        current_time = time.time()
+        if current_time - self._last_warning_time >= self._warning_interval:
+            self._last_warning_time = current_time
+            
+            # Get additional context
+            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+            is_holiday, holiday_name = PKDateUtilities.isTodayHoliday()
+            
+            if is_holiday:
+                self.logger.debug(f"📅 Holiday ({holiday_name}) - No ticks expected")
+                return
+            
+            self.logger.warning(
+                f"⚠️ TICK HEALTH WARNING: {stale_count}/{total_count} instruments have not received ticks "
+                f"for {self.stale_threshold} seconds. Last tick received {current_time - self.last_any_tick_time:.1f}s ago."
+            )
+    
+    def _trigger_recovery(self):
+        """
+        Trigger recovery action - restart WebSocket and re-register all instruments.
+        
+        Recovery only triggers if:
+        1. It's a trading day (not a holiday)
+        2. Market is currently open (trading time)
+        3. It's a weekday (Monday-Friday)
+        
+        Recovery Behavior:
+        - Stop ALL existing WebSocket processes (clean shutdown)
+        - Wait for cleanup
+        - Re-initialize the client with the SAME token batches
+        - Create the SAME number of new processes (not more)
+        """
+        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+        
+        if self._recovering:
+            return
+        
+        # =============================================================
+        # CRITICAL: Only attempt recovery during expected trading hours
+        # =============================================================
+        
+        # Check if it's a holiday
+        is_holiday, holiday_name = PKDateUtilities.isTodayHoliday()
+        if is_holiday:
+            self.logger.info(f"📅 Today is a holiday ({holiday_name}) - No recovery needed (ticks not expected)")
+            # Reset last tick time to avoid continuous warnings
+            self.last_any_tick_time = time.time()
+            return
+        
+        # Check if it's a weekend
+        current_time = time.time()
+        current_datetime = datetime.fromtimestamp(current_time)
+        is_weekend = current_datetime.weekday() >= 5  # 5=Saturday, 6=Sunday
+        if is_weekend:
+            self.logger.info("📅 Weekend - No recovery needed (market closed)")
+            # Reset last tick time to avoid continuous warnings
+            self.last_any_tick_time = time.time()
+            return
+        
+        # Check if market is open
+        if not PKDateUtilities.isTradingTime():
+            self.logger.info("🕒 Market is closed - No recovery needed (ticks not expected)")
+            # Reset last tick time to avoid continuous warnings
+            self.last_any_tick_time = time.time()
+            return
+        
+        # Also check pre-market time - we might still get some ticks
+        if PKDateUtilities.ispreMarketTime():
+            self.logger.info("🕒 Pre-market hours - Ticks may be limited, but proceeding with recovery if needed")
+        
+        # If we're here, market is open and we should be receiving ticks
+        self.logger.warning(f"⚠️ No ticks received for {self.stale_threshold}s DURING MARKET HOURS! Attempting recovery...")
+        
+        self._recovering = True
+        
+        try:
+            # CRITICAL: First, ensure all existing connections are fully closed
+            if hasattr(self.watcher, 'client') and self.watcher.client:
+                self.logger.info("Stopping ALL existing WebSocket connections...")
+                
+                # Set stop event first to prevent new connections
+                if hasattr(self.watcher.client, 'stop_event'):
+                    self.watcher.client.stop_event.set()
+                
+                # Stop the client (which stops all child processes)
+                self.watcher.client.stop()
+                
+                # Give extra time for sockets to close properly
+                time.sleep(5)
+                
+                # Force terminate any lingering processes
+                if hasattr(self.watcher.client, 'ws_processes'):
+                    for p in self.watcher.client.ws_processes:
+                        if p and p.is_alive():
+                            p.terminate()
+                            p.join(timeout=3)
+            
+            # Clear the client reference
+            self.watcher.client = None
+            
+            # Reset token batch processing
+            if hasattr(self.watcher, '_processing_thread'):
+                self.watcher._processing_thread = None
+            
+            # Wait for OS to release sockets
+            time.sleep(2)
+            
+            # Now recreate with SAME token batches (not multiplied)
+            from PKDevTools.classes.Environment import PKEnvironment
+            from pkbrokers.kite.zerodhaWebSocketClient import ZerodhaWebSocketClient
+            
+            self.logger.info(f"Recreating {len(self.watcher.token_batches)} WebSocket connections...")
+            
+            self.watcher.client = ZerodhaWebSocketClient(
+                enctoken=PKEnvironment().KTOKEN,
+                user_id=self.watcher.user_id if hasattr(self.watcher, 'user_id') else "",
+                token_batches=self.watcher.token_batches,  # Same batches!
+                watcher_queue=self.watcher._watcher_queue,
+                db_conn=self.watcher._get_database(),
+                ws_stop_event=self.watcher.ws_stop_event,
+            )
+            
+            # Restart processing threads
+            self.watcher._processing_thread = threading.Thread(
+                target=self.watcher._process_ticks, 
+                daemon=True, 
+                name="TickProcessor"
+            )
+            self.watcher._processing_thread.start()
+            
+            # Restart WebSocket client
+            self.watcher.client.start()
+            
+            self.logger.info(f"✅ Recovery complete - {len(self.watcher.token_batches)} WebSocket connections reestablished")
+            
+            # Reset last tick time after successful recovery
+            self.last_any_tick_time = time.time()
+            self.last_tick_time.clear()
+            
+        except Exception as e:
+            self.logger.error(f"Recovery failed: {e}")
+        finally:
+            self._recovering = False
+    
+    def _monitor_loop(self):
+        """Main monitoring loop."""
+        last_health_check = time.time()
+        health_check_interval = 10  # Check every 10 seconds
+        
+        while not self._stop_event.is_set():
+            try:
+                current_time = time.time()
+                
+                # Periodic health check
+                if current_time - last_health_check >= health_check_interval:
+                    last_health_check = current_time
+                    
+                    # =============================================================
+                    # Skip health checks when market is closed (no ticks expected)
+                    # =============================================================
+                    from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+                    
+                    # Check if we should be receiving ticks
+                    is_holiday, holiday_name = PKDateUtilities.isTodayHoliday()
+                    is_weekend = datetime.fromtimestamp(current_time).weekday() >= 5
+                    is_market_open = PKDateUtilities.isTradingTime()
+                    
+                    # If market is closed, reset timers and skip checks
+                    if is_holiday or is_weekend or not is_market_open:
+                        # Reset last tick time to avoid false alarms
+                        self.last_any_tick_time = current_time
+                        self.last_tick_time.clear()
+                        if self._recovering:
+                            self._recovering = False
+                        time.sleep(health_check_interval)
+                        continue
+                    
+                    # Check if we've received any ticks at all
+                    time_since_last_any_tick = current_time - self.last_any_tick_time
+                    
+                    if time_since_last_any_tick > self.stale_threshold:
+                        # NO ticks received for any instrument - critical!
+                        self.logger.error(
+                            f"❌ CRITICAL: No ticks received for ANY instrument for {time_since_last_any_tick:.1f} seconds DURING MARKET HOURS!"
+                        )
+                        self._trigger_recovery()
+                    else:
+                        # Check individual instruments
+                        stale_instruments = self._get_stale_instruments()
+                        total_instruments = self._get_total_instruments()
+                        
+                        if stale_instruments:
+                            stale_percentage = (len(stale_instruments) / total_instruments * 100) if total_instruments > 0 else 0
+                            self._log_warning(len(stale_instruments), total_instruments)
+                            
+                            # If more than TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD % of instruments are stale, trigger recovery
+                            if stale_percentage > TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD:
+                                self.logger.error(
+                                    f"⚠️ {stale_percentage:.1f}% of instruments are stale DURING MARKET HOURS! Triggering recovery..."
+                                )
+                                self._trigger_recovery()
+                
+                time.sleep(1)
+                
+            except Exception as e:
+                self.logger.error(f"Health monitor error: {e}")
+                time.sleep(5)
+        
+        self.logger.info("TickHealthMonitor stopped")
+
 class JSONFileWriter:
     """Multiprocessing process to write ticks to JSON file with instrument_token as primary key"""
 
@@ -664,6 +974,9 @@ class KiteTokenWatcher:
                 self.logger.debug(f"Updated shared_stats in watcher: {dict(self.shared_stats)}")
             except Exception as e:
                 self.logger.error(f"Could not update shared_stats: {e}")
+        # Add health monitor
+        self.health_monitor = None
+        self.user_id = None  # Store for recovery
 
     def set_ws_stop_event(self, event):
         """Set the stop event for WebSocket processes"""
@@ -893,6 +1206,10 @@ class KiteTokenWatcher:
                 ws_stop_event=self.ws_stop_event,  # Pass the stop event to WebSocket client
             )
 
+        # Start health monitor after client is initialized
+        self.user_id = os.environ.get("KUSER", local_secrets.get("KUSER", ""))
+        self.health_monitor = TickHealthMonitor(self, stale_threshold_seconds=STALE_THRESHOLD_SECONDS)
+        self.health_monitor.start()
         try:
             self._db_thread = threading.Thread(
                 target=self._process_db_operations, daemon=True, name="DBProcessor"
@@ -1107,6 +1424,9 @@ class KiteTokenWatcher:
                     continue
 
                 if isinstance(tick, Tick):
+                    # Record tick for health monitoring
+                    if self.health_monitor:
+                        self.health_monitor.record_tick(tick.instrument_token)
                     # CRITICAL: Dictionary assignment ensures only latest tick is kept
                     # Older ticks for same instrument are automatically replaced
                     self._tick_batch[tick.instrument_token] = tick
@@ -1414,6 +1734,10 @@ class KiteTokenWatcher:
         """
         self.logger.info("Initiating graceful shutdown...")
         
+        # Stop health monitor
+        if self.health_monitor:
+            self.health_monitor.stop()
+
         # Signal WebSocket processes to stop if we have the event
         if self.ws_stop_event:
             self.logger.info("Signaling WebSocket processes to stop...")
