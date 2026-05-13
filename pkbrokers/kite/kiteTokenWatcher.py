@@ -48,6 +48,7 @@ from PKDevTools.classes import Archiver, log
 from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
 from PKDevTools.classes.PKJoinableQueue import PKJoinableQueue
+from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
 from pkbrokers.kite.instruments import KiteInstruments
 from pkbrokers.kite.zerodhaWebSocketClient import ZerodhaWebSocketClient
@@ -59,8 +60,14 @@ OPTIMAL_BATCH_TICK_WAIT_TIME_SEC = 5
 DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 0.5
 JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 1
 OPTIMAL_MAX_QUEUE_SIZE = 10000
-STALE_THRESHOLD_SECONDS=120
-TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD = 30
+STALE_THRESHOLD_SECONDS = 120
+TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD = 20  # Reduced from 30%
+RECOVERY_COOLDOWN_SECONDS = 60  # Don't triggers recovery more than once every minute
+MAX_CONSECUTIVE_FAILURES = 5
+MIN_INSTRUMENTS_FOR_MONITOR = 100  # Minimum instruments before health monitor activates
+SECONDS_BETWEEN_WARNINGS = 30
+INSTRUMENT_COUNT_LOG_INTERVAL = 300
+HEALTH_CHECK_INTERVAL = 10
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
 OTHER_INDICES = [
@@ -129,34 +136,54 @@ def ensure_ist_datetime(dt_value):
         # Default fallback
         return datetime.now(IST)
 
+
 class TickHealthMonitor:
     """
     Monitors tick reception health across all registered instruments.
     Triggers warnings and recovery actions if no ticks received for too long.
+
+    1. _get_total_instruments() to never return 0
+    2. fallback recovery when no instruments are registered
+    3. cooldown period to prevent recovery spam
+    4. per-WebSocket-process health monitoring
+    5. force recovery after prolonged silence
     """
     
-    def __init__(self, watcher, stale_threshold_seconds: int = 120):
+    def __init__(self, watcher, stale_threshold_seconds: int = STALE_THRESHOLD_SECONDS):
         """
         Initialize the health monitor.
         
         Args:
             watcher: KiteTokenWatcher instance
-            stale_threshold_seconds: Seconds without ticks before triggering action (default 120)
+            stale_threshold_seconds: Seconds without ticks before triggering action (default 60)
         """
         self.watcher = watcher
         self.stale_threshold = stale_threshold_seconds
         self.last_tick_time = {}  # instrument_token -> last tick timestamp
         self.last_any_tick_time = time.time()
+        self.last_any_tick_time_per_process = {}  # websocket_index -> last tick timestamp
         self.logger = default_logger()
         self._monitor_thread = None
         self._stop_event = threading.Event()
         self._recovering = False
         self._recovery_attempts = 0
         self._max_recovery_attempts = 3
+        self._last_recovery_time = 0
+        self._recovery_cooldown = RECOVERY_COOLDOWN_SECONDS  # Don't recover more than once per minute
+        self._consecutive_failures = 0
+        self._max_consecutive_failures = MAX_CONSECUTIVE_FAILURES
         
         # Tracking for warning intervals (to avoid spam)
         self._last_warning_time = 0
-        self._warning_interval = 30  # seconds between warnings
+        self._warning_interval = SECONDS_BETWEEN_WARNINGS  # seconds between warnings
+        
+        # Stats for diagnostics
+        self.stats = {
+            'start_time': time.time(),
+            'recovery_count': 0,
+            'warnings_count': 0,
+            'last_health_check': 0,
+        }
     
     def start(self):
         """Start the health monitor thread."""
@@ -178,16 +205,19 @@ class TickHealthMonitor:
         if self._monitor_thread:
             self._monitor_thread.join(timeout=5)
     
-    def record_tick(self, instrument_token: int):
+    def record_tick(self, instrument_token: int, websocket_index: int = None):
         """Record that a tick was received for an instrument."""
         current_time = time.time()
         self.last_tick_time[instrument_token] = current_time
         self.last_any_tick_time = current_time
         
+        if websocket_index is not None:
+            self.last_any_tick_time_per_process[websocket_index] = current_time
+        
         # Reset recovery attempts on successful tick reception
         if self._recovery_attempts > 0:
             self._recovery_attempts = 0
-            self.logger.info("✅ Tick received - Recovery attempts reset")
+            self.logger.debug("✅ Tick received - Recovery attempts reset")
         
         # Reset recovering flag if it was set
         if self._recovering:
@@ -208,11 +238,54 @@ class TickHealthMonitor:
         return stale
     
     def _get_total_instruments(self) -> int:
-        """Get total number of registered instruments."""
-        if hasattr(self.watcher, 'token_batches'):
+        """
+        Get total number of registered instruments.
+        
+        Never returns 0 - if no instruments are registered,
+        returns a default positive number to ensure monitor runs.
+        """
+        # Try token_batches first
+        if hasattr(self.watcher, 'token_batches') and self.watcher.token_batches:
             total = sum(len(batch) for batch in self.watcher.token_batches)
-            return total
-        return len(self.last_tick_time)
+            if total > 0:
+                return total
+        
+        # Try shared_stats next
+        if hasattr(self.watcher, 'shared_stats') and self.watcher.shared_stats:
+            instrument_count = self.watcher.shared_stats.get('instrument_count', 0)
+            if instrument_count > 0:
+                return instrument_count
+        
+        # Try last_tick_time keys
+        if self.last_tick_time:
+            return len(self.last_tick_time)
+        
+        # If all else fails, return a default positive number
+        # This ensures the monitor doesn't skip checks
+        # Return 1 so percentage calculation won't divide by zero
+        return 1
+    
+    def _get_dead_websocket_processes(self) -> List[int]:
+        """Check which WebSocket processes are dead."""
+        dead = []
+        
+        if not hasattr(self.watcher, 'client') or not self.watcher.client:
+            return dead
+        
+        # Check each WebSocket process
+        if hasattr(self.watcher.client, 'ws_processes'):
+            for i, proc in enumerate(self.watcher.client.ws_processes):
+                if proc and not proc.is_alive():
+                    dead.append(i)
+        
+        # Also check if any process hasn't sent ticks recently
+        current_time = time.time()
+        for process_idx, last_tick_time in self.last_any_tick_time_per_process.items():
+            if current_time - last_tick_time > self.stale_threshold:
+                if process_idx not in dead:
+                    dead.append(process_idx)
+        
+        return dead
     
     def _log_warning(self, stale_count: int, total_count: int):
         """Log warning about stale instruments (with rate limiting) - only during market hours."""
@@ -227,22 +300,66 @@ class TickHealthMonitor:
         current_time = time.time()
         if current_time - self._last_warning_time >= self._warning_interval:
             self._last_warning_time = current_time
+            self.stats['warnings_count'] += 1
             
             # Get additional context
-            from PKDevTools.classes.PKDateUtilities import PKDateUtilities
             is_holiday, holiday_name = PKDateUtilities.isTodayHoliday()
             
             if is_holiday:
                 self.logger.debug(f"📅 Holiday ({holiday_name}) - No ticks expected")
                 return
             
+            # Check for dead WebSocket processes
+            dead_processes = self._get_dead_websocket_processes()
+            dead_info = f", dead WS processes: {dead_processes}" if dead_processes else ""
+            
             self.logger.warning(
                 f"⚠️ TICK HEALTH WARNING: {stale_count}/{total_count} instruments have not received ticks "
-                f"for {self.stale_threshold} seconds. Last tick received {current_time - self.last_any_tick_time:.1f}s ago."
+                f"for {self.stale_threshold} seconds. Last tick received {current_time - self.last_any_tick_time:.1f}s ago{dead_info}."
             )
+    
+    def _should_attempt_recovery(self) -> bool:
+        """
+        Determine if recovery should be attempted.
+        Use Cooldown period to prevent recovery spam.
+        """
+        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+        
+        # Check cooldown
+        if time.time() - self._last_recovery_time < self._recovery_cooldown:
+            return False
+        
+        # Skip on holidays/weekends
+        is_holiday, holiday_name = PKDateUtilities.isTodayHoliday()
+        if is_holiday:
+            self.logger.info(f"📅 Today is a holiday ({holiday_name}) - No recovery needed")
+            return False
+        current_time = PKDateUtilities.currentDateTime().now()
+        # Skip on weekends
+        if current_time.now().weekday() >= 5:
+            self.logger.info("📅 Weekend - No recovery needed")
+            return False
+        
+        # Allow recovery during market hours OR pre-market (9:00-9:15) OR post-market (15:30-16:00)
+        if PKDateUtilities.isTradingTime() or PKDateUtilities.ispreMarketTime():
+            return True
+        
+        # Also allow recovery in the first 15 minutes after market close (to catch any late ticks)
+        
+        market_close = current_time.now().replace(hour=15, minute=30, second=0, microsecond=0)
+        if current_time > market_close and (current_time - market_close).total_seconds() < 900:
+            return True
+        
+        return False
     
     def _trigger_recovery(self):
         """
+        Trigger recovery action - restart WebSocket and re-register all instruments.
+        
+        Enhanced with:
+        - Cooldown period
+        - Dead process detection
+        - Token refresh on authentication errors
         Trigger recovery action - restart WebSocket and re-register all instruments.
         
         Recovery only triggers if:
@@ -256,130 +373,145 @@ class TickHealthMonitor:
         - Re-initialize the client with the SAME token batches
         - Create the SAME number of new processes (not more)
         """
-        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
-        
         if self._recovering:
             return
         
-        # =============================================================
-        # CRITICAL: Only attempt recovery during expected trading hours
-        # =============================================================
-        
-        # Check if it's a holiday
-        is_holiday, holiday_name = PKDateUtilities.isTodayHoliday()
-        if is_holiday:
-            self.logger.info(f"📅 Today is a holiday ({holiday_name}) - No recovery needed (ticks not expected)")
-            # Reset last tick time to avoid continuous warnings
-            self.last_any_tick_time = time.time()
+        if not self._should_attempt_recovery():
             return
         
-        # Check if it's a weekend
-        current_time = time.time()
-        current_datetime = datetime.fromtimestamp(current_time)
-        is_weekend = current_datetime.weekday() >= 5  # 5=Saturday, 6=Sunday
-        if is_weekend:
-            self.logger.info("📅 Weekend - No recovery needed (market closed)")
-            # Reset last tick time to avoid continuous warnings
-            self.last_any_tick_time = time.time()
-            return
+        # Check consecutive failures
+        self._consecutive_failures += 1
+        if self._consecutive_failures > self._max_consecutive_failures:
+            self.logger.error(f"❌ {self._consecutive_failures} consecutive failures! Manual intervention may be needed.")
+            # Reset counter after logging
+            self._consecutive_failures = 0
         
-        # Check if market is open
-        if not PKDateUtilities.isTradingTime():
-            self.logger.info("🕒 Market is closed - No recovery needed (ticks not expected)")
-            # Reset last tick time to avoid continuous warnings
-            self.last_any_tick_time = time.time()
-            return
-        
-        # Also check pre-market time - we might still get some ticks
-        if PKDateUtilities.ispreMarketTime():
-            self.logger.info("🕒 Pre-market hours - Ticks may be limited, but proceeding with recovery if needed")
-        
-        # If we're here, market is open and we should be receiving ticks
-        self.logger.warning(f"⚠️ No ticks received for {self.stale_threshold}s DURING MARKET HOURS! Attempting recovery...")
-        
+        self.logger.warning("⚠️ Triggering recovery...")
+        self._last_recovery_time = time.time()
+        self.stats['recovery_count'] += 1
         self._recovering = True
         
         try:
-            # CRITICAL: First, ensure all existing connections are fully closed
+            # Step 1: Check if token needs refresh
+            if self._is_token_expired():
+                self.logger.warning("Token may be expired, refreshing...")
+                self._refresh_token()
+            
+            # Step 2: Check which WebSocket processes are dead
+            dead_processes = self._get_dead_websocket_processes()
+            if dead_processes:
+                self.logger.warning(f"Dead WebSocket processes: {dead_processes}")
+            
+            # Step 3: Force restart of WebSocket client
             if hasattr(self.watcher, 'client') and self.watcher.client:
-                self.logger.info("Stopping ALL existing WebSocket connections...")
+                self.logger.info("Stopping WebSocket client...")
+                self.watcher.client.stop_event.set()
                 
-                # Set stop event first to prevent new connections
-                if hasattr(self.watcher.client, 'stop_event'):
-                    self.watcher.client.stop_event.set()
+                # Wait for processes to terminate
+                time.sleep(3)
                 
-                # Stop the client (which stops all child processes)
-                self.watcher.client.stop()
-                
-                # Give extra time for sockets to close properly
-                time.sleep(5)
-                
-                # Force terminate any lingering processes
+                # Force terminate if needed
                 if hasattr(self.watcher.client, 'ws_processes'):
-                    for p in self.watcher.client.ws_processes:
+                    for i, p in enumerate(self.watcher.client.ws_processes):
                         if p and p.is_alive():
+                            self.logger.warning(f"Force terminating process {i}")
                             p.terminate()
                             p.join(timeout=3)
             
-            # Clear the client reference
-            self.watcher.client = None
+            # Step 4: Recreate client with same token batches
+            if hasattr(self.watcher, 'token_batches') and self.watcher.token_batches:
+                self.logger.info(f"Recreating WebSocket client with {len(self.watcher.token_batches)} batches")
+                
+                from PKDevTools.classes.Environment import PKEnvironment
+                
+                self.watcher.client = ZerodhaWebSocketClient(
+                    enctoken=PKEnvironment().KTOKEN,
+                    user_id=self.watcher.user_id if hasattr(self.watcher, 'user_id') else "",
+                    token_batches=self.watcher.token_batches,
+                    watcher_queue=self.watcher._watcher_queue,
+                    db_conn=self.watcher._get_database(),
+                    ws_stop_event=self.watcher.ws_stop_event,
+                )
+                
+                # Start the new client
+                self.watcher.client.start()
+                self.logger.info("✅ WebSocket client restarted successfully")
+            else:
+                self.logger.error("Cannot recover - no token batches available")
             
-            # Reset token batch processing
-            if hasattr(self.watcher, '_processing_thread'):
-                self.watcher._processing_thread = None
-            
-            # Wait for OS to release sockets
-            time.sleep(2)
-            
-            # Now recreate with SAME token batches (not multiplied)
-            from PKDevTools.classes.Environment import PKEnvironment
-            from pkbrokers.kite.zerodhaWebSocketClient import ZerodhaWebSocketClient
-            
-            self.logger.info(f"Recreating {len(self.watcher.token_batches)} WebSocket connections...")
-            
-            self.watcher.client = ZerodhaWebSocketClient(
-                enctoken=PKEnvironment().KTOKEN,
-                user_id=self.watcher.user_id if hasattr(self.watcher, 'user_id') else "",
-                token_batches=self.watcher.token_batches,  # Same batches!
-                watcher_queue=self.watcher._watcher_queue,
-                db_conn=self.watcher._get_database(),
-                ws_stop_event=self.watcher.ws_stop_event,
-            )
-            
-            # Restart processing threads
-            self.watcher._processing_thread = threading.Thread(
-                target=self.watcher._process_ticks, 
-                daemon=True, 
-                name="TickProcessor"
-            )
-            self.watcher._processing_thread.start()
-            
-            # Restart WebSocket client
-            self.watcher.client.start()
-            
-            self.logger.info(f"✅ Recovery complete - {len(self.watcher.token_batches)} WebSocket connections reestablished")
-            
-            # Reset last tick time after successful recovery
-            self.last_any_tick_time = time.time()
+            # Step 5: Reset tracking
             self.last_tick_time.clear()
+            self.last_any_tick_time = time.time()
+            self.last_any_tick_time_per_process.clear()
+            self._recovery_attempts = 0
             
         except Exception as e:
             self.logger.error(f"Recovery failed: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             self._recovering = False
     
+    def _is_token_expired(self) -> bool:
+        """Check if the Kite token might be expired."""
+        # Try to make a quick API call to check token validity
+        try:
+            import requests
+            from PKDevTools.classes.Environment import PKEnvironment
+            
+            token = PKEnvironment().KTOKEN
+            if not token or len(token) < 20:
+                return True
+            
+            # Quick validation - check if token looks like a valid enctoken
+            # enctoken is typically a long base64-like string
+            if not any(c in token for c in ['+', '/', '=']):
+                # Token might be invalid format
+                return True
+            
+            return False
+        except Exception:
+            return False
+    
+    def _refresh_token(self):
+        """Refresh the Kite authentication token."""
+        try:
+            from pkbrokers.kite.examples.externals import kite_auth
+            from PKDevTools.classes.Environment import PKEnvironment
+            
+            kite_auth()
+            new_token = PKEnvironment().KTOKEN
+            
+            if new_token and len(new_token) > 20:
+                # Update environment for child processes
+                os.environ["KTOKEN"] = new_token
+                self.logger.info("✅ Token refreshed successfully")
+            else:
+                self.logger.warning("Token refresh returned invalid token")
+        except Exception as e:
+            self.logger.error(f"Token refresh failed: {e}")
+    
     def _monitor_loop(self):
-        """Main monitoring loop."""
+        """Main monitoring loop with enhanced diagnostics."""
         last_health_check = time.time()
-        health_check_interval = 10  # Check every 10 seconds
+        health_check_interval = HEALTH_CHECK_INTERVAL  # Check every 10 seconds
+        last_instrument_count_log = 0
+        instrument_count_log_interval = INSTRUMENT_COUNT_LOG_INTERVAL  # Log instrument count every 5 minutes
         
         while not self._stop_event.is_set():
             try:
                 current_time = time.time()
                 
+                # Log instrument count periodically for diagnostics
+                if current_time - last_instrument_count_log > instrument_count_log_interval:
+                    total = self._get_total_instruments()
+                    self.logger.info(f"Health monitor: {total} instruments registered, {len(self.last_tick_time)} with ticks")
+                    last_instrument_count_log = current_time
+                
                 # Periodic health check
                 if current_time - last_health_check >= health_check_interval:
                     last_health_check = current_time
+                    self.stats['last_health_check'] = current_time
                     
                     # =============================================================
                     # Skip health checks when market is closed (no ticks expected)
@@ -401,38 +533,62 @@ class TickHealthMonitor:
                         time.sleep(health_check_interval)
                         continue
                     
+                    # Get total instruments (never returns 0)
+                    total_instruments = self._get_total_instruments()
+                    
+                    # SPECIAL CASE: If we have zero registered instruments for too long, force a recovery
+                    if total_instruments <= 1:  # 1 is our default fallback
+                        if current_time - self.stats['start_time'] > 120:
+                            self.logger.error("❌ No instruments registered after 2 minutes! Forcing recovery.")
+                            self._trigger_recovery()
+                            time.sleep(health_check_interval)
+                            continue
+                    
                     # Check if we've received any ticks at all
                     time_since_last_any_tick = current_time - self.last_any_tick_time
                     
                     if time_since_last_any_tick > self.stale_threshold:
                         # NO ticks received for any instrument - critical!
+                        dead_processes = self._get_dead_websocket_processes()
                         self.logger.error(
-                            f"❌ CRITICAL: No ticks received for ANY instrument for {time_since_last_any_tick:.1f} seconds DURING MARKET HOURS!"
+                            f"❌ CRITICAL: No ticks received for ANY instrument for {time_since_last_any_tick:.1f} seconds "
+                            f"DURING MARKET HOURS! Dead processes: {dead_processes}"
                         )
                         self._trigger_recovery()
                     else:
                         # Check individual instruments
                         stale_instruments = self._get_stale_instruments()
-                        total_instruments = self._get_total_instruments()
                         
-                        if stale_instruments:
-                            stale_percentage = (len(stale_instruments) / total_instruments * 100) if total_instruments > 0 else 0
+                        if stale_instruments and total_instruments > 0:
+                            stale_percentage = (len(stale_instruments) / total_instruments * 100)
                             self._log_warning(len(stale_instruments), total_instruments)
                             
-                            # If more than TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD % of instruments are stale, trigger recovery
+                            # If more than threshold % of instruments are stale, trigger recovery
                             if stale_percentage > TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD:
                                 self.logger.error(
                                     f"⚠️ {stale_percentage:.1f}% of instruments are stale DURING MARKET HOURS! Triggering recovery..."
                                 )
                                 self._trigger_recovery()
+                            elif stale_percentage > 10:
+                                # Log but don't recover for mild staleness
+                                self.logger.debug(f"{stale_percentage:.1f}% instruments stale - monitoring")
+                    
+                    # Also check for dead WebSocket processes even if we're getting some ticks
+                    dead_processes = self._get_dead_websocket_processes()
+                    if dead_processes:
+                        self.logger.warning(f"Dead WebSocket processes detected: {dead_processes}")
+                        self._trigger_recovery()
                 
                 time.sleep(1)
                 
             except Exception as e:
                 self.logger.error(f"Health monitor error: {e}")
+                import traceback
+                traceback.print_exc()
                 time.sleep(5)
         
         self.logger.info("TickHealthMonitor stopped")
+
 
 class JSONFileWriter:
     """Multiprocessing process to write ticks to JSON file with instrument_token as primary key"""
@@ -777,7 +933,7 @@ class JSONFileWriter:
         instrument_token = str(tick_data["instrument_token"])  # Ensure string key
 
         if instrument_token not in data:
-            # Initialize new instrument entry
+            # Initialize new instrument entry            
             try:
                 trading_symbol = "NA"
                 trading_symbol = self.kite_instruments[int(instrument_token)].tradingsymbol
@@ -861,6 +1017,7 @@ class JSONFileWriter:
         
         self.logger.warning("JSON writer stopped")
 
+
 class KiteTokenWatcher:
     """
     A high-performance tick data watcher and processor for Zerodha Kite Connect API.
@@ -894,6 +1051,11 @@ class KiteTokenWatcher:
         >>> watcher = KiteTokenWatcher(tokens=[256265, 265])
         >>> watcher.watch()  # Starts watching with 30-second batch intervals
         >>> watcher.stop()   # Graceful shutdown
+    
+    1. token batch loading with multiple fallback sources
+    2. WebSocket process health monitoring
+    3. shared_stats updates for instrument count
+    4. proper error recovery in watch() method
     """
 
     def __init__(
@@ -933,8 +1095,29 @@ class KiteTokenWatcher:
         self.client = client
         self.logger = default_logger()
         self._db_instance = None
-        self.logger.debug(f"KiteTokenWatcher.__init__ received shared_stats: {dict(shared_stats) if shared_stats else 'None'}")
-        self.logger.debug(f"shared_stats type: {type(shared_stats)}")
+        
+        # Initialize shared_stats properly
+        self.shared_stats = shared_stats if shared_stats is not None else {}
+        self.logger.debug(f"KiteTokenWatcher.__init__ received shared_stats: {dict(self.shared_stats) if self.shared_stats else 'None'}")
+        
+        # Initialize shared_stats with defaults if empty
+        if self.shared_stats:
+            if 'instrument_count' not in self.shared_stats:
+                self.shared_stats['instrument_count'] = 0
+            if 'instruments_with_ticks' not in self.shared_stats:
+                self.shared_stats['instruments_with_ticks'] = 0
+            if 'ticks_processed' not in self.shared_stats:
+                self.shared_stats['ticks_processed'] = 0
+            if 'uptime_seconds' not in self.shared_stats:
+                self.shared_stats['uptime_seconds'] = 0
+            if 'candles_created' not in self.shared_stats:
+                self.shared_stats['candles_created'] = 0
+            if 'candles_completed' not in self.shared_stats:
+                self.shared_stats['candles_completed'] = 0
+            if 'last_tick_time' not in self.shared_stats:
+                self.shared_stats['last_tick_time'] = 0
+            if 'start_time' not in self.shared_stats:
+                self.shared_stats['start_time'] = time.time()
 
         # JSON file writer
         self.json_output_path = json_output_path or os.path.join(
@@ -954,26 +1137,9 @@ class KiteTokenWatcher:
         self._last_processed_instruments = []
         self._next_process_log_time = None
         # Initialize in-memory candle store for high-performance candle access
-        self._candle_store = get_candle_store(shared_stats=shared_stats)
+        self._candle_store = get_candle_store(shared_stats=self.shared_stats)
         self._kite_instruments = {}
         self.ws_stop_event = None  # Add this for WebSocket stop signal
-        self.shared_stats = shared_stats if shared_stats is not None else {}
-        # Also update the shared_stats dictionary with initial values
-        if self.shared_stats is not None:
-            self.shared_stats['instrument_count'] = 0
-            self.shared_stats['instruments_with_ticks'] = 0
-            self.shared_stats['ticks_processed'] = 0
-            self.shared_stats['uptime_seconds'] = 0
-            self.shared_stats['candles_created'] = 0
-            self.shared_stats['candles_completed'] = 0
-            self.shared_stats['last_tick_time'] = 0
-            self.shared_stats['start_time'] = time.time()
-            
-            try:
-                self.shared_stats['watcher_initialized'] = True
-                self.logger.debug(f"Updated shared_stats in watcher: {dict(self.shared_stats)}")
-            except Exception as e:
-                self.logger.error(f"Could not update shared_stats: {e}")
         # Add health monitor
         self.health_monitor = None
         self.user_id = None  # Store for recovery
@@ -1038,156 +1204,35 @@ class KiteTokenWatcher:
         """
         local_secrets = PKEnvironment().allSecrets
         self._db_instance = self._get_database()
+        
+        # Start JSON writer early
+        self.json_writer.start(kite_instruments=self._kite_instruments)
+        time.sleep(JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC)
 
         # Auto-fetch tokens if none provided
         if len(self.token_batches) == 0:
-            API_KEY = "kitefront"
-            ACCESS_TOKEN = os.environ.get(
-                "KTOKEN", local_secrets.get("KTOKEN", "You need your Kite token")
-            )
-            kite = KiteInstruments(api_key=API_KEY, access_token=ACCESS_TOKEN)
-
-            try:
-                if kite.get_instrument_count() == 0:
-                    kite.sync_instruments(force_fetch=True)
-                instruments = kite.fetch_instruments()
-                # Start JSON writer first
-                self._kite_instruments = kite.kite_instruments if len(instruments) > 0 else {}
-            except Exception as db_error:
-                # Handle Turso database blocked/unavailable - use fallback
-                self.logger.warning(f"Database unavailable, using fallback: {db_error}")
-                self._kite_instruments = {}
-                instruments = []
+            tokens = self._fetch_tokens_with_fallback()
             
-            self.json_writer.start(kite_instruments=self._kite_instruments)
-            
-            # Register instruments with candle store for symbol mapping
-            for token, inst in self._kite_instruments.items():
-                if hasattr(inst, 'tradingsymbol'):
-                    self._candle_store.register_instrument(int(token), inst.tradingsymbol)
-            time.sleep(
-                JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC
-            )  # Let JSON writer initialize
-
-            try:
-                equities = kite.get_equities(column_names="instrument_token")
-                tokens = kite.get_instrument_tokens(equities=equities)
-                self.logger.debug(f"Got {len(tokens)} tokens from Turso DB")
-            except Exception as db_error:
-                # Fallback: Use cached instruments or fetch from Kite API directly
-                self.logger.warning(f"Could not get equities from DB, using fallback: {db_error}")
-                tokens = []
-            
-            # CRITICAL FIX: Fallback logic runs whenever tokens is empty (0)
-            # This handles BOTH exception case AND when DB returns empty list gracefully
             if len(tokens) == 0:
-                self.logger.warning("No tokens from DB, applying fallback strategies...")
-                
-                # Fallback 0: First check if _kite_instruments was populated by sync_instruments
-                # This happens when sync_instruments(force_fetch=True) fetches from Zerodha API
-                if self._kite_instruments and len(self._kite_instruments) > 0:
-                    tokens = [int(token) for token in self._kite_instruments.keys()]
-                    self.logger.debug(f"Using {len(tokens)} tokens from already-loaded kite_instruments")
-                    # Instruments are already registered in candle store above, so skip fallbacks
-                
-                # Fallback 1: Fetch NSE equity symbols from PKScreener and map to Kite tokens
-                if len(tokens) == 0:
-                    try:
-                        import pandas as pd
-                        import requests
-                        self.logger.debug("Fetching NSE equity symbols from PKScreener GitHub...")
-                        equity_csv_url = "https://raw.githubusercontent.com/pkjmesra/PKScreener/main/results/Indices/EQUITY_L.csv"
-                        response = requests.get(equity_csv_url, timeout=30)
-                        if response.status_code == 200:
-                            from io import StringIO
-                            equity_df = pd.read_csv(StringIO(response.text))
-                            nse_symbols = equity_df['SYMBOL'].str.strip().tolist()
-                            self.logger.debug(f"Fetched {len(nse_symbols)} NSE symbols from PKScreener")
-                            
-                            # Now fetch Kite instruments to map symbols to tokens
-                            kite_url = "https://api.kite.trade/instruments/NSE"
-                            kite_response = requests.get(kite_url, timeout=60)
-                            if kite_response.status_code == 200:
-                                kite_df = pd.read_csv(StringIO(kite_response.text))
-                                # Filter to only EQ segment and match with our NSE symbols
-                                eq_df = kite_df[
-                                    (kite_df['segment'] == 'NSE') & 
-                                    (kite_df['tradingsymbol'].isin(nse_symbols))
-                                ]
-                                tokens = eq_df['instrument_token'].tolist()
-                                self.logger.debug(f"Mapped {len(tokens)} NSE symbols to Kite instrument tokens")
-                                # Register instruments with candle store
-                                for _, row in eq_df.iterrows():
-                                    self._candle_store.register_instrument(
-                                        int(row['instrument_token']),
-                                        row.get('tradingsymbol', str(row['instrument_token']))
-                                    )
-                            else:
-                                self.logger.warning(f"Kite instruments fetch failed: {kite_response.status_code}")
-                        else:
-                            self.logger.warning(f"PKScreener equity CSV fetch failed: {response.status_code}")
-                    except Exception as pkscreener_error:
-                        self.logger.warning(f"PKScreener fallback failed: {pkscreener_error}")
-                
-                # Fallback 2: Try InstrumentHistory API if PKScreener failed
-                if len(tokens) == 0:
-                    try:
-                        from pkbrokers.kite.instrumentHistory import InstrumentHistory
-                        hist = InstrumentHistory(access_token=ACCESS_TOKEN)
-                        instruments_df = hist.get_instruments(exchange="NSE")
-                        if instruments_df is not None and len(instruments_df) > 0:
-                            tokens = instruments_df[instruments_df['segment'] == 'NSE']['instrument_token'].tolist()
-                            self.logger.debug(f"Fetched {len(tokens)} tokens from InstrumentHistory API")
-                            for _, row in instruments_df[instruments_df['segment'] == 'NSE'].iterrows():
-                                self._candle_store.register_instrument(
-                                    int(row['instrument_token']), 
-                                    row.get('tradingsymbol', str(row['instrument_token']))
-                                )
-                    except Exception as api_error:
-                        self.logger.warning(f"InstrumentHistory failed: {api_error}")
-                
-                # Fallback 3: Fetch all instruments directly from Zerodha as last resort
-                if len(tokens) == 0:
-                    try:
-                        import pandas as pd
-                        import requests
-                        self.logger.debug("Fetching ALL instruments directly from Zerodha CSV...")
-                        nse_url = "https://api.kite.trade/instruments/NSE"
-                        response = requests.get(nse_url, timeout=60)
-                        if response.status_code == 200:
-                            from io import StringIO
-                            df = pd.read_csv(StringIO(response.text))
-                            # Filter for EQ (equity) segment only
-                            eq_df = df[df['segment'] == 'NSE']
-                            tokens = eq_df['instrument_token'].tolist()
-                            self.logger.debug(f"Fetched {len(tokens)} NSE tokens from Zerodha CSV")
-                            for _, row in eq_df.iterrows():
-                                self._candle_store.register_instrument(
-                                    int(row['instrument_token']),
-                                    row.get('tradingsymbol', str(row['instrument_token']))
-                                )
-                        else:
-                            self.logger.warning(f"Zerodha CSV fetch failed with status {response.status_code}")
-                    except Exception as csv_error:
-                        self.logger.error(f"Could not fetch instruments from Zerodha CSV: {csv_error}")
+                self.logger.error("❌ No tokens could be fetched from any source!")
+                self.logger.warning("Will use fallback indices only...")
+                # Use at least indices so we get some data
+                tokens = list(set(NIFTY_50 + BSE_SENSEX + OTHER_INDICES))
             
-            # Always include indices even if database is unavailable
-            tokens = list(set(NIFTY_50 + BSE_SENSEX + OTHER_INDICES + tokens))
+            # Update shared_stats with instrument count
+            if self.shared_stats is not None:
+                self.shared_stats['instrument_count'] = len(tokens)
+                self.logger.debug(f"Updated shared_stats instrument_count = {len(tokens)}")
             
-            # Log warning if we only have indices (no equities)
-            if len(tokens) <= len(NIFTY_50 + BSE_SENSEX + OTHER_INDICES):
-                self.logger.warning(
-                    f"Only {len(tokens)} index tokens available. "
-                    f"Database may be blocked. Ticks will be limited to indices only."
-                )
-
             self.token_batches = [
                 tokens[i : i + OPTIMAL_TOKEN_BATCH_SIZE]
                 for i in range(0, len(tokens), OPTIMAL_TOKEN_BATCH_SIZE)
             ]
+            
+            self.logger.info(f"Created {len(self.token_batches)} token batches with {len(tokens)} total instruments")
 
         self.logger.debug(
-            f"Fetched {len(tokens)} tokens. Divided into {len(self.token_batches)} batches."
+            f"Fetched tokens. Divided into {len(self.token_batches)} batches."
         )
 
         # Initialize WebSocket client if not provided
@@ -1203,21 +1248,22 @@ class KiteTokenWatcher:
                 token_batches=self.token_batches,
                 watcher_queue=self._watcher_queue,
                 db_conn=self._db_instance,
-                ws_stop_event=self.ws_stop_event,  # Pass the stop event to WebSocket client
+                ws_stop_event=self.ws_stop_event,
             )
 
         # Start health monitor after client is initialized
         self.user_id = os.environ.get("KUSER", local_secrets.get("KUSER", ""))
         self.health_monitor = TickHealthMonitor(self, stale_threshold_seconds=STALE_THRESHOLD_SECONDS)
         self.health_monitor.start()
+        
         try:
+            # Start database thread
             self._db_thread = threading.Thread(
                 target=self._process_db_operations, daemon=True, name="DBProcessor"
             )
             self._db_thread.start()
-            time.sleep(
-                DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC
-            )  # Let's give time to the DB processes to get started
+            time.sleep(DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC)
+            
             # Start processing threads
             self._processing_thread = threading.Thread(
                 target=self._process_ticks, daemon=True, name="TickProcessor"
@@ -1233,6 +1279,156 @@ class KiteTokenWatcher:
         except Exception as e:
             self.logger.error(f"Error in client: {e}")
             self.stop()
+
+    def _fetch_tokens_with_fallback(self) -> List[int]:
+        """
+        Fetch instrument tokens with multiple fallback strategies.
+        
+        Returns:
+            List of instrument tokens
+        """
+        tokens = []
+        local_secrets = PKEnvironment().allSecrets
+        API_KEY = "kitefront"
+        ACCESS_TOKEN = os.environ.get(
+            "KTOKEN", local_secrets.get("KTOKEN", "You need your Kite token")
+        )
+        kite = KiteInstruments(api_key=API_KEY, access_token=ACCESS_TOKEN)
+
+        try:
+            if kite.get_instrument_count() == 0:
+                kite.sync_instruments(force_fetch=True)
+            instruments = kite.fetch_instruments()
+            # Start JSON writer first
+            self._kite_instruments = kite.kite_instruments if len(instruments) > 0 else {}
+        except Exception as db_error:
+            # Handle Turso database blocked/unavailable - use fallback
+            self.logger.warning(f"Database unavailable, using fallback: {db_error}")
+            self._kite_instruments = {}
+            instruments = []
+        
+        self.json_writer.start(kite_instruments=self._kite_instruments)
+        
+        # Register instruments with candle store for symbol mapping
+        for token, inst in self._kite_instruments.items():
+            if hasattr(inst, 'tradingsymbol'):
+                self._candle_store.register_instrument(int(token), inst.tradingsymbol)
+        time.sleep(
+            JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC
+        )  # Let JSON writer initialize
+
+        try:
+            equities = kite.get_equities(column_names="instrument_token")
+            tokens = kite.get_instrument_tokens(equities=equities)
+            self.logger.debug(f"Got {len(tokens)} tokens from Turso DB")
+        except Exception as db_error:
+            # Fallback: Use cached instruments or fetch from Kite API directly
+            self.logger.warning(f"Could not get equities from DB, using fallback: {db_error}")
+            tokens = []
+        
+        # CRITICAL FIX: Fallback logic runs whenever tokens is empty (0)
+        # This handles BOTH exception case AND when DB returns empty list gracefully
+        if len(tokens) == 0:
+            self.logger.warning("No tokens from DB, applying fallback strategies...")
+            
+            # Fallback 0: First check if _kite_instruments was populated by sync_instruments
+            # This happens when sync_instruments(force_fetch=True) fetches from Zerodha API
+            if self._kite_instruments and len(self._kite_instruments) > 0:
+                tokens = [int(token) for token in self._kite_instruments.keys()]
+                self.logger.debug(f"Using {len(tokens)} tokens from already-loaded kite_instruments")
+                # Instruments are already registered in candle store above, so skip fallbacks
+            
+            # Fallback 1: Fetch NSE equity symbols from PKScreener and map to Kite tokens
+            if len(tokens) == 0:
+                try:
+                    import pandas as pd
+                    import requests
+                    self.logger.debug("Fetching NSE equity symbols from PKScreener GitHub...")
+                    equity_csv_url = "https://raw.githubusercontent.com/pkjmesra/PKScreener/main/results/Indices/EQUITY_L.csv"
+                    response = requests.get(equity_csv_url, timeout=30)
+                    if response.status_code == 200:
+                        from io import StringIO
+                        equity_df = pd.read_csv(StringIO(response.text))
+                        nse_symbols = equity_df['SYMBOL'].str.strip().tolist()
+                        self.logger.debug(f"Fetched {len(nse_symbols)} NSE symbols from PKScreener")
+                        
+                        # Now fetch Kite instruments to map symbols to tokens
+                        kite_url = "https://api.kite.trade/instruments/NSE"
+                        kite_response = requests.get(kite_url, timeout=60)
+                        if kite_response.status_code == 200:
+                            kite_df = pd.read_csv(StringIO(kite_response.text))
+                            # Filter to only EQ segment and match with our NSE symbols
+                            eq_df = kite_df[
+                                (kite_df['segment'] == 'NSE') & 
+                                (kite_df['tradingsymbol'].isin(nse_symbols))
+                            ]
+                            tokens = eq_df['instrument_token'].tolist()
+                            self.logger.debug(f"Mapped {len(tokens)} NSE symbols to Kite instrument tokens")
+                            # Register instruments with candle store
+                            for _, row in eq_df.iterrows():
+                                self._candle_store.register_instrument(
+                                    int(row['instrument_token']),
+                                    row.get('tradingsymbol', str(row['instrument_token']))
+                                )
+                        else:
+                            self.logger.warning(f"Kite instruments fetch failed: {kite_response.status_code}")
+                    else:
+                        self.logger.warning(f"PKScreener equity CSV fetch failed: {response.status_code}")
+                except Exception as pkscreener_error:
+                    self.logger.warning(f"PKScreener fallback failed: {pkscreener_error}")
+            
+            # Fallback 2: Try InstrumentHistory API if PKScreener failed
+            if len(tokens) == 0:
+                try:
+                    from pkbrokers.kite.instrumentHistory import InstrumentHistory
+                    hist = InstrumentHistory(access_token=ACCESS_TOKEN)
+                    instruments_df = hist.get_instruments(exchange="NSE")
+                    if instruments_df is not None and len(instruments_df) > 0:
+                        tokens = instruments_df[instruments_df['segment'] == 'NSE']['instrument_token'].tolist()
+                        self.logger.debug(f"Fetched {len(tokens)} tokens from InstrumentHistory API")
+                        for _, row in instruments_df[instruments_df['segment'] == 'NSE'].iterrows():
+                            self._candle_store.register_instrument(
+                                int(row['instrument_token']), 
+                                row.get('tradingsymbol', str(row['instrument_token']))
+                            )
+                except Exception as api_error:
+                    self.logger.warning(f"InstrumentHistory failed: {api_error}")
+            
+            # Fallback 3: Fetch all instruments directly from Zerodha as last resort
+            if len(tokens) == 0:
+                try:
+                    import pandas as pd
+                    import requests
+                    self.logger.debug("Fetching ALL instruments directly from Zerodha CSV...")
+                    nse_url = "https://api.kite.trade/instruments/NSE"
+                    response = requests.get(nse_url, timeout=60)
+                    if response.status_code == 200:
+                        from io import StringIO
+                        df = pd.read_csv(StringIO(response.text))
+                        # Filter for EQ (equity) segment only
+                        eq_df = df[df['segment'] == 'NSE']
+                        tokens = eq_df['instrument_token'].tolist()
+                        self.logger.debug(f"Fetched {len(tokens)} NSE tokens from Zerodha CSV")
+                        for _, row in eq_df.iterrows():
+                            self._candle_store.register_instrument(
+                                int(row['instrument_token']),
+                                row.get('tradingsymbol', str(row['instrument_token']))
+                            )
+                    else:
+                        self.logger.warning(f"Zerodha CSV fetch failed with status {response.status_code}")
+                except Exception as csv_error:
+                    self.logger.error(f"Could not fetch instruments from Zerodha CSV: {csv_error}")
+        
+        # Always include indices even if database is unavailable
+        tokens = list(set(NIFTY_50 + BSE_SENSEX + OTHER_INDICES + tokens))
+        
+        # Log warning if we only have indices (no equities)
+        if len(tokens) <= len(NIFTY_50 + BSE_SENSEX + OTHER_INDICES):
+            self.logger.warning(
+                f"Only {len(tokens)} index tokens available. "
+                f"Database may be blocked. Ticks will be limited to indices only."
+            )
+        return tokens
 
     def _get_database(self):
         """
@@ -1266,7 +1462,7 @@ class KiteTokenWatcher:
 
         processed_batch = []
         total_instruments = len(tick_batch)
-        self.logger.info(
+        self.logger.debug(
             f"Processing batch with {total_instruments} unique instruments"
         )
 
@@ -1338,6 +1534,12 @@ class KiteTokenWatcher:
                 else:
                     self.logger.debug(f"Failed to update candle store for {trading_symbol or instrument_token}")
                     
+                # Update shared_stats via candle store
+                if hasattr(self, 'shared_stats') and self.shared_stats is not None:
+                    self.shared_stats['ticks_processed'] = self._candle_store.stats.get('ticks_processed', 0)
+                    self.shared_stats['instruments_with_ticks'] = self._candle_store.stats.get('instruments_with_ticks', 0)
+                    self.shared_stats['instrument_count'] = len(self._candle_store.instruments)
+                    
             except Exception as e:
                 self.logger.debug(f"Error updating candle store: {e}")
 
@@ -1346,7 +1548,7 @@ class KiteTokenWatcher:
             db = self._get_database()
             if db:
                 db.insert_ticks(processed_batch)
-                self.logger.info(
+                self.logger.debug(
                     f"Successfully added {len(processed_batch)} records to database queue"
                 )
         except Exception as e:
@@ -1424,9 +1626,10 @@ class KiteTokenWatcher:
                     continue
 
                 if isinstance(tick, Tick):
-                    # Record tick for health monitoring
+                    # Record tick for health monitoring (get websocket index if available)
+                    ws_index = getattr(tick, 'websocket_index', None)
                     if self.health_monitor:
-                        self.health_monitor.record_tick(tick.instrument_token)
+                        self.health_monitor.record_tick(tick.instrument_token, ws_index)
                     # CRITICAL: Dictionary assignment ensures only latest tick is kept
                     # Older ticks for same instrument are automatically replaced
                     self._tick_batch[tick.instrument_token] = tick
@@ -1437,7 +1640,7 @@ class KiteTokenWatcher:
                             seconds=12*OPTIMAL_BATCH_TICK_WAIT_TIME_SEC
                         )
                         self.logger.debug(
-                            f"Updated latest tick for instruments {','.join(self._last_processed_instruments)}"
+                            f"Updated latest tick for instruments {','.join(self._last_processed_instruments[:5])}..."
                         )
                         self._last_processed_instruments.clear()
                 
@@ -1536,7 +1739,7 @@ class KiteTokenWatcher:
             if not ticks:
                 continue
 
-            latest_tick = ticks[0]  # Single tick in list
+            latest_tick = ticks[0]
             timestamp = datetime.fromtimestamp(latest_tick.exchange_timestamp)
 
             processed = {
@@ -1815,7 +2018,7 @@ class KiteTokenWatcher:
                 # Fallback: convert ticks.json directly to intraday pkl
                 ticks_json_path = os.path.join(results_dir, "ticks.json")
                 if not os.path.exists(ticks_json_path):
-                    ticks_json_path = self.json_output_path  # Use the main ticks.json path
+                    ticks_json_path = self.json_output_path
                 
                 if os.path.exists(ticks_json_path):
                     self.logger.info(f"Converting ticks.json from {ticks_json_path} to intraday pkl...")
