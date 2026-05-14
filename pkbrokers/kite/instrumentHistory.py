@@ -801,6 +801,8 @@ class KiteTickerHistory:
             >>>         print(f"Token {token}: {len(data['data']['candles'])} candles")
         """
         begin_time = time.time()
+        if interval != Historical_Interval.day.value:
+            past_offset = 0
         if not instruments:
             raise ValueError("list of instruments is required")
         if from_date is None or len(from_date) == 0:

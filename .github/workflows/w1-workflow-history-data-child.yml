@@ -36,8 +36,9 @@
 # 6. Chains to next period (day -> minute) automatically
 #
 # UPDATED BEHAVIOR:
-# - Market hours check (9:15 AM - 3:30 PM IST, non-holiday): Merges ticks.json data
-# - Outside market hours or holidays: Commits PKL file as-is without merging ticks
+# - DB-ONLY MODE (after 3:30 PM IST): Uses ONLY SQLite database, ignores GitHub PKL and ticks.json
+# - Market hours (9:15 AM - 3:30 PM IST, non-holiday): Merges ticks.json data
+# - Outside market hours or holidays: Exports database as-is without merging (standard mode)
 # - PKL file size validation: Ensures daily files are >= 25MB, intraday files >= 1MB
 # - instrument_history.db validation: Ensures zipped file is >= 10MB and <= 100MB
 # - Uses cache_file_name from Archiver for date instead of current date
@@ -66,7 +67,7 @@ on:
       pastoffset:
         description: 'Past number of days for which data has to be fetched'
         required: false
-        default: 0
+        default: 251
         type: number
 
 jobs:
@@ -478,6 +479,90 @@ jobs:
         
         python pkkite.py --history=${{ inputs.period }} --pastoffset=$OFFSET --verbose
 
+    - name: Ensure instruments table exists in database
+      # Step: Create and populate the instruments table for token→symbol mapping
+      # This is critical for generating readable PKL files with symbol names
+      run: |
+        cd pkbrokers/kite/examples/
+        
+        python3 -c "
+        import sqlite3
+        import os
+        
+        db_path = 'results/Data/instrument_history.db'
+        if not os.path.exists(db_path):
+            print(f'Database not found: {db_path}')
+            exit(1)
+        
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Create instruments table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS instruments (
+                instrument_token INTEGER PRIMARY KEY,
+                tradingsymbol TEXT,
+                name TEXT,
+                segment TEXT,
+                exchange TEXT,
+                instrument_type TEXT,
+                last_updated TEXT
+            )
+        ''')
+        conn.commit()
+        print('✅ Instruments table ready')
+        
+        # Check if table has data
+        cursor.execute('SELECT COUNT(1) FROM instruments')
+        count = cursor.fetchone()[0]
+        print(f'Instruments table has {count} entries')
+        
+        # If empty, populate from KiteInstruments
+        if count < 100:
+            print('Populating instruments table from Kite API...')
+            import sys
+            sys.path.insert(0, '.')
+            from pkbrokers.kite.instruments import KiteInstruments
+            from PKDevTools.classes.Environment import PKEnvironment
+            
+            env = PKEnvironment()
+            kite = KiteInstruments(
+                api_key='kitefront',
+                access_token=env.KTOKEN or '',
+                local=True
+            )
+            
+            # Sync instruments (fetches from API if needed)
+            kite.sync_instruments(force_fetch=True)
+            
+            # Get all equities
+            equities = kite.get_equities(
+                column_names='instrument_token,tradingsymbol,name,segment,exchange,instrument_type',
+                only_nse_stocks=False
+            )
+            
+            # Insert into database
+            for eq in equities:
+                cursor.execute('''
+                    INSERT OR REPLACE INTO instruments 
+                    (instrument_token, tradingsymbol, name, segment, exchange, instrument_type, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                ''', (
+                    eq.get('instrument_token'),
+                    eq.get('tradingsymbol'),
+                    eq.get('name'),
+                    eq.get('segment'),
+                    eq.get('exchange'),
+                    eq.get('instrument_type')
+                ))
+            
+            conn.commit()
+            new_count = cursor.execute('SELECT COUNT(1) FROM instruments').fetchone()[0]
+            print(f'✅ Populated instruments table with {new_count} entries')
+        
+        conn.close()
+        "
+
     - name: Find and commit instrument_history.db to PKScreener actions-data-download
       # UPDATED STEP: Commit instrument_history.db with date suffix and size validation
       # This file is critical for token-to-symbol mapping in subsequent steps
@@ -675,7 +760,7 @@ jobs:
       # Step: Convert SQLite database to PKL format for efficient storage
       # For day period only
       # If market is open and not holiday, merges ticks.json data with database
-      # If market is closed or holiday, exports database as-is without merging
+      # If market is closed or holiday, uses DB-ONLY mode (ignores GitHub PKL and ticks.json)
       if: inputs.period == 'day'
       run: |
         cd pkbrokers/kite/examples/
@@ -693,12 +778,13 @@ jobs:
               --verbose \
               --past-offset ${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 0 }}
         else
-            echo "🔴 Market is closed OR today is a holiday - exporting database as-is (no tick merging)..."
-            echo "Using unified pkl generator script (--from-db mode only)..."
+            echo "🔴 Market is closed OR today is a holiday - using DB-ONLY mode (ignoring GitHub PKL and ticks.json)..."
+            echo "Using unified pkl generator script (--db-only mode)..."
             
-            # With --from-db flag, it will load from SQLite database only
+            # DB-ONLY mode: Use ONLY the SQLite database, ignore all other sources
+            # This ensures fresh EOD data is used without any merging
             python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py \
-              --from-db \
+              --db-only \
               --data-dir results/Data \
               --verbose \
               --past-offset ${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 0 }}

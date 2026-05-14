@@ -1186,12 +1186,80 @@ def save_intraday_pkl(ticks_candles: Dict, data_dir: str, verbose: bool = True) 
     
     return intraday_path
 
+def load_from_sqlite_intraday(db_path: str, verbose: bool = True) -> Dict:
+    """Load intraday candles from SQLite database for intervals other than 'day'."""
+    
+    candles = {}
+    
+    if not db_path or not os.path.exists(db_path):
+        log(f"Database not found: {db_path}", verbose)
+        return candles
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        
+        # Get all intervals except 'day'
+        query = """
+        SELECT instrument_token, timestamp, open, high, low, close, volume, interval
+        FROM instrument_history
+        WHERE interval != 'day' AND interval IS NOT NULL
+        ORDER BY instrument_token, timestamp
+        """
+        
+        df = pd.read_sql_query(query, conn)
+        
+        if len(df) == 0:
+            log("No intraday data found in database", verbose)
+            conn.close()
+            return candles
+        
+        # Load token-to-symbol mapping
+        token_to_symbol = {}
+        try:
+            instruments_df = pd.read_sql_query(
+                "SELECT instrument_token, tradingsymbol FROM instruments",
+                conn
+            )
+            for _, row in instruments_df.iterrows():
+                token_to_symbol[row['instrument_token']] = row['tradingsymbol']
+            log(f"Loaded {len(token_to_symbol)} symbol mappings from instruments table", verbose)
+        except Exception as e:
+            log(f"Could not load from instruments table: {e}", verbose)
+        
+        # Group by instrument token
+        for token, group in df.groupby('instrument_token'):
+            symbol = token_to_symbol.get(token, str(token))
+            
+            # Sort by timestamp
+            group = group.sort_values('timestamp')
+            
+            cols_to_use = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            group_df = group[cols_to_use].copy()
+            group_df['timestamp'] = pd.to_datetime(group_df['timestamp'], format='mixed', utc=True)
+            group_df.set_index('timestamp', inplace=True)
+            
+            if hasattr(group_df.index, 'tz') and group_df.index.tz is not None:
+                group_df.index = group_df.index.tz_convert(KOLKATA_TZ)
+            else:
+                group_df.index = group_df.index.tz_localize(KOLKATA_TZ)
+            
+            group_df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+            candles[symbol] = group_df
+        
+        conn.close()
+        log(f"Converted {len(candles)} instruments from intraday database data", verbose)
+        
+    except Exception as e:
+        log(f"Error loading intraday from database: {e}", verbose)
+    
+    return candles
 
 def main():
     """Main entry point for the PKL generator."""
     parser = argparse.ArgumentParser(description="Generate pkl files from ticks.json or SQLite database")
     parser.add_argument("--data-dir", default="results/Data", help="Output directory for pkl files")
     parser.add_argument("--from-db", action="store_true", help="Load data from SQLite database instead of ticks.json")
+    parser.add_argument("--db-only", action="store_true", help="Database-only mode: Use ONLY SQLite database, ignore GitHub PKL and ticks.json. Use this after market hours for fresh EOD data.")
     parser.add_argument("--db-path", default=None, help="Path to SQLite database (auto-detected if not specified)")
     parser.add_argument("--trigger-history", action="store_true", help="Trigger history download workflow if data is stale")
     parser.add_argument("--past-offset", default=30, help="Past offset days to check for the existence of pkl files")
@@ -1218,6 +1286,53 @@ def main():
     candle_store = get_candle_store()
     today_trading_date = PKDateUtilities.tradingDate()
 
+    # =============================================================
+    # DATABASE-ONLY MODE: Skip all merging, just use DB data
+    # Use this after market hours for fresh EOD data
+    # =============================================================
+    if args.db_only:
+        log("\n" + "=" * 60, verbose)
+        log("🚀 DATABASE-ONLY MODE ACTIVE", verbose)
+        log("   - Ignoring GitHub historical PKL files", verbose)
+        log("   - Ignoring ticks.json files", verbose)
+        log("   - Using ONLY the SQLite database", verbose)
+        log("   - This is the recommended mode after market hours (3:30 PM IST)", verbose)
+        log("=" * 60, verbose)
+        
+        # Find the database
+        db_path = args.db_path if args.db_path else find_sqlite_database(verbose)
+        if not db_path:
+            log("❌ No database found in db-only mode!", verbose)
+            sys.exit(1)
+        
+        log(f"\n[DB-ONLY MODE] Loading daily candles from: {db_path}", verbose)
+        db_candles = load_from_sqlite(db_path, verbose)
+        
+        if not db_candles:
+            log("❌ No daily data found in database!", verbose)
+            sys.exit(1)
+        
+        # Save daily PKL files
+        log(f"\n[DB-ONLY MODE] Saving {len(db_candles)} daily instruments...", verbose)
+        save_pkl_files(db_candles, data_dir, verbose)
+        
+        # Also save intraday if available
+        log("\n[DB-ONLY MODE] Checking for intraday data...", verbose)
+        try:
+            intraday_candles = load_from_sqlite_intraday(db_path, verbose)
+            if intraday_candles and len(intraday_candles) >= 10:
+                log(f"Saving {len(intraday_candles)} intraday instruments...", verbose)
+                save_intraday_pkl(intraday_candles, data_dir, verbose)
+            else:
+                log("⚠️ No intraday data found in database (this is normal for EOD runs)", verbose)
+        except Exception as e:
+            log(f"⚠️ Could not load intraday data: {e}", verbose)
+        
+        log("\n" + "=" * 60, verbose)
+        log("✅ SUCCESS: PKL files generated (Database-Only mode)", verbose)
+        log("=" * 60, verbose)
+        sys.exit(0)
+    
     # Step 1: Always download historical pkl first (this is our base)
     log("\n[Step 1] Downloading historical pkl from GitHub...", verbose)
     historical_data, missing_trading_days = download_historical_pkl(verbose, past_offset=past_offset+1)
