@@ -835,19 +835,19 @@ def load_from_sqlite(db_path: str, verbose: bool = True) -> Dict:
             except Exception as e:
                 log(f"Could not load from instruments table: {e}", verbose)
         
-        # If still no symbols, try loading from separate instruments.db file
+        # If still no symbols, try loading from separate instrument_history.db file
         if not has_tradingsymbol and len(token_to_symbol) == 0:
-            # instruments.db is typically in the same directory as instrument_history.db
+            # instrument_history.db is typically in the same directory as instrument_history.db
             db_dir = os.path.dirname(db_path)
             instruments_db_paths = [
-                os.path.join(db_dir, "instruments.db"),
-                os.path.join(os.path.dirname(db_dir), "instruments.db"),
-                os.path.join(os.getcwd(), "instruments.db"),
+                os.path.join(db_dir, "instrument_history.db"),
+                os.path.join(os.path.dirname(db_dir), "instrument_history.db"),
+                os.path.join(os.getcwd(), "instrument_history.db"),
             ]
             # Also check common user data directories
             try:
                 from PKDevTools.classes import Archiver
-                instruments_db_paths.append(os.path.join(Archiver.get_user_data_dir(), "instruments.db"))
+                instruments_db_paths.append(os.path.join(Archiver.get_user_data_dir(), "instrument_history.db"))
             except:
                 pass
             

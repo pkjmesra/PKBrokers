@@ -148,7 +148,7 @@ class KiteInstruments:
         >>> instruments = KiteInstruments(
         >>>     api_key="your_api_key",
         >>>     access_token="your_access_token",
-        >>>     db_path="/path/to/instruments.db",
+        >>>     db_path="/path/to/instrument_history.db",
         >>>     local=True  # Use local SQLite database
         >>> )
         >>>
@@ -164,7 +164,7 @@ class KiteInstruments:
         self,
         api_key: str,
         access_token: str,
-        db_path: str = os.path.join(DEFAULT_PATH, "instruments.db"),
+        db_path: str = os.path.join(DEFAULT_PATH, "instrument_history.db"),
         local=(PKEnvironment().DB_TYPE or "local").lower() != "turso",
         recreate_schema=False,
     ):
