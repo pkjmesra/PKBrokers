@@ -35,6 +35,7 @@ import threading
 import time
 from datetime import datetime
 from urllib.parse import quote
+from typing import List
 
 import pytz
 import websockets
@@ -360,10 +361,10 @@ class WebSocketProcess:
                                         "oi": tick.oi,
                                         "oi_day_high": tick.oi_day_high,
                                         "oi_day_low": tick.oi_day_low,
-                                        "exchange_timestamp": tick.exchange_timestamp
-                                        or PKDateUtilities.currentDateTimestamp(),
+                                        "exchange_timestamp": tick.exchange_timestamp or PKDateUtilities.currentDateTimestamp(),
                                         "depth": tick.depth,
-                                        "websocket_index": self.websocket_index,
+                                        "websocket_index": self.websocket_index,  # Already present
+                                        "batch_index": self.websocket_index,      # Add batch index
                                     }
                                     
                                     # Safely put in queue (non-blocking)
@@ -589,6 +590,10 @@ class ZerodhaWebSocketClient:
         self._stop_requested = False
         self.token_refresh_callback = _global_token_refresh_callback
 
+        # Track last tick time for each batch
+        self.batch_last_tick_time = {}  # batch_index -> last tick timestamp
+        self.batch_lock = threading.Lock()  # Thread-safe updates
+
     def _refresh_token(self):
         """Callback function to refresh token - runs in parent context"""
         try:
@@ -686,6 +691,12 @@ class ZerodhaWebSocketClient:
 
                 if tick_data is None or tick_data.get("type") != "tick":
                     continue
+                
+                # Get batch index from tick data
+                batch_index = tick_data.get("websocket_index", -1)
+                if batch_index >= 0:
+                    self.update_batch_tick_time(batch_index)
+                
                 if tick_data["exchange_timestamp"] is None:
                     tick_data["exchange_timestamp"] = (
                         PKDateUtilities.currentDateTimestamp()
@@ -788,6 +799,25 @@ class ZerodhaWebSocketClient:
         finally:
             self.stop()
 
+    def get_batch_last_tick_times(self):
+        """Return copy of batch_last_tick_time dictionary."""
+        with self.batch_lock:
+            return self.batch_last_tick_time.copy()
+
+    def get_unhealthy_batches(self, current_time: float, stale_threshold: int) -> List[int]:
+        """Return list of batch indices that haven't received ticks recently."""
+        unhealthy = []
+        with self.batch_lock:
+            for batch_idx, last_time in self.batch_last_tick_time.items():
+                if current_time - last_time > stale_threshold:
+                    unhealthy.append(batch_idx)
+        return unhealthy
+
+    def update_batch_tick_time(self, batch_index: int):
+        """Update the last tick time for a specific batch."""
+        with self.batch_lock:
+            self.batch_last_tick_time[batch_index] = time.time()
+    
     def start(self):
         """Start WebSocket client with multiprocessing."""
         self.logger.debug("Starting Zerodha WebSocket client")

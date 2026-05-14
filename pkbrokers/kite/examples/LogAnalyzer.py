@@ -224,8 +224,8 @@ def generate_summary_report(input_file):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python filter_kite_logs.py <log_file> [output_dir]")
-        print("\nExample: python filter_kite_logs.py /path/to/0_market-runner_1.txt ./filtered_logs/")
+        print("Usage: python LogAnalyzer.py <log_file> [output_dir]")
+        print("\nExample: python LogAnalyzer.py /path/to/0_market-runner_1.txt ./filtered_logs/")
         sys.exit(1)
     
     input_file = sys.argv[1]

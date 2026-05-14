@@ -61,7 +61,7 @@ DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 0.5
 JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 1
 OPTIMAL_MAX_QUEUE_SIZE = 10000
 STALE_THRESHOLD_SECONDS = 120
-TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD = 20  # Reduced from 30%
+TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD = 5
 RECOVERY_COOLDOWN_SECONDS = 60  # Don't triggers recovery more than once every minute
 MAX_CONSECUTIVE_FAILURES = 5
 MIN_INSTRUMENTS_FOR_MONITOR = 100  # Minimum instruments before health monitor activates
@@ -184,6 +184,9 @@ class TickHealthMonitor:
             'warnings_count': 0,
             'last_health_check': 0,
         }
+        # Track per-batch health
+        self.batch_last_tick_time = {}  # batch_index -> last tick timestamp
+        self._batch_lock = threading.Lock()  # Thread-safe updates
     
     def start(self):
         """Start the health monitor thread."""
@@ -204,8 +207,8 @@ class TickHealthMonitor:
         self._stop_event.set()
         if self._monitor_thread:
             self._monitor_thread.join(timeout=5)
-    
-    def record_tick(self, instrument_token: int, websocket_index: int = None):
+
+    def record_tick(self, instrument_token: int, websocket_index: int = None, batch_index: int = None):
         """Record that a tick was received for an instrument."""
         current_time = time.time()
         self.last_tick_time[instrument_token] = current_time
@@ -213,6 +216,11 @@ class TickHealthMonitor:
         
         if websocket_index is not None:
             self.last_any_tick_time_per_process[websocket_index] = current_time
+        
+        # Track per-batch health
+        if batch_index is not None:
+            with self._batch_lock:
+                self.batch_last_tick_time[batch_index] = current_time
         
         # Reset recovery attempts on successful tick reception
         if self._recovery_attempts > 0:
@@ -490,19 +498,52 @@ class TickHealthMonitor:
                 self.logger.warning("Token refresh returned invalid token")
         except Exception as e:
             self.logger.error(f"Token refresh failed: {e}")
-    
+
+    def _get_unhealthy_batches(self, current_time: float) -> List[int]:
+        """
+        Identify batches that have not received ticks recently.
+        
+        This is critical because one slow batch can keep the system alive
+        while other batches are completely dead.
+        
+        Returns:
+            List of batch indices that are unhealthy
+        """
+        if not hasattr(self.watcher, 'client') or not self.watcher.client:
+            return []
+        
+        # Try to get batch times from the client first
+        if hasattr(self.watcher.client, 'get_batch_last_tick_times'):
+            batch_times = self.watcher.client.get_batch_last_tick_times()
+            unhealthy = []
+            for batch_idx, last_time in batch_times.items():
+                if current_time - last_time > self.stale_threshold:
+                    unhealthy.append(batch_idx)
+            return unhealthy
+        
+        # Fallback: use local batch tracking
+        with self._batch_lock:
+            unhealthy = []
+            for batch_idx, last_time in self.batch_last_tick_time.items():
+                if current_time - last_time > self.stale_threshold:
+                    unhealthy.append(batch_idx)
+            return unhealthy
+
     def _monitor_loop(self):
-        """Main monitoring loop with enhanced diagnostics."""
+        """Main monitoring loop with enhanced diagnostics - FIXED for slow batches."""
         last_health_check = time.time()
         health_check_interval = HEALTH_CHECK_INTERVAL  # Check every 10 seconds
         last_instrument_count_log = 0
-        instrument_count_log_interval = INSTRUMENT_COUNT_LOG_INTERVAL  # Log instrument count every 5 minutes
+        instrument_count_log_interval = INSTRUMENT_COUNT_LOG_INTERVAL
+        
+        # Track per-batch health
+        self.batch_last_tick_time = {}  # batch_index -> last tick timestamp
         
         while not self._stop_event.is_set():
             try:
                 current_time = time.time()
                 
-                # Log instrument count periodically for diagnostics
+                # Log instrument count periodically
                 if current_time - last_instrument_count_log > instrument_count_log_interval:
                     total = self._get_total_instruments()
                     self.logger.info(f"Health monitor: {total} instruments registered, {len(self.last_tick_time)} with ticks")
@@ -528,6 +569,8 @@ class TickHealthMonitor:
                         # Reset last tick time to avoid false alarms
                         self.last_any_tick_time = current_time
                         self.last_tick_time.clear()
+                        with self._batch_lock:
+                            self.batch_last_tick_time.clear()
                         if self._recovering:
                             self._recovering = False
                         time.sleep(health_check_interval)
@@ -536,27 +579,31 @@ class TickHealthMonitor:
                     # Get total instruments (never returns 0)
                     total_instruments = self._get_total_instruments()
                     
-                    # SPECIAL CASE: If we have zero registered instruments for too long, force a recovery
-                    if total_instruments <= 1:  # 1 is our default fallback
-                        if current_time - self.stats['start_time'] > 120:
-                            self.logger.error("❌ No instruments registered after 2 minutes! Forcing recovery.")
-                            self._trigger_recovery()
-                            time.sleep(health_check_interval)
-                            continue
+                    # ========== NEW: Check batch-level health ==========
+                    # Even if ticks are arriving, they might all be from one batch
+                    unhealthy_batches = self._get_unhealthy_batches(current_time)
                     
-                    # Check if we've received any ticks at all
+                    if unhealthy_batches:
+                        self.logger.error(
+                            f"❌ {len(unhealthy_batches)} WebSocket batches are unhealthy "
+                            f"(no ticks in {self.stale_threshold}s): {unhealthy_batches}"
+                        )
+                        self._trigger_recovery()
+                        continue  # Skip further checks, recover immediately
+                    
+                    # ========== EXISTING: Check any ticks at all ==========
                     time_since_last_any_tick = current_time - self.last_any_tick_time
                     
                     if time_since_last_any_tick > self.stale_threshold:
                         # NO ticks received for any instrument - critical!
                         dead_processes = self._get_dead_websocket_processes()
                         self.logger.error(
-                            f"❌ CRITICAL: No ticks received for ANY instrument for {time_since_last_any_tick:.1f} seconds "
-                            f"DURING MARKET HOURS! Dead processes: {dead_processes}"
+                            f"❌ CRITICAL: No ticks received for ANY instrument for {time_since_last_any_tick:.1f}s "
+                            f"Dead processes: {dead_processes}"
                         )
                         self._trigger_recovery()
                     else:
-                        # Check individual instruments
+                        # ========== EXISTING: Check individual instruments ==========
                         stale_instruments = self._get_stale_instruments()
                         
                         if stale_instruments and total_instruments > 0:
@@ -566,19 +613,18 @@ class TickHealthMonitor:
                             # If more than threshold % of instruments are stale, trigger recovery
                             if stale_percentage > TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD:
                                 self.logger.error(
-                                    f"⚠️ {stale_percentage:.1f}% of instruments are stale DURING MARKET HOURS! Triggering recovery..."
+                                    f"⚠️ {stale_percentage:.1f}% of instruments are stale! Triggering recovery..."
                                 )
                                 self._trigger_recovery()
                             elif stale_percentage > 10:
-                                # Log but don't recover for mild staleness
                                 self.logger.debug(f"{stale_percentage:.1f}% instruments stale - monitoring")
                     
-                    # Also check for dead WebSocket processes even if we're getting some ticks
+                    # Check for dead WebSocket processes
                     dead_processes = self._get_dead_websocket_processes()
                     if dead_processes:
                         self.logger.warning(f"Dead WebSocket processes detected: {dead_processes}")
                         self._trigger_recovery()
-                
+                        
                 time.sleep(1)
                 
             except Exception as e:
@@ -1447,6 +1493,33 @@ class KiteTokenWatcher:
             return self._db_instance
         return None
 
+    def _flush_to_json_writer(self):
+        """Flush pending ticks to JSON writer with monitoring."""
+        if not hasattr(self, '_tick_batch') or not self._tick_batch:
+            return
+        
+        try:
+            start_time = time.time()
+            
+            # Send each tick individually to JSON writer
+            for token, tick_data in self._tick_batch.items():
+                self.json_writer.add_tick(tick_data)
+            
+            # Check if JSON writer is falling behind
+            if hasattr(self.json_writer, 'data_queue'):
+                queue_size = self.json_writer.data_queue.qsize()
+                if queue_size > 5000:
+                    self.logger.warning(f"⚠️ JSON writer queue backlog: {queue_size} items - writer may be a bottleneck!")
+            
+            elapsed = time.time() - start_time
+            if elapsed > 0.5:
+                self.logger.warning(f"JSON flush took {elapsed:.2f}s for {len(self._tick_batch)} ticks")
+            
+            self._tick_batch.clear()
+            
+        except Exception as e:
+            self.logger.error(f"Error flushing to JSON writer: {e}")
+            
     def _process_tick_batch(self, tick_batch):
         """
         Process a batch of ticks for all instruments with full OHLCV and depth processing.
@@ -1579,6 +1652,10 @@ class KiteTokenWatcher:
         )
         self.logger.debug(f"Initial processing time set to: {self._next_process_time}")
         self.logger.debug(f"Initial log time set to: {self._next_process_log_time}")
+        
+        # Track last JSON flush time
+        last_json_flush = time.time()
+        json_flush_interval = 2  # Flush JSON every 2 seconds
 
         while not self._shutdown_event.is_set():
             try:
@@ -1606,6 +1683,10 @@ class KiteTokenWatcher:
                         self.logger.info(
                             f"Queued {len(self._tick_batch)} instruments for processing"
                         )
+                        
+                        # Flush to JSON writer before clearing batch
+                        self._flush_to_json_writer()
+                        
                         self._tick_batch.clear()
                         
                     # CRITICAL: Reset timer to current time + 30 seconds for exact interval
@@ -1620,21 +1701,29 @@ class KiteTokenWatcher:
                         f"Batch processed in {processing_time:.2f}s. "
                         f"Next process time: {self._next_process_time}"
                     )
+                
+                # Periodic JSON flush even between batch intervals
+                elif time.time() - last_json_flush >= json_flush_interval:
+                    if self._tick_batch:
+                        self._flush_to_json_writer()
+                    last_json_flush = time.time()
 
                 # Process incoming tick if available
                 if tick is None:
                     continue
 
                 if isinstance(tick, Tick):
-                    # Record tick for health monitoring (get websocket index if available)
+                    # Record tick for health monitoring
                     ws_index = getattr(tick, 'websocket_index', None)
+                    batch_idx = getattr(tick, 'batch_index', ws_index)
                     if self.health_monitor:
-                        self.health_monitor.record_tick(tick.instrument_token, ws_index)
+                        self.health_monitor.record_tick(tick.instrument_token, ws_index, batch_idx)
+                    
                     # CRITICAL: Dictionary assignment ensures only latest tick is kept
-                    # Older ticks for same instrument are automatically replaced
                     self._tick_batch[tick.instrument_token] = tick
                     self._watcher_queue.task_done()
                     self._last_processed_instruments.append(str(tick.instrument_token))
+                    
                     if current_time >= self._next_process_log_time:
                         self._next_process_log_time = datetime.now() + timedelta(
                             seconds=12*OPTIMAL_BATCH_TICK_WAIT_TIME_SEC
@@ -1643,7 +1732,7 @@ class KiteTokenWatcher:
                             f"Updated latest tick for instruments {','.join(self._last_processed_instruments[:5])}..."
                         )
                         self._last_processed_instruments.clear()
-                
+                    
             except KeyboardInterrupt:
                 self.logger.warning("Keyboard interrupt received in processing thread")
                 break
@@ -1651,7 +1740,8 @@ class KiteTokenWatcher:
                 self.logger.error(f"Unexpected error in tick processing: {e}")
                 continue
 
-        # Cleanup on shutdown
+        # Cleanup on shutdown - final JSON flush
+        self._flush_to_json_writer()
         self._cleanup_processing()
 
     def _cleanup_processing(self):
