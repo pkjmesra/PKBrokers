@@ -56,10 +56,10 @@ from pkbrokers.kite.inMemoryCandleStore import get_candle_store
 
 # Optimal batch size depends on your tick frequency
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
-OPTIMAL_BATCH_TICK_WAIT_TIME_SEC = 5
+OPTIMAL_BATCH_TICK_WAIT_TIME_SEC = 10
 DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 0.5
 JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 1
-OPTIMAL_MAX_QUEUE_SIZE = 10000
+OPTIMAL_MAX_QUEUE_SIZE = 50000
 STALE_THRESHOLD_SECONDS = 120
 TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD = 5
 RECOVERY_COOLDOWN_SECONDS = 60  # Don't triggers recovery more than once every minute
@@ -640,7 +640,7 @@ class JSONFileWriter:
     """Multiprocessing process to write ticks to JSON file with instrument_token as primary key"""
 
     def __init__(
-        self, json_file_path, max_queue_size=OPTIMAL_MAX_QUEUE_SIZE, log_level=0, writer_id=None
+        self, json_file_path, max_queue_size=0, log_level=0, writer_id=None
     ):
         # Set spawn context globally
         multiprocessing.set_start_method(
@@ -904,7 +904,7 @@ class JSONFileWriter:
                 pass
 
     def _writer_loop(self):
-        """Main writer loop running in separate process"""
+        """Main writer loop running in separate process - OPTIMIZED for speed."""
         self.setupLogger()
         self.logger = default_logger()
         self.logger.debug(f"JSON file writer [{self.writer_id}] started for {self.json_file_path}")
@@ -919,36 +919,27 @@ class JSONFileWriter:
                 self.logger.info(
                     f"Loaded existing data from {self.json_file_path} with {len(data.keys())} instruments."
                 )
-            except json.JSONDecodeError as e:
-                self.logger.error(f"JSON decode error loading file: {e}")
-                # Try to salvage by reading as text and finding valid JSON
-                try:
-                    with open(self.json_file_path, "r") as f:
-                        content = f.read()
-                    # Look for valid JSON structure
-                    import re
-                    match = re.search(r'\{.*\}', content, re.DOTALL)
-                    if match:
-                        salvage_data = json.loads(match.group())
-                        data.update(salvage_data)
-                        self.logger.warning(f"Salvaged {len(data)} instruments from corrupted file")
-                except:
-                    self.logger.error("Could not salvage data from corrupted file, starting fresh")
             except Exception as e:
                 self.logger.error(f"Error loading JSON file: {e}")
 
         last_save_time = time.time()
-        save_interval = 5  # Save to file every 5 seconds
+        save_interval = 10  # INCREASED from 5 to 10 seconds (reduce write frequency)
+        last_log_time = time.time()
+        log_interval = 60  # Log queue status every minute
+        processed_count = 0
 
         while not self.stop_event.is_set() or not self.data_queue.empty():
             try:
-                # Process all available ticks in the queue
-                processed_count = 0
-                while True:
+                # Process MULTIPLE ticks per iteration (batch processing)
+                ticks_processed_this_loop = 0
+                batch_size = 100  # Process up to 100 ticks at once
+                
+                while ticks_processed_this_loop < batch_size:
                     try:
                         tick_data = self.data_queue.get_nowait()
                         self._update_instrument_data(data, tick_data)
                         processed_count += 1
+                        ticks_processed_this_loop += 1
                     except Empty:
                         break
 
@@ -957,14 +948,22 @@ class JSONFileWriter:
                 if current_time - last_save_time >= save_interval:
                     self._save_to_file(data)
                     last_save_time = current_time
-
+                    
                     if processed_count > 0:
                         self.logger.debug(
                             f"JSON writer processed {processed_count} ticks, total instruments: {len(data)}"
                         )
+                        processed_count = 0
+                
+                # Log queue status periodically
+                if current_time - last_log_time >= log_interval:
+                    queue_size = self.data_queue.qsize()
+                    if queue_size > 1000:
+                        self.logger.warning(f"JSON writer input queue backlog: {queue_size} items")
+                    last_log_time = current_time
 
                 # Small sleep to prevent CPU spinning
-                time.sleep(0.1)
+                time.sleep(0.05)  # Reduced from 0.1 to process faster
 
             except Exception as e:
                 self.logger.error(f"JSON writer error: {e}")
@@ -1038,6 +1037,16 @@ class JSONFileWriter:
         data[instrument_token]["last_updated"] = ensure_ist_datetime(tick_data.get("timestamp", datetime.now(IST))).isoformat()
         data[instrument_token]["tick_count"] += 1
 
+    def add_batch(self, tick_data_list):
+        """Add multiple tick data entries to the write queue as a batch."""
+        try:
+            for tick_data in tick_data_list:
+                self.data_queue.put(tick_data, timeout=0.1)
+            return True
+        except Exception:
+            self.logger.warning("JSON writer queue full, dropping batch")
+            return False
+        
     def add_tick(self, tick_data):
         """Add tick data to the write queue"""
         try:
@@ -1538,6 +1547,8 @@ class KiteTokenWatcher:
         self.logger.debug(
             f"Processing batch with {total_instruments} unique instruments"
         )
+        # Batch for JSON writer - collect all ticks first
+        json_batch = []
 
         for instrument_token, ticks in tick_batch.items():
             if not ticks:
@@ -1565,10 +1576,27 @@ class KiteTokenWatcher:
                 "depth": depth_data,
             }
             processed_batch.append(processed)
+            # Add to JSON batch instead of sending individually
+            json_batch.append(processed)
 
-            # Send to JSON writer
+        # NEW: Send ENTIRE BATCH to JSON writer at once
+        if json_batch:
             try:
-                self.json_writer.add_tick(processed)
+                # Send each tick in batch to JSON writer (still individual but now batched by size)
+                # Option A: Send one by one (original behavior but with batching at this level)
+                # for tick_data in json_batch:
+                #     self.json_writer.add_tick(tick_data)
+                
+                # Option B: Send as a single batch (requires JSON writer modification)
+                self.json_writer.add_batch(json_batch)
+                
+                # Log queue status periodically
+                if hasattr(self.json_writer, 'data_queue'):
+                    queue_size = self.json_writer.data_queue.qsize()
+                    if queue_size > 10000:
+                        self.logger.warning(f"⚠️ JSON writer queue backlog: {queue_size} items")
+                    elif queue_size > 5000:
+                        self.logger.debug(f"JSON writer queue size: {queue_size}")
             except Exception as e:
                 self.logger.error(f"Error sending to JSON writer: {e}")
             
