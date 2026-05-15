@@ -1091,7 +1091,27 @@ class JSONFileWriter:
             return False
         
     def add_tick(self, tick_data):
-        """Add tick data to the write queue"""
+        """Add tick data to the write queue - auto-convert Tick to dict if needed."""
+        # If it's a Tick (namedtuple), convert to dict
+        if isinstance(tick_data, tuple) and hasattr(tick_data, '_fields') and 'instrument_token' in tick_data._fields:
+            tick_data = {
+                "instrument_token": tick_data.instrument_token,
+                "last_price": tick_data.last_price,
+                "day_volume": tick_data.day_volume,
+                "oi": tick_data.oi,
+                "buy_quantity": tick_data.buy_quantity,
+                "sell_quantity": tick_data.sell_quantity,
+                "high_price": tick_data.high_price,
+                "low_price": tick_data.low_price,
+                "open_price": tick_data.open_price,
+                "prev_day_close": tick_data.prev_day_close,
+                "timestamp": ensure_ist_datetime(
+                    datetime.fromtimestamp(tick_data.last_trade_timestamp) if tick_data.last_trade_timestamp else tick_data.exchange_timestamp
+                ).isoformat(),
+                "depth": tick_data.depth,
+                "websocket_index": getattr(tick_data, 'websocket_index', -1),
+                "batch_index": getattr(tick_data, 'batch_index', -1),
+            }
         try:
             self.data_queue.put(tick_data, timeout=0.1)
             return True
@@ -1171,8 +1191,8 @@ class KiteTokenWatcher:
         CRITICAL: _tick_batch is a dictionary, not defaultdict(list), ensuring only
         one tick per instrument_token by design (key overwrites on new ticks).
         """
-        self._watcher_queue = watcher_queue or Queue(maxsize=0)
-        self._db_queue = Queue(maxsize=0)
+        self._watcher_queue = watcher_queue or Queue(maxsize=OPTIMAL_MAX_QUEUE_SIZE)
+        self._db_queue = Queue(maxsize=OPTIMAL_MAX_QUEUE_SIZE)
         self._processing_thread = None
         self._db_thread = None
         self._shutdown_event = threading.Event()

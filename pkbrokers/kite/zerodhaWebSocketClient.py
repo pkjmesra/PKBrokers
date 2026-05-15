@@ -64,6 +64,7 @@ except ImportError:
 DEFAULT_PATH = Archiver.get_user_data_dir()
 
 PING_INTERVAL = 30
+OPTIMAL_MAX_QUEUE_SIZE = 50000
 HTTP_400_429_WAIT_TIME = 120
 NETWORK_WAIT_TIME = 5
 GENERAL_WAIT_TIME = 1
@@ -583,7 +584,7 @@ class ZerodhaWebSocketClient:
 
         self.mp_context = multiprocessing.get_context("spawn")
         # self.manager = self.mp_context.Manager()
-        self.data_queue = self.mp_context.Queue(maxsize=0)  # Limit queue size
+        self.data_queue = self.mp_context.Queue(maxsize=OPTIMAL_MAX_QUEUE_SIZE)  # Limit queue size
         self.stop_event = self.mp_context.Event()
 
         self.db_conn = db_conn
