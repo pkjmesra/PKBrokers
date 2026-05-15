@@ -761,7 +761,7 @@ jobs:
       # For day period only
       # If market is open and not holiday, merges ticks.json data with database
       # If market is closed or holiday, uses DB-ONLY mode (ignores GitHub PKL and ticks.json)
-      # if: inputs.period == 'day'
+      if: inputs.period == 'day'
       run: |
         cd pkbrokers/kite/examples/
         mkdir -p results/Data
