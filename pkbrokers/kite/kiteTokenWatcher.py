@@ -56,6 +56,7 @@ from pkbrokers.kite.inMemoryCandleStore import get_candle_store
 
 # Optimal batch size depends on your tick frequency
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
+JSON_WRITER_BATCH_SIZE = 1000  # batch size for processing ticks
 OPTIMAL_BATCH_TICK_WAIT_TIME_SEC = 30
 DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 0.5
 JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 1
@@ -942,7 +943,7 @@ class JSONFileWriter:
             try:
                 # Process MULTIPLE ticks per iteration (batch processing)
                 ticks_processed_this_loop = 0
-                batch_size = 500  # INCREASED from 100 to 500
+                batch_size = JSON_WRITER_BATCH_SIZE
                 temp_batch = []
                 
                 while ticks_processed_this_loop < batch_size:
@@ -1687,7 +1688,7 @@ class KiteTokenWatcher:
                 queue_size = self._watcher_queue.qsize() if hasattr(self._watcher_queue, 'qsize') else 0
                 
                 if queue_size > 5000:
-                    adaptive_batch_size = 500
+                    adaptive_batch_size = 1000
                     self.logger.warning(f"Queue backlog: {queue_size}, increasing batch size to {adaptive_batch_size}")
                 elif queue_size > 1000:
                     adaptive_batch_size = 200
@@ -1738,7 +1739,7 @@ class KiteTokenWatcher:
                     last_json_flush = time.time()
                 
                 # Small sleep to prevent CPU spinning
-                time.sleep(0.01)
+                time.sleep(0.001)
                 
             except KeyboardInterrupt:
                 self.logger.warning("Keyboard interrupt received in processing thread")

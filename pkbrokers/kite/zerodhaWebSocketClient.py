@@ -73,6 +73,7 @@ OPTIMAL_MAX_QUEUE_SIZE = 10000
 HTTP_400_429_WAIT_TIME = 120
 NETWORK_WAIT_TIME = 5
 GENERAL_WAIT_TIME = 1
+DB_BATCH_SIZE = 1000
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
@@ -759,7 +760,7 @@ class ZerodhaWebSocketClient:
                 if self.watcher_queue is not None:
                     self.watcher_queue.put(tick)
 
-                if len(batch) >= 100:
+                if len(batch) >= DB_BATCH_SIZE:
                     self._flush_to_db(batch)
                     batch = []
                     last_flush = time.time()

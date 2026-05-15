@@ -106,7 +106,7 @@ SUPPORTED_INTERVALS = {
     'day': 86400,
     '1d': 86400,
 }
-
+MIN_SUPPORTED_INTERVALS = ['1m', 'day']
 # Maximum candles to keep per interval (for memory management)
 MAX_CANDLES = {
     '1m': 390,    # Full day of 1-min candles
@@ -329,6 +329,7 @@ class InMemoryCandleStore:
         self.symbol_to_token: Dict[str, int] = {}
         self.logger = default_logger()
         self.lock = threading.RLock()
+        self.instrument_locks = {}
         
         self.auto_persist = auto_persist
         self.persist_interval = persist_interval
@@ -448,7 +449,8 @@ class InMemoryCandleStore:
             if instrument_token is None or price is None or price <= 0:
                 return False
             
-            with self.lock:
+            inst_lock = self.instrument_locks.setdefault(instrument_token, threading.Lock())
+            with inst_lock:
                 instrument = self._get_or_create_instrument(instrument_token, trading_symbol)
                 instrument.last_update = datetime.fromtimestamp(timestamp_float, tz=KOLKATA_TZ).isoformat()
                 
@@ -465,7 +467,7 @@ class InMemoryCandleStore:
                     instrument.last_day_volume = day_volume
                 
                 # Update candles for all intervals using timestamp_float
-                for interval in SUPPORTED_INTERVALS.keys():
+                for interval in MIN_SUPPORTED_INTERVALS:
                     if interval in ('day', '1d'):
                         self._update_candle(instrument, interval, timestamp_float, price, day_volume, oi, is_daily=True)
                     else:
