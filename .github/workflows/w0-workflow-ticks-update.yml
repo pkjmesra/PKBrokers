@@ -30,9 +30,9 @@ on:
   workflow_dispatch:  # Allow manual triggering
     inputs:
       logLevel:
-        description: 'Log level for PKDevTools (default 20)'
+        description: 'Log level for PKDevTools (default 30 - WARNING)'
         required: false
-        default: 20
+        default: 30
         type: number
       triggered_by:
         description: 'What triggered this run'
@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 300 # Set a timeout to prevent hanging runs
     env:
-      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
+      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '30' }}
       TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
       TRIGGERED_BY: ${{ github.event.inputs.triggered_by || 'schedule' }}
     

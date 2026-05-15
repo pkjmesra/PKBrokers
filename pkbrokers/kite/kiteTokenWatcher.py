@@ -69,7 +69,9 @@ OPTIMAL_MAX_QUEUE_SIZE = 10000
 JSON_SAVE_INTERVAL = 120
 DATA_QUEUE_LOG_INTERVAL = 60
 STALE_THRESHOLD_SECONDS = 300
-TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD = 10
+TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD = 5
+# Add absolute stale count trigger (e.g., 300 instruments)
+TRIGGER_RECOVERY_STALE_ABSOLUTE = 300
 RECOVERY_COOLDOWN_SECONDS = 120  # Don't triggers recovery more than once every minute
 MAX_CONSECUTIVE_FAILURES = 5
 MIN_INSTRUMENTS_FOR_MONITOR = 500  # Minimum instruments before health monitor activates
@@ -619,9 +621,10 @@ class TickHealthMonitor:
                             self._log_warning(len(stale_instruments), total_instruments)
                             
                             # If more than threshold % of instruments are stale, trigger recovery
-                            if stale_percentage > TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD:
+                            if (stale_percentage > TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD or 
+                                len(stale_instruments) > TRIGGER_RECOVERY_STALE_ABSOLUTE):
                                 self.logger.error(
-                                    f"⚠️ {stale_percentage:.1f}% of instruments are stale! Triggering recovery..."
+                                    f"⚠️ {stale_percentage:.1f}% of instruments ({len(stale_instruments)} of {total_instruments} instruments) are stale! Triggering recovery..."
                                 )
                                 self._trigger_recovery()
                             elif stale_percentage > 10:

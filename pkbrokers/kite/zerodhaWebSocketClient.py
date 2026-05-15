@@ -63,14 +63,17 @@ except ImportError:
 
 DEFAULT_PATH = Archiver.get_user_data_dir()
 
-PING_INTERVAL = 30
+PING_INTERVAL = 15
+PING_TIMEOUT = 5
  # With high tick frequency (e.g., 2000+ instruments, each tick 
  # every few hundred ms), 50k ticks can accumulate in seconds.
  # Large queues increase latency and memory pressure. They mask 
  # backpressure instead of solving the root cause. So, let's
  # keep it to 10k
 OPTIMAL_MAX_QUEUE_SIZE = 10000
+RECOVERY_COOLDOWN_SECONDS = 120
 HTTP_400_429_WAIT_TIME = 120
+STALE_THRESHOLD_SECONDS = 300
 NETWORK_WAIT_TIME = 5
 GENERAL_WAIT_TIME = 1
 DB_BATCH_SIZE = 1000
@@ -286,7 +289,7 @@ class WebSocketProcess:
                     self._build_websocket_url(),
                     extra_headers=self._build_headers(),
                     ping_interval=PING_INTERVAL,
-                    ping_timeout=10,
+                    ping_timeout=PING_TIMEOUT,
                     close_timeout=5,
                     compression="deflate",
                     max_size=2**17,
@@ -805,6 +808,36 @@ class ZerodhaWebSocketClient:
                         new_p.daemon = True
                         new_p.start()
                         self.ws_processes[i] = new_p
+
+                current_time = time.time()
+                for i, batch_tokens in enumerate(self.token_batches):
+                    last_tick = self.batch_last_tick_time.get(i, 0)
+                    if current_time - last_tick > STALE_THRESHOLD_SECONDS:   # 5 minutes without a tick
+                        self.logger.warning(f"Batch {i} has no ticks for {current_time-last_tick:.0f}s → restarting process")
+                        if self.ws_processes[i] and self.ws_processes[i].is_alive():
+                            self.ws_processes[i].terminate()
+                            self.ws_processes[i].join(timeout=5)
+                        # Restart the process
+                        base_args = process_args[i]
+                        full_args = base_args + (self.ws_stop_event,)
+                        new_p = self.mp_context.Process(target=websocket_process_worker, args=(full_args,))
+                        new_p.daemon = True
+                        new_p.start()
+                        self.ws_processes[i] = new_p
+                        self.batch_last_tick_time[i] = current_time   # reset after restart
+                
+                # Every RECOVERY_COOLDOWN_SECONDS seconds, check total ticks across all processes
+                if int(time.time()) % RECOVERY_COOLDOWN_SECONDS == 0:
+                    total_ticks = sum(self.batch_last_tick_time.values())
+                    if total_ticks < 100 and self._stop_requested is False:
+                        self.logger.error("All batches nearly dead → forcing full token refresh")
+                        self._refresh_token()
+                        # Restart all processes
+                        for p in self.ws_processes:
+                            if p.is_alive():
+                                p.terminate()
+                        self.start()   # restart everything
+                        break
 
                 time.sleep(NETWORK_WAIT_TIME)
 
