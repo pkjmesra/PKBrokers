@@ -836,7 +836,7 @@ class InMemoryCandleStore:
                             'volume': current.volume,
                             'oi': current.oi,
                         },
-                        'last_update': timestamp_iso, #last_update_iso,  # ✅ Now ISO format with timezone
+                        'last_updated': timestamp_iso, #last_update_iso,  # ✅ Now ISO format with timezone
                     }
         
         return result
@@ -897,7 +897,7 @@ class InMemoryCandleStore:
                         'trading_symbol': instrument.trading_symbol,
                         'candles': {},
                         'current_candle': {},
-                        'last_update': instrument.last_update,
+                        'last_updated': instrument.last_update,
                     }
                     
                     # Serialize candles
@@ -943,7 +943,7 @@ class InMemoryCandleStore:
                 instrument = InstrumentCandles(
                     instrument_token=token,
                     trading_symbol=inst_data.get('trading_symbol', ''),
-                    last_update=inst_data.get('last_update', 0),
+                    last_update=inst_data.get('last_updated', 0),
                 )
                 
                 # Restore candles

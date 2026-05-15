@@ -73,7 +73,7 @@ class StatsCollector:
             'uptime_seconds': 0,
             'candles_created': 0,
             'candles_completed': 0,
-            'last_update': time.time()
+            'last_updated': time.time()
         })
         self.update_queue = self.manager.Queue()
         self.stop_event = self.manager.Event()
