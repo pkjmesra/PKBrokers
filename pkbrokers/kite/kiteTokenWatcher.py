@@ -1678,6 +1678,8 @@ class KiteTokenWatcher:
                     if tick and isinstance(tick, Tick):
                         ws_index = getattr(tick, 'websocket_index', None)
                         batch_idx = getattr(tick, 'batch_index', ws_index)
+                        if batch_idx is None:
+                            batch_idx = ws_index  # Fallback to websocket_index
                         if self.health_monitor:
                             self.health_monitor.record_tick(tick.instrument_token, ws_index, batch_idx)
                         

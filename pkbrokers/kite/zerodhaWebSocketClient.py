@@ -330,7 +330,9 @@ class WebSocketProcess:
 
                                 # Process market data
                                 ticks = ZerodhaWebSocketParser.parse_binary_message(
-                                    message
+                                    message,
+                                    websocket_index=self.websocket_index,
+                                    batch_index=self.websocket_index
                                 )
                                 total_ticks_received += len(ticks)
                                 tick_batch += len(ticks)
@@ -723,6 +725,8 @@ class ZerodhaWebSocketClient:
                     "low_price": tick.low_price or 0,
                     "open_price": tick.open_price or 0,
                     "prev_day_close": tick.prev_day_close or 0,
+                    "websocket_index": tick.websocket_index,
+                    "batch_index": tick.batch_index,
                 }
 
                 if tick.depth:
@@ -747,9 +751,6 @@ class ZerodhaWebSocketClient:
                 batch.append(processed)
 
                 if self.watcher_queue is not None:
-                    # Attach indices to the Tick object
-                    tick.websocket_index = tick_data.get("websocket_index", -1)
-                    tick.batch_index = tick_data.get("batch_index", -1)
                     self.watcher_queue.put(tick)
 
                 if len(batch) >= 100:

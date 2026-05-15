@@ -70,7 +70,7 @@ OTHER_INDICES = [
 
 class ZerodhaWebSocketParser:
     @staticmethod
-    def parse_binary_message(message: bytes) -> list[Tick]:
+    def parse_binary_message(message: bytes, websocket_index: int = -1, batch_index: int = -1) -> list[Tick]:
         """Parse complete binary WebSocket message containing multiple packets"""
         ticks = []
 
@@ -97,7 +97,7 @@ class ZerodhaWebSocketParser:
                 packet = message[offset : offset + packet_length]
                 offset += packet_length
 
-                tick = ZerodhaWebSocketParser._parse_single_packet(packet)
+                tick = ZerodhaWebSocketParser._parse_single_packet(packet, websocket_index, batch_index)
                 if tick:
                     ticks.append(tick)
 
@@ -157,10 +157,12 @@ class ZerodhaWebSocketParser:
             oi_day_high=None,
             oi_day_low=None,
             depth=None,
+            websocket_index=-1,
+            batch_index=-1
         )
 
     @staticmethod
-    def _parse_single_packet(packet: bytes) -> Tick | None:
+    def _parse_single_packet(packet: bytes, websocket_index: int = -1, batch_index: int = -1) -> Tick | None:
         """Parse a single binary packet into Tick object.
 
         Right after connecting Zerodha server will send these two text messages first.
@@ -283,6 +285,8 @@ class ZerodhaWebSocketParser:
                 "oi_day_low": None,
                 "exchange_timestamp": PKDateUtilities.currentDateTimestamp(),
                 "depth": None,
+                "websocket_index":None,
+                "batch_index":None,
             }
 
             if (
@@ -391,6 +395,8 @@ class ZerodhaWebSocketParser:
 
                 data["depth"] = depth
 
+            data["websocket_index"] = websocket_index
+            data["batch_index"] = batch_index
             return Tick(**data)
 
         except Exception as e:
