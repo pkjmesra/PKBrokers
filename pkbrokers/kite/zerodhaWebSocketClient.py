@@ -671,6 +671,8 @@ class ZerodhaWebSocketClient:
                 "exchange_timestamp", PKDateUtilities.currentDateTimestamp()
             ),
             depth=tick_data.get("depth", {}),
+            websocket_index=tick_data.get("websocket_index", -1),
+            batch_index=tick_data.get("batch_index", -1),
         )
 
     def _process_ticks(self):
@@ -745,6 +747,9 @@ class ZerodhaWebSocketClient:
                 batch.append(processed)
 
                 if self.watcher_queue is not None:
+                    # Attach indices to the Tick object
+                    tick.websocket_index = tick_data.get("websocket_index", -1)
+                    tick.batch_index = tick_data.get("batch_index", -1)
                     self.watcher_queue.put(tick)
 
                 if len(batch) >= 100:

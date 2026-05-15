@@ -67,6 +67,8 @@ Tick = namedtuple(
         "oi_day_low",
         "exchange_timestamp",
         "depth",
+        "websocket_index",
+        "batch_index",
     ],
 )
 

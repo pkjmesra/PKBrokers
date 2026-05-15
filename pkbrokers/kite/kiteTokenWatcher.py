@@ -851,12 +851,12 @@ class JSONFileWriter:
                 pass
             raise
 
-    def _save_to_file(self, data):
+    def _save_to_file(self, data, validate=True):
         """
         Save data to JSON file with:
         1. File locking to prevent concurrent writes
         2. Deduplication to ensure unique instrument tokens
-        3. JSON validation to ensure data integrity
+        3. JSON validation to ensure data integrity (optional for speed)
         4. Atomic writes to prevent corruption
         """
         temp_file = None
@@ -869,23 +869,25 @@ class JSONFileWriter:
             
             self.logger.debug(f"Processing {len(data_dict)} raw entries")
             
-            # Step 2: Deduplicate data
+            # Step 2: Deduplicate data (always do this)
             deduped_data = self._deduplicate_data(data_dict)
             self.logger.debug(f"After deduplication: {len(deduped_data)} unique instruments")
             
-            # Step 3: Validate JSON structure
-            is_valid, validated_data, error_msg = self._validate_json_structure(deduped_data)
-            
-            if not is_valid:
-                self.logger.warning(f"Data validation failed: {error_msg}")
-                if validated_data:
-                    # Try to salvage by using the parsed data
-                    self.logger.warning("Attempting to salvage by using parsed data")
-                    validated_data = self._deduplicate_data(validated_data)
-                else:
-                    # Can't salvage, don't save
-                    self.logger.warning("Data is corrupted beyond repair, skipping save")
-                    return
+            # Step 3: Validate JSON structure (optional for speed)
+            if validate:
+                is_valid, validated_data, error_msg = self._validate_json_structure(deduped_data)
+                
+                if not is_valid:
+                    self.logger.warning(f"Data validation failed: {error_msg}")
+                    if validated_data:
+                        self.logger.warning("Attempting to salvage by using parsed data")
+                        validated_data = self._deduplicate_data(validated_data)
+                    else:
+                        self.logger.warning("Data is corrupted beyond repair, skipping save")
+                        return
+            else:
+                # Skip validation, use deduped data directly
+                validated_data = deduped_data
             
             # Step 4: Acquire lock and write atomically
             with self._file_lock():
@@ -923,30 +925,53 @@ class JSONFileWriter:
                 self.logger.error(f"Error loading JSON file: {e}")
 
         last_save_time = time.time()
-        save_interval = 10  # INCREASED from 5 to 10 seconds (reduce write frequency)
+        save_interval = 30
         last_log_time = time.time()
-        log_interval = 60  # Log queue status every minute
+        log_interval = 60
         processed_count = 0
+        validation_counter = 0  # For periodic validation
 
         while not self.stop_event.is_set() or not self.data_queue.empty():
             try:
                 # Process MULTIPLE ticks per iteration (batch processing)
                 ticks_processed_this_loop = 0
-                batch_size = 100  # Process up to 100 ticks at once
+                batch_size = 500  # INCREASED from 100 to 500
+                temp_batch = []
                 
                 while ticks_processed_this_loop < batch_size:
                     try:
                         tick_data = self.data_queue.get_nowait()
-                        self._update_instrument_data(data, tick_data)
-                        processed_count += 1
-                        ticks_processed_this_loop += 1
+                        
+                        # CRITICAL FIX: Validate tick_data is dict, not tuple
+                        if isinstance(tick_data, tuple):
+                            self.logger.error(f"Received tuple instead of dict: {tick_data[:2] if len(tick_data) > 2 else tick_data}")
+                            continue  # Skip malformed data
+                        
+                        if isinstance(tick_data, dict) and 'instrument_token' in tick_data:
+                            temp_batch.append(tick_data)
+                            processed_count += 1
+                            ticks_processed_this_loop += 1
+                        else:
+                            self.logger.warning(f"Skipping invalid tick data type: {type(tick_data)}")
+                            
                     except Empty:
                         break
+                    except Exception as e:
+                        self.logger.error(f"Error getting tick from queue: {e}")
+                        break
+
+                # Process batch
+                if temp_batch:
+                    for tick_data in temp_batch:
+                        self._update_instrument_data(data, tick_data)
 
                 # Save to file periodically
                 current_time = time.time()
                 if current_time - last_save_time >= save_interval:
-                    self._save_to_file(data)
+                    validation_counter += 1
+                    # Run full validation only every 5 saves to save CPU
+                    validate = (validation_counter % 5 == 0)
+                    self._save_to_file(data, validate=validate)
                     last_save_time = current_time
                     
                     if processed_count > 0:
@@ -958,19 +983,23 @@ class JSONFileWriter:
                 # Log queue status periodically
                 if current_time - last_log_time >= log_interval:
                     queue_size = self.data_queue.qsize()
-                    if queue_size > 1000:
+                    if queue_size > 5000:
                         self.logger.warning(f"JSON writer input queue backlog: {queue_size} items")
+                    elif queue_size > 1000:
+                        self.logger.debug(f"JSON writer queue size: {queue_size}")
                     last_log_time = current_time
 
                 # Small sleep to prevent CPU spinning
-                time.sleep(0.05)  # Reduced from 0.1 to process faster
+                time.sleep(0.01)  # REDUCED from 0.05
 
             except Exception as e:
                 self.logger.error(f"JSON writer error: {e}")
+                import traceback
+                traceback.print_exc()
                 time.sleep(1)
 
         # Final save
-        self._save_to_file(data)
+        self._save_to_file(data, validate=True)
         self.logger.warning("JSON writer process stopped")
 
     def _update_instrument_data(self, data, tick_data):
@@ -1039,12 +1068,26 @@ class JSONFileWriter:
 
     def add_batch(self, tick_data_list):
         """Add multiple tick data entries to the write queue as a batch."""
-        try:
-            for tick_data in tick_data_list:
-                self.data_queue.put(tick_data, timeout=0.1)
+        if not tick_data_list:
             return True
-        except Exception:
-            self.logger.warning("JSON writer queue full, dropping batch")
+        
+        try:
+            # Validate each item in batch is a dict
+            valid_count = 0
+            for tick_data in tick_data_list:
+                if isinstance(tick_data, dict) and 'instrument_token' in tick_data:
+                    self.data_queue.put(tick_data, timeout=0.1)
+                    valid_count += 1
+                else:
+                    self.logger.warning(f"Skipping invalid tick in batch: {type(tick_data)}")
+            
+            if valid_count == 0:
+                self.logger.warning("No valid ticks in batch, all skipped")
+                return False
+                
+            return True
+        except Exception as e:
+            self.logger.warning(f"JSON writer queue full or error, dropping batch: {e}")
             return False
         
     def add_tick(self, tick_data):
@@ -1336,12 +1379,7 @@ class KiteTokenWatcher:
             self.stop()
 
     def _fetch_tokens_with_fallback(self) -> List[int]:
-        """
-        Fetch instrument tokens with multiple fallback strategies.
-        
-        Returns:
-            List of instrument tokens
-        """
+        """Fetch instrument tokens with multiple fallback strategies."""
         tokens = []
         local_secrets = PKEnvironment().allSecrets
         API_KEY = "kitefront"
@@ -1354,46 +1392,41 @@ class KiteTokenWatcher:
             if kite.get_instrument_count() == 0:
                 kite.sync_instruments(force_fetch=True)
             instruments = kite.fetch_instruments()
-            # Start JSON writer first
             self._kite_instruments = kite.kite_instruments if len(instruments) > 0 else {}
         except Exception as db_error:
-            # Handle Turso database blocked/unavailable - use fallback
             self.logger.warning(f"Database unavailable, using fallback: {db_error}")
             self._kite_instruments = {}
             instruments = []
         
         self.json_writer.start(kite_instruments=self._kite_instruments)
         
-        # Register instruments with candle store for symbol mapping
         for token, inst in self._kite_instruments.items():
             if hasattr(inst, 'tradingsymbol'):
                 self._candle_store.register_instrument(int(token), inst.tradingsymbol)
-        time.sleep(
-            JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC
-        )  # Let JSON writer initialize
+        time.sleep(JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC)
 
         try:
             equities = kite.get_equities(column_names="instrument_token")
             tokens = kite.get_instrument_tokens(equities=equities)
             self.logger.debug(f"Got {len(tokens)} tokens from Turso DB")
+            # Register tokens from primary source
+            if tokens:
+                self._register_loaded_tokens(tokens)
         except Exception as db_error:
-            # Fallback: Use cached instruments or fetch from Kite API directly
             self.logger.warning(f"Could not get equities from DB, using fallback: {db_error}")
             tokens = []
         
-        # CRITICAL FIX: Fallback logic runs whenever tokens is empty (0)
-        # This handles BOTH exception case AND when DB returns empty list gracefully
         if len(tokens) == 0:
             self.logger.warning("No tokens from DB, applying fallback strategies...")
             
-            # Fallback 0: First check if _kite_instruments was populated by sync_instruments
-            # This happens when sync_instruments(force_fetch=True) fetches from Zerodha API
+            # Fallback 0: Use kite_instruments directly
             if self._kite_instruments and len(self._kite_instruments) > 0:
                 tokens = [int(token) for token in self._kite_instruments.keys()]
-                self.logger.debug(f"Using {len(tokens)} tokens from already-loaded kite_instruments")
-                # Instruments are already registered in candle store above, so skip fallbacks
+                self.logger.debug(f"Using {len(tokens)} tokens from kite_instruments")
+                if tokens:
+                    self._register_loaded_tokens(tokens)
             
-            # Fallback 1: Fetch NSE equity symbols from PKScreener and map to Kite tokens
+            # Fallback 1: Fetch NSE equity symbols from PKScreener
             if len(tokens) == 0:
                 try:
                     import pandas as pd
@@ -1405,84 +1438,34 @@ class KiteTokenWatcher:
                         from io import StringIO
                         equity_df = pd.read_csv(StringIO(response.text))
                         nse_symbols = equity_df['SYMBOL'].str.strip().tolist()
-                        self.logger.debug(f"Fetched {len(nse_symbols)} NSE symbols from PKScreener")
+                        self.logger.debug(f"Fetched {len(nse_symbols)} NSE symbols")
                         
-                        # Now fetch Kite instruments to map symbols to tokens
                         kite_url = "https://api.kite.trade/instruments/NSE"
                         kite_response = requests.get(kite_url, timeout=60)
                         if kite_response.status_code == 200:
                             kite_df = pd.read_csv(StringIO(kite_response.text))
-                            # Filter to only EQ segment and match with our NSE symbols
-                            eq_df = kite_df[
-                                (kite_df['segment'] == 'NSE') & 
-                                (kite_df['tradingsymbol'].isin(nse_symbols))
-                            ]
+                            eq_df = kite_df[(kite_df['segment'] == 'NSE') & (kite_df['tradingsymbol'].isin(nse_symbols))]
                             tokens = eq_df['instrument_token'].tolist()
-                            self.logger.debug(f"Mapped {len(tokens)} NSE symbols to Kite instrument tokens")
-                            # Register instruments with candle store
+                            self.logger.debug(f"Mapped {len(tokens)} NSE symbols to tokens")
                             for _, row in eq_df.iterrows():
-                                self._candle_store.register_instrument(
-                                    int(row['instrument_token']),
-                                    row.get('tradingsymbol', str(row['instrument_token']))
-                                )
-                        else:
-                            self.logger.warning(f"Kite instruments fetch failed: {kite_response.status_code}")
-                    else:
-                        self.logger.warning(f"PKScreener equity CSV fetch failed: {response.status_code}")
+                                self._candle_store.register_instrument(int(row['instrument_token']), row.get('tradingsymbol', str(row['instrument_token'])))
+                            if tokens:
+                                self._register_loaded_tokens(tokens)
                 except Exception as pkscreener_error:
                     self.logger.warning(f"PKScreener fallback failed: {pkscreener_error}")
             
-            # Fallback 2: Try InstrumentHistory API if PKScreener failed
+            # Fallback 2: Use only indices as last resort
             if len(tokens) == 0:
-                try:
-                    from pkbrokers.kite.instrumentHistory import InstrumentHistory
-                    hist = InstrumentHistory(access_token=ACCESS_TOKEN)
-                    instruments_df = hist.get_instruments(exchange="NSE")
-                    if instruments_df is not None and len(instruments_df) > 0:
-                        tokens = instruments_df[instruments_df['segment'] == 'NSE']['instrument_token'].tolist()
-                        self.logger.debug(f"Fetched {len(tokens)} tokens from InstrumentHistory API")
-                        for _, row in instruments_df[instruments_df['segment'] == 'NSE'].iterrows():
-                            self._candle_store.register_instrument(
-                                int(row['instrument_token']), 
-                                row.get('tradingsymbol', str(row['instrument_token']))
-                            )
-                except Exception as api_error:
-                    self.logger.warning(f"InstrumentHistory failed: {api_error}")
-            
-            # Fallback 3: Fetch all instruments directly from Zerodha as last resort
-            if len(tokens) == 0:
-                try:
-                    import pandas as pd
-                    import requests
-                    self.logger.debug("Fetching ALL instruments directly from Zerodha CSV...")
-                    nse_url = "https://api.kite.trade/instruments/NSE"
-                    response = requests.get(nse_url, timeout=60)
-                    if response.status_code == 200:
-                        from io import StringIO
-                        df = pd.read_csv(StringIO(response.text))
-                        # Filter for EQ (equity) segment only
-                        eq_df = df[df['segment'] == 'NSE']
-                        tokens = eq_df['instrument_token'].tolist()
-                        self.logger.debug(f"Fetched {len(tokens)} NSE tokens from Zerodha CSV")
-                        for _, row in eq_df.iterrows():
-                            self._candle_store.register_instrument(
-                                int(row['instrument_token']),
-                                row.get('tradingsymbol', str(row['instrument_token']))
-                            )
-                    else:
-                        self.logger.warning(f"Zerodha CSV fetch failed with status {response.status_code}")
-                except Exception as csv_error:
-                    self.logger.error(f"Could not fetch instruments from Zerodha CSV: {csv_error}")
+                tokens = list(set(NIFTY_50 + BSE_SENSEX + OTHER_INDICES))
+                self.logger.warning(f"Using fallback indices only: {len(tokens)} instruments")
+                self._register_loaded_tokens(tokens)
         
-        # Always include indices even if database is unavailable
+        # Always include indices
         tokens = list(set(NIFTY_50 + BSE_SENSEX + OTHER_INDICES + tokens))
         
-        # Log warning if we only have indices (no equities)
         if len(tokens) <= len(NIFTY_50 + BSE_SENSEX + OTHER_INDICES):
-            self.logger.warning(
-                f"Only {len(tokens)} index tokens available. "
-                f"Database may be blocked. Ticks will be limited to indices only."
-            )
+            self.logger.warning(f"Only {len(tokens)} index tokens available. Ticks will be limited to indices only.")
+        
         return tokens
 
     def _get_database(self):
@@ -1656,111 +1639,73 @@ class KiteTokenWatcher:
             self.logger.error(f"Error inserting to database: {e}")
 
     def _process_ticks(self):
-        """
-        Main processing thread method for handling incoming ticks.
-
-        CRITICAL FEATURES:
-        1. Uses dictionary for _tick_batch ensuring only latest tick per instrument
-        2. Fixed 30-second interval processing using absolute time calculations
-        3. Graceful shutdown handling with proper cleanup
-
-        TIMING MECHANISM:
-        - Sets _next_process_time to current time + 30 seconds initially
-        - After each processing, resets _next_process_time to current time + 30 seconds
-        - This ensures consistent 30-second intervals regardless of processing time
-        """
+        """Process ticks from queue with adaptive batching to prevent buildup."""
         from pkbrokers.kite.ticks import Tick
 
-        # CRITICAL: Set initial processing time to now + 30 seconds for exact intervals
-        self._next_process_time = datetime.now() + timedelta(
-            seconds=OPTIMAL_BATCH_TICK_WAIT_TIME_SEC
-        )
-        self._next_process_log_time = datetime.now() + timedelta(
-            seconds=12*OPTIMAL_BATCH_TICK_WAIT_TIME_SEC
-        )
-        self.logger.debug(f"Initial processing time set to: {self._next_process_time}")
-        self.logger.debug(f"Initial log time set to: {self._next_process_log_time}")
+        self._next_process_time = datetime.now() + timedelta(seconds=OPTIMAL_BATCH_TICK_WAIT_TIME_SEC)
+        self._next_process_log_time = datetime.now() + timedelta(seconds=12*OPTIMAL_BATCH_TICK_WAIT_TIME_SEC)
         
-        # Track last JSON flush time
         last_json_flush = time.time()
-        json_flush_interval = 2  # Flush JSON every 2 seconds
+        json_flush_interval = 2
+        adaptive_batch_size = 100
 
         while not self._shutdown_event.is_set():
             try:
-                # Get tick with timeout to allow periodic checking
-                try:
-                    tick = self._watcher_queue.get(timeout=1)
-                except Empty:
-                    tick = None
-                except Exception as e:
-                    self.logger.error(f"Tick retrieval error: {e}")
-                    tick = None
-
-                current_time = datetime.now()
-
-                # CRITICAL: Process batch every 30 seconds using absolute time comparison
-                if current_time >= self._next_process_time:
-                    processing_start = datetime.now()
-
-                    if self._tick_batch:
-                        # Convert to list format expected by downstream processing
-                        batch_to_process = {
-                            token: [tick] for token, tick in self._tick_batch.items()
-                        }
-                        self._db_queue.put(batch_to_process)
-                        self.logger.info(
-                            f"Queued {len(self._tick_batch)} instruments for processing"
-                        )
-                        
-                        # Flush to JSON writer before clearing batch
-                        self._flush_to_json_writer()
-                        
-                        self._tick_batch.clear()
-                        
-                    # CRITICAL: Reset timer to current time + 30 seconds for exact interval
-                    self._next_process_time = datetime.now() + timedelta(
-                        seconds=OPTIMAL_BATCH_TICK_WAIT_TIME_SEC
-                    )
-                    processing_time = (
-                        datetime.now() - processing_start
-                    ).total_seconds()
-
-                    self.logger.debug(
-                        f"Batch processed in {processing_time:.2f}s. "
-                        f"Next process time: {self._next_process_time}"
-                    )
+                # Check queue size to adjust batch size
+                queue_size = self._watcher_queue.qsize() if hasattr(self._watcher_queue, 'qsize') else 0
                 
-                # Periodic JSON flush even between batch intervals
+                if queue_size > 5000:
+                    adaptive_batch_size = 500
+                    self.logger.warning(f"Queue backlog: {queue_size}, increasing batch size to {adaptive_batch_size}")
+                elif queue_size > 1000:
+                    adaptive_batch_size = 200
+                else:
+                    adaptive_batch_size = 50
+
+                # Process multiple ticks per iteration
+                ticks_processed = 0
+                while ticks_processed < adaptive_batch_size:
+                    try:
+                        tick = self._watcher_queue.get(timeout=0.1)
+                    except Empty:
+                        break
+                    except Exception as e:
+                        self.logger.error(f"Tick retrieval error: {e}")
+                        break
+
+                    current_time = datetime.now()
+
+                    if tick and isinstance(tick, Tick):
+                        ws_index = getattr(tick, 'websocket_index', None)
+                        batch_idx = getattr(tick, 'batch_index', ws_index)
+                        if self.health_monitor:
+                            self.health_monitor.record_tick(tick.instrument_token, ws_index, batch_idx)
+                        
+                        self._tick_batch[tick.instrument_token] = tick
+                        self._watcher_queue.task_done()
+                        ticks_processed += 1
+
+                # Process batch at intervals
+                current_time = datetime.now()
+                if current_time >= self._next_process_time:
+                    if self._tick_batch:
+                        batch_to_process = {token: [tick] for token, tick in self._tick_batch.items()}
+                        self._db_queue.put(batch_to_process)
+                        self.logger.info(f"Queued {len(self._tick_batch)} instruments for processing")
+                        self._flush_to_json_writer()
+                        self._tick_batch.clear()
+                    
+                    self._next_process_time = datetime.now() + timedelta(seconds=OPTIMAL_BATCH_TICK_WAIT_TIME_SEC)
+                
+                # Periodic JSON flush
                 elif time.time() - last_json_flush >= json_flush_interval:
                     if self._tick_batch:
                         self._flush_to_json_writer()
                     last_json_flush = time.time()
-
-                # Process incoming tick if available
-                if tick is None:
-                    continue
-
-                if isinstance(tick, Tick):
-                    # Record tick for health monitoring
-                    ws_index = getattr(tick, 'websocket_index', None)
-                    batch_idx = getattr(tick, 'batch_index', ws_index)
-                    if self.health_monitor:
-                        self.health_monitor.record_tick(tick.instrument_token, ws_index, batch_idx)
-                    
-                    # CRITICAL: Dictionary assignment ensures only latest tick is kept
-                    self._tick_batch[tick.instrument_token] = tick
-                    self._watcher_queue.task_done()
-                    self._last_processed_instruments.append(str(tick.instrument_token))
-                    
-                    if current_time >= self._next_process_log_time:
-                        self._next_process_log_time = datetime.now() + timedelta(
-                            seconds=12*OPTIMAL_BATCH_TICK_WAIT_TIME_SEC
-                        )
-                        self.logger.debug(
-                            f"Updated latest tick for instruments {','.join(self._last_processed_instruments[:5])}..."
-                        )
-                        self._last_processed_instruments.clear()
-                    
+                
+                # Small sleep to prevent CPU spinning
+                time.sleep(0.01)
+                
             except KeyboardInterrupt:
                 self.logger.warning("Keyboard interrupt received in processing thread")
                 break
@@ -1768,7 +1713,6 @@ class KiteTokenWatcher:
                 self.logger.error(f"Unexpected error in tick processing: {e}")
                 continue
 
-        # Cleanup on shutdown - final JSON flush
         self._flush_to_json_writer()
         self._cleanup_processing()
 
@@ -1955,7 +1899,28 @@ class KiteTokenWatcher:
             os.unlink(temp_path)
             self.logger.error(f"Failed to atomically save pickle: {e}")
             raise
+    
+    def _register_loaded_tokens(self, tokens: List[int]):
+        """Helper method to update shared_stats and candle_store when tokens are loaded."""
+        if not tokens:
+            return
         
+        # Update shared_stats
+        if self.shared_stats is not None:
+            self.shared_stats['instrument_count'] = len(tokens)
+            self.logger.info(f"Updated shared_stats: instrument_count = {len(tokens)}")
+        
+        # Register instruments with candle store
+        for token in tokens:
+            symbol = "N/A"
+            if self._kite_instruments and token in self._kite_instruments:
+                symbol = getattr(self._kite_instruments[token], 'tradingsymbol', 'N/A')
+            self._candle_store.register_instrument(int(token), symbol)
+            # Also update the health monitor's tracking to prevent early false alarms
+            if hasattr(self, 'health_monitor') and self.health_monitor:
+                self.health_monitor.last_tick_time[int(token)] = time.time()
+                self.health_monitor.last_any_tick_time = time.time()
+                
     def get_candles(
         self,
         symbol: str = None,
