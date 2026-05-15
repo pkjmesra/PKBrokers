@@ -1292,11 +1292,11 @@
   "407049": {
     "instrument_token": 407049,
     "trading_symbol": "NIFTY QLTY LV 30",
-    "tick_count": 2,
+    "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-15T17:24:43.109292+05:30",
-      "open": 16423.1,
-      "high": 16423.1,
+      "open": 16388.8,
+      "high": 16388.8,
       "low": 16388.8,
       "close": 16388.8,
       "volume": 1632435,
@@ -5732,11 +5732,11 @@
   "931073": {
     "instrument_token": 931073,
     "trading_symbol": "JUBLPHARMA",
-    "tick_count": 2,
+    "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-15T11:53:32+05:30",
-      "open": 1005.6,
-      "high": 1005.6,
+      "open": 1000.5,
+      "high": 1000.5,
       "low": 1000.5,
       "close": 1000.5,
       "volume": 23121,
@@ -8957,11 +8957,11 @@
   "2708481": {
     "instrument_token": 2708481,
     "trading_symbol": "TCI",
-    "tick_count": 2,
+    "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-15T11:54:52+05:30",
-      "open": 911.2,
-      "high": 911.2,
+      "open": 895.0,
+      "high": 895.0,
       "low": 895.0,
       "close": 895.0,
       "volume": 12762,
@@ -9932,11 +9932,11 @@
   "3019265": {
     "instrument_token": 3019265,
     "trading_symbol": "SAKSOFT",
-    "tick_count": 2,
+    "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-15T11:55:12+05:30",
-      "open": 138.8,
-      "high": 138.8,
+      "open": 137.65,
+      "high": 137.65,
       "low": 137.65,
       "close": 137.65,
       "volume": 124324,
@@ -11117,12 +11117,12 @@
   "3509761": {
     "instrument_token": 3509761,
     "trading_symbol": "FIEMIND",
-    "tick_count": 2,
+    "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-15T11:55:02+05:30",
-      "open": 2175.0,
+      "open": 2213.6,
       "high": 2213.6,
-      "low": 2175.0,
+      "low": 2213.6,
       "close": 2213.6,
       "volume": 31175,
       "oi": 0
@@ -12272,12 +12272,12 @@
   "3835393": {
     "instrument_token": 3835393,
     "trading_symbol": "CENTUM",
-    "tick_count": 2,
+    "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-15T11:53:42+05:30",
-      "open": 2847.2,
+      "open": 3034.7,
       "high": 3034.7,
-      "low": 2847.2,
+      "low": 3034.7,
       "close": 3034.7,
       "volume": 69203,
       "oi": 0
@@ -12542,12 +12542,12 @@
   "3918849": {
     "instrument_token": 3918849,
     "trading_symbol": "SEPC",
-    "tick_count": 2,
+    "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-15T11:55:33+05:30",
-      "open": 7.59,
+      "open": 7.74,
       "high": 7.74,
-      "low": 7.59,
+      "low": 7.74,
       "close": 7.74,
       "volume": 10037547,
       "oi": 0
@@ -12932,12 +12932,12 @@
   "4359425": {
     "instrument_token": 4359425,
     "trading_symbol": "PATANJALI",
-    "tick_count": 2,
+    "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-15T11:55:22+05:30",
-      "open": 455.2,
+      "open": 455.35,
       "high": 455.35,
-      "low": 455.2,
+      "low": 455.35,
       "close": 455.35,
       "volume": 1398857,
       "oi": 0
@@ -14072,11 +14072,11 @@
   "4801281": {
     "instrument_token": 4801281,
     "trading_symbol": "KALAMANDIR",
-    "tick_count": 2,
+    "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-15T11:54:02+05:30",
-      "open": 109.45,
-      "high": 109.45,
+      "open": 106.45,
+      "high": 106.45,
       "low": 106.45,
       "close": 106.45,
       "volume": 599181,
