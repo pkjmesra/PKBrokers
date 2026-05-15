@@ -47,17 +47,17 @@
   "260617": {
     "instrument_token": 260617,
     "trading_symbol": "NIFTY 100",
-    "tick_count": 3,
+    "tick_count": 4,
     "ohlcv": {
-      "timestamp": "2026-05-15T15:41:31.797198+05:30",
+      "timestamp": "2026-05-15T15:43:08.397248+05:30",
       "open": 24726.35,
       "high": 24726.35,
       "low": 24724.6,
-      "close": 24726.0,
+      "close": 24724.85,
       "volume": 2470255,
       "oi": 0
     },
-    "last_update": "2026-05-15T15:41:31.797198+05:30"
+    "last_update": "2026-05-15T15:43:08.397248+05:30"
   },
   "257033": {
     "instrument_token": 257033,
