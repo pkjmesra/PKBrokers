@@ -729,6 +729,60 @@ class ThreadSafeDatabase:
         if total_dropped > 0:
             self.logger.warning(f"Dropped {total_dropped} ticks due to full queues")
 
+    def insert_candles_batch(self, candles: List[Dict[str, Any]]):
+        """Insert aggregated 1‑minute candles (not raw ticks)."""
+        if not candles:
+            return
+        
+        # SQL for 1‑minute candle table
+        candle_sql = """
+            INSERT OR REPLACE INTO candles_1min (
+                instrument_token, timestamp, open, high, low, close,
+                volume, oi, tick_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        
+        params_list = []
+        for c in candles:
+            params_list.append((
+                c['instrument_token'],
+                c['timestamp'],
+                c['open'],
+                c['high'],
+                c['low'],
+                c['close'],
+                c['volume'],
+                c['oi'],
+                c['tick_count']
+            ))
+        
+        # Use local SQLite (Turso not recommended for high‑frequency writes)
+        with self.lock, self.get_connection() as conn:
+            try:
+                cursor = conn.cursor()
+                # Create table if not exists
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS candles_1min (
+                        instrument_token INTEGER,
+                        timestamp INTEGER,
+                        open REAL,
+                        high REAL,
+                        low REAL,
+                        close REAL,
+                        volume INTEGER,
+                        oi INTEGER,
+                        tick_count INTEGER,
+                        PRIMARY KEY (instrument_token, timestamp)
+                    )
+                """)
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA synchronous=NORMAL")
+                cursor.executemany(candle_sql, params_list)
+                conn.commit()
+                self.logger.debug(f"Inserted {len(params_list)} candles")
+            except Exception as e:
+                self.logger.error(f"Candle insert error: {e}")
+                
     def _insert_ticks_local(self, ticks: List[Dict[str, Any]]):
         """Local SQLite implementation as fallback"""
         if not ticks:

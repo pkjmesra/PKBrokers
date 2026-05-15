@@ -773,6 +773,7 @@ class ZerodhaWebSocketClient:
 
     def _flush_to_db(self, batch):
         """Bulk insert ticks to database."""
+        return
         try:
             if self.db_conn:
                 self.db_conn.insert_ticks(batch)

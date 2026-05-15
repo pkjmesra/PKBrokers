@@ -984,6 +984,34 @@ class InMemoryCandleStore:
         thread.start()
         self.logger.debug("Started candle persistence thread")
     
+    def get_completed_candles(self, interval: str = '1m') -> List[Dict[str, Any]]:
+        """
+        Get all completed candles (not current) for a given interval.
+        Returns a list of dicts suitable for DB insert.
+        """
+        candles_to_flush = []
+        with self.lock:
+            for token, instrument in self.instruments.items():
+                symbol = self.instrument_symbols.get(token, str(token))
+                candles = instrument.candles.get(interval, [])
+                # Only take candles that are marked complete and not yet flushed
+                for candle in candles:
+                    if not getattr(candle, '_flushed_to_db', False):
+                        candles_to_flush.append({
+                            'instrument_token': token,
+                            'trading_symbol': symbol,
+                            'timestamp': candle.timestamp,  # candle start time
+                            'open': candle.open,
+                            'high': candle.high,
+                            'low': candle.low if candle.low != float('inf') else candle.open,
+                            'close': candle.close,
+                            'volume': candle.volume,
+                            'oi': candle.oi,
+                            'tick_count': candle.tick_count,
+                        })
+                        candle._flushed_to_db = True
+        return candles_to_flush
+
     def get_stats(self) -> Dict[str, Any]:
         """Get store statistics."""
         with self.lock:

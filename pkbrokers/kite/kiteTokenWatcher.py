@@ -1671,6 +1671,15 @@ class KiteTokenWatcher:
         except Exception as e:
             self.logger.error(f"Error inserting to database: {e}")
 
+    def _flush_candles_to_db(self):
+        """Send completed 1‑minute candles from candle store to DB."""
+        if not self._db_instance:
+            return
+        candles = self._candle_store.get_completed_candles('1m')
+        if candles:
+            self._db_instance.insert_candles_batch(candles)
+            self.logger.debug(f"Flushed {len(candles)} candles to DB")
+            
     def _process_ticks(self):
         """Process ticks from queue with adaptive batching to prevent buildup."""
         from pkbrokers.kite.ticks import Tick
@@ -1725,9 +1734,10 @@ class KiteTokenWatcher:
                 if current_time >= self._next_process_time:
                     if self._tick_batch:
                         batch_to_process = {token: [tick] for token, tick in self._tick_batch.items()}
-                        self._db_queue.put(batch_to_process)
+                        # self._db_queue.put(batch_to_process)
                         self.logger.info(f"Queued {len(self._tick_batch)} instruments for processing")
                         self._flush_to_json_writer()
+                        self._flush_candles_to_db()
                         self._tick_batch.clear()
                     
                     self._next_process_time = datetime.now() + timedelta(seconds=OPTIMAL_BATCH_TICK_WAIT_TIME_SEC)
