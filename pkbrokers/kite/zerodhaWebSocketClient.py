@@ -64,7 +64,12 @@ except ImportError:
 DEFAULT_PATH = Archiver.get_user_data_dir()
 
 PING_INTERVAL = 30
-OPTIMAL_MAX_QUEUE_SIZE = 50000
+ # With high tick frequency (e.g., 2000+ instruments, each tick 
+ # every few hundred ms), 50k ticks can accumulate in seconds.
+ # Large queues increase latency and memory pressure. They mask 
+ # backpressure instead of solving the root cause. So, let's
+ # keep it to 10k
+OPTIMAL_MAX_QUEUE_SIZE = 10000
 HTTP_400_429_WAIT_TIME = 120
 NETWORK_WAIT_TIME = 5
 GENERAL_WAIT_TIME = 1

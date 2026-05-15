@@ -59,7 +59,14 @@ OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batc
 OPTIMAL_BATCH_TICK_WAIT_TIME_SEC = 30
 DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 0.5
 JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 1
-OPTIMAL_MAX_QUEUE_SIZE = 50000
+ # With high tick frequency (e.g., 2000+ instruments, each tick 
+ # every few hundred ms), 50k ticks can accumulate in seconds.
+ # Large queues increase latency and memory pressure. They mask 
+ # backpressure instead of solving the root cause. So, let's
+ # keep it to 10k
+OPTIMAL_MAX_QUEUE_SIZE = 10000
+JSON_SAVE_INTERVAL = 120
+DATA_QUEUE_LOG_INTERVAL = 60
 STALE_THRESHOLD_SECONDS = 300
 TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD = 10
 RECOVERY_COOLDOWN_SECONDS = 120  # Don't triggers recovery more than once every minute
@@ -851,7 +858,7 @@ class JSONFileWriter:
                 pass
             raise
 
-    def _save_to_file(self, data, validate=True):
+    def _save_to_file(self, data, validate=False):
         """
         Save data to JSON file with:
         1. File locking to prevent concurrent writes
@@ -925,9 +932,9 @@ class JSONFileWriter:
                 self.logger.error(f"Error loading JSON file: {e}")
 
         last_save_time = time.time()
-        save_interval = 30
+        save_interval = JSON_SAVE_INTERVAL
         last_log_time = time.time()
-        log_interval = 60
+        log_interval = DATA_QUEUE_LOG_INTERVAL
         processed_count = 0
         validation_counter = 0  # For periodic validation
 
@@ -1534,11 +1541,9 @@ class KiteTokenWatcher:
         try:
             start_time = time.time()
             
-            # Send each tick individually to JSON writer
-            for token, tick_data in self._tick_batch.items():
-                # Convert Tick to dict before sending
-                tick_dict = self._tick_to_dict(tick_data)
-                self.json_writer.add_tick(tick_dict)
+            # Send entire batch of ticks to JSON writer
+            tick_dicts = [self._tick_to_dict(tick) for tick in self._tick_batch.values()]
+            self.json_writer.add_batch(tick_dicts)   # ensure add_batch puts all at once
             
             # Check if JSON writer is falling behind
             if hasattr(self.json_writer, 'data_queue'):

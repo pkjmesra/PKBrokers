@@ -43,7 +43,12 @@ from PKDevTools.classes.PKJoinableQueue import PKJoinableQueue
 DEFAULT_PATH = Archiver.get_user_data_dir()
 DEFAULT_DB_PATH = os.path.join(DEFAULT_PATH, "ticks.db")
 OPTIMAL_BATCH_SIZE = 500  # Adjust based on testing
-OPTIMAL_MAX_QUEUE_SIZE = 200000  # Adjust based on testing
+ # With high tick frequency (e.g., 2000+ instruments, each tick 
+ # every few hundred ms), 50k ticks can accumulate in seconds.
+ # Large queues increase latency and memory pressure. They mask 
+ # backpressure instead of solving the root cause. So, let's
+ # keep it to 10k or 50k
+OPTIMAL_MAX_QUEUE_SIZE = 50000  # Adjust based on testing
 MAX_CONNECTION_ATTEMPTS = 5
 MAX_TURSO_WRITERS = 8
 FLUSH_INTERVAL_SEC = 0.5
