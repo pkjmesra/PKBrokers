@@ -691,7 +691,7 @@ class ZerodhaWebSocketClient:
         """Process ticks from queue and store in database."""
         batch = []
         last_flush = time.time()
-
+        tick_data = None
         while not self.stop_event.is_set() or not self.data_queue.empty():
             try:
                 try:
