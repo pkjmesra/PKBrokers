@@ -1749,8 +1749,8 @@ class DataSharingManager:
             today_suffix = cache_file_name.replace(".pkl", "").replace("stock_data_", "")
             
             # Define minimum file sizes (in bytes)
-            DAILY_PKL_MIN_SIZE = 25 * 1024 * 1024  # 25 MB
-            INTRADAY_PKL_MIN_SIZE = 1 * 1024 * 1024  # 1 MB
+            DAILY_PKL_MIN_SIZE = 20 * 1024 * 1024  # 25 MB
+            INTRADAY_PKL_MIN_SIZE = 0.5 * 1024 * 1024  # 1 MB
             
             # Check for daily pkl with size validation
             daily_pkl = self.get_daily_pkl_path()
