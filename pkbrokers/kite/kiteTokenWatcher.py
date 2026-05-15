@@ -56,15 +56,15 @@ from pkbrokers.kite.inMemoryCandleStore import get_candle_store
 
 # Optimal batch size depends on your tick frequency
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
-OPTIMAL_BATCH_TICK_WAIT_TIME_SEC = 10
+OPTIMAL_BATCH_TICK_WAIT_TIME_SEC = 30
 DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 0.5
 JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 1
 OPTIMAL_MAX_QUEUE_SIZE = 50000
-STALE_THRESHOLD_SECONDS = 120
-TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD = 5
-RECOVERY_COOLDOWN_SECONDS = 60  # Don't triggers recovery more than once every minute
+STALE_THRESHOLD_SECONDS = 300
+TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD = 10
+RECOVERY_COOLDOWN_SECONDS = 120  # Don't triggers recovery more than once every minute
 MAX_CONSECUTIVE_FAILURES = 5
-MIN_INSTRUMENTS_FOR_MONITOR = 100  # Minimum instruments before health monitor activates
+MIN_INSTRUMENTS_FOR_MONITOR = 500  # Minimum instruments before health monitor activates
 SECONDS_BETWEEN_WARNINGS = 30
 INSTRUMENT_COUNT_LOG_INTERVAL = 300
 HEALTH_CHECK_INTERVAL = 10
@@ -169,7 +169,7 @@ class TickHealthMonitor:
         self._recovery_attempts = 0
         self._max_recovery_attempts = 3
         self._last_recovery_time = 0
-        self._recovery_cooldown = RECOVERY_COOLDOWN_SECONDS  # Don't recover more than once per minute
+        self._recovery_cooldown = RECOVERY_COOLDOWN_SECONDS  # Don't recover more than once per 2 minutes
         self._consecutive_failures = 0
         self._max_consecutive_failures = MAX_CONSECUTIVE_FAILURES
         
