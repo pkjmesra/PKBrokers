@@ -582,8 +582,8 @@ class ZerodhaWebSocketClient:
         self.logger.debug(f"ZerodhaWebSocketClient initialized")
 
         self.mp_context = multiprocessing.get_context("spawn")
-        self.manager = self.mp_context.Manager()
-        self.data_queue = self.manager.Queue(maxsize=10000)  # Limit queue size
+        # self.manager = self.mp_context.Manager()
+        self.data_queue = self.mp_context.Queue(maxsize=0)  # Limit queue size
         self.stop_event = self.mp_context.Event()
 
         self.db_conn = db_conn
@@ -899,6 +899,12 @@ class ZerodhaWebSocketClient:
         self.logger.warning("Stopping WebSocket client")
         self.stop_event.set()
 
+        # Close the queue to unblock any waiting gets
+        try:
+            self.data_queue.close()
+            self.data_queue.join_thread()
+        except Exception:
+            pass
         for i, p in enumerate(self.ws_processes):
             if p and p.is_alive():
                 p.join(timeout=10)
@@ -916,8 +922,8 @@ class ZerodhaWebSocketClient:
         if hasattr(self, "watcher_queue") and self.watcher_queue is not None:
             self.watcher_queue = None
 
-        # Close the manager
-        if hasattr(self, "manager"):
-            self.manager.shutdown()
+        # # Close the manager
+        # if hasattr(self, "manager"):
+        #     self.manager.shutdown()
 
         self.logger.warning("Shutdown complete")
