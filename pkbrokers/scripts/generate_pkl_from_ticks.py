@@ -757,6 +757,45 @@ def find_sqlite_database(verbose: bool = True) -> Optional[str]:
     log("❌ No SQLite database found", verbose)
     return None
 
+def is_after_market_hours(verbose: bool = True) -> bool:
+    """Check if current time in IST is after market close (>=15:30)."""
+    from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+    now = datetime.now(KOLKATA_TZ).time()
+    market_close = datetime.strptime("15:30", "%H:%M").time()
+    is_after = now >= market_close
+    log(f"Market close check: now={now}, close=15:30, after={is_after}", verbose)
+    return is_after
+
+
+def is_db_current(db_path: str, verbose: bool = True) -> bool:
+    """Check if the database contains daily data for today's trading date."""
+    try:
+        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+        conn = sqlite3.connect(db_path)
+        today_trading = PKDateUtilities.tradingDate()
+        today_str = today_trading.strftime('%Y-%m-%d')
+        
+        query = """
+        SELECT COUNT(1) FROM instrument_history
+        WHERE (interval = 'day' OR interval IS NULL)
+          AND date(timestamp) = ?
+        LIMIT 1
+        """
+        cursor = conn.execute(query, (today_str,))
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count > 0
+    except Exception as e:
+        log(f"⚠️ Could not check database freshness: {e}", verbose)
+        return False
+
+
+def find_and_check_current_db(verbose: bool = True) -> Optional[str]:
+    """Find a database that contains daily data for today's trading date."""
+    db_path = find_sqlite_database(verbose)
+    if db_path and is_db_current(db_path, verbose):
+        return db_path
+    return None
 
 def load_from_sqlite(db_path: str, verbose: bool = True) -> Dict:
     """Load daily candles from SQLite database."""
@@ -1285,6 +1324,19 @@ def main():
     data_mgr = get_data_sharing_manager()
     candle_store = get_candle_store()
     today_trading_date = PKDateUtilities.tradingDate()
+
+    # Auto-detect fresh local database but use DB-only only after market hours
+    if not args.from_db and not args.db_only:
+        db_path = find_and_check_current_db(verbose)
+        if db_path and is_after_market_hours(verbose):
+            log("\n" + "=" * 60, verbose)
+            log("🔄 AUTO-DETECTED: Local database contains today's data AND market is closed.", verbose)
+            log("   Switching to DB-ONLY mode (ignoring GitHub PKL & ticks.json)", verbose)
+            log("=" * 60, verbose)
+            args.db_only = True
+            args.db_path = db_path
+        elif db_path:
+            log("ℹ️ Found fresh local database but market is open – using normal mode (ticks.json + historical merge)", verbose)
 
     # =============================================================
     # DATABASE-ONLY MODE: Skip all merging, just use DB data
