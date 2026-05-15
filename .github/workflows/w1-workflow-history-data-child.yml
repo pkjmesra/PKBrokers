@@ -852,7 +852,7 @@ jobs:
         
         # Define size thresholds
         DAILY_MIN_SIZE=25000000  # 25 MB minimum for daily
-        INTRADAY_MIN_SIZE=800000  # 800KB minimum for intraday (was 10KB, increased to 800KB)
+        INTRADAY_MIN_SIZE=100000  # 100KB minimum for intraday
         
         # Determine pkl filename based on period and size thresholds
         case "$PERIOD" in
