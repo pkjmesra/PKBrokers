@@ -701,6 +701,11 @@ class ZerodhaWebSocketClient:
                         self._flush_to_db(batch)
                         batch = []
                         last_flush = time.time()
+                except ValueError as e:
+                    if "multiprocessing.queues.Queue object" in str(e) and "is closed" in str(e):
+                        self.stop_event.set()
+                        self.stop()
+                        break
                     continue
 
                 if tick_data is None or tick_data.get("type") != "tick":
@@ -938,7 +943,10 @@ class ZerodhaWebSocketClient:
         self._stop_requested = True
         
         self.logger.warning("Stopping WebSocket client")
-        self.stop_event.set()
+        try:
+            self.stop_event.set()
+        except:
+            pass
 
         # Close the queue to unblock any waiting gets
         try:
