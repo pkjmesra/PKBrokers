@@ -1485,6 +1485,27 @@ class KiteTokenWatcher:
             return self._db_instance
         return None
 
+    def _tick_to_dict(self, tick):
+        """Convert a Tick object to a dictionary for JSON writer."""
+        return {
+            "instrument_token": tick.instrument_token,
+            "timestamp": ensure_ist_datetime(
+                datetime.fromtimestamp(tick.last_trade_timestamp) if tick.last_trade_timestamp else tick.exchange_timestamp
+            ).isoformat(),
+            "last_price": tick.last_price or 0,
+            "day_volume": tick.day_volume or 0,
+            "oi": tick.oi or 0,
+            "buy_quantity": tick.buy_quantity or 0,
+            "sell_quantity": tick.sell_quantity or 0,
+            "high_price": tick.high_price or 0,
+            "low_price": tick.low_price or 0,
+            "open_price": tick.open_price or 0,
+            "prev_day_close": tick.prev_day_close or 0,
+            "depth": self._extract_depth(tick),
+            "websocket_index": getattr(tick, 'websocket_index', -1),
+            "batch_index": getattr(tick, 'batch_index', -1),
+        }
+    
     def _flush_to_json_writer(self):
         """Flush pending ticks to JSON writer with monitoring."""
         if not hasattr(self, '_tick_batch') or not self._tick_batch:
@@ -1495,7 +1516,9 @@ class KiteTokenWatcher:
             
             # Send each tick individually to JSON writer
             for token, tick_data in self._tick_batch.items():
-                self.json_writer.add_tick(tick_data)
+                # Convert Tick to dict before sending
+                tick_dict = self._tick_to_dict(tick_data)
+                self.json_writer.add_tick(tick_dict)
             
             # Check if JSON writer is falling behind
             if hasattr(self.json_writer, 'data_queue'):
@@ -1541,23 +1564,7 @@ class KiteTokenWatcher:
             latest_tick = ticks[0]  # Single tick in list format
             timestamp = datetime.fromtimestamp(latest_tick.last_trade_timestamp) if latest_tick.last_trade_timestamp else latest_tick.exchange_timestamp
 
-            # Process market depth data
-            depth_data = self._extract_depth(latest_tick)
-
-            processed = {
-                "instrument_token": latest_tick.instrument_token,
-                "timestamp": ensure_ist_datetime(timestamp),
-                "last_price": latest_tick.last_price or 0,
-                "day_volume": latest_tick.day_volume or 0,
-                "oi": latest_tick.oi or 0,
-                "buy_quantity": latest_tick.buy_quantity or 0,
-                "sell_quantity": latest_tick.sell_quantity or 0,
-                "high_price": latest_tick.high_price or 0,
-                "low_price": latest_tick.low_price or 0,
-                "open_price": latest_tick.open_price or 0,
-                "prev_day_close": latest_tick.prev_day_close or 0,
-                "depth": depth_data,
-            }
+            processed = self._tick_to_dict(latest_tick)
             processed_batch.append(processed)
             # Add to JSON batch instead of sending individually
             json_batch.append(processed)

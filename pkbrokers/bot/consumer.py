@@ -36,7 +36,7 @@ from PKDevTools.classes import Archiver, log
 from PKDevTools.classes.Environment import PKEnvironment
 from telethon import TelegramClient, events
 
-MAX_NETWORK_TIMEOUT = 20 # 20 seconds for network operations
+MAX_NETWORK_TIMEOUT = 10 # 10 seconds for network operations
 
 class PKTickBotConsumer:
     """Programmatic client to interact with PKTickBot with zip handling"""
