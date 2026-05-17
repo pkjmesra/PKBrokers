@@ -184,7 +184,7 @@ jobs:
         mkdir -p results/Data
         
         # If pastoffset is provided and > 0, use it
-        INPUT_OFFSET=${{ inputs.pastoffset || 0 }}
+        INPUT_OFFSET=${{ inputs.pastoffset || 251 }}
         
         if [ "$INPUT_OFFSET" -gt 0 ]; then
           echo "Using provided pastoffset: $INPUT_OFFSET"
@@ -474,7 +474,7 @@ jobs:
 
         # --- Original logic (runs only if download failed or file didn't exist or was invalid) ---
         # Use calculated offset from previous step if available
-        OFFSET=${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 0 }}
+        OFFSET=${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 251 }}
         echo "Running pkkite with --history=${{ inputs.period }} --pastoffset=$OFFSET"
         
         python pkkite.py --history=${{ inputs.period }} --pastoffset=$OFFSET --verbose
@@ -776,7 +776,7 @@ jobs:
             python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py \
               --data-dir results/Data \
               --verbose \
-              --past-offset ${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 0 }}
+              --past-offset ${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 251 }}
         else
             echo "🔴 Market is closed OR today is a holiday - using DB-ONLY mode (ignoring GitHub PKL and ticks.json)..."
             echo "Using unified pkl generator script (--db-only mode)..."
@@ -787,7 +787,7 @@ jobs:
               --db-only \
               --data-dir results/Data \
               --verbose \
-              --past-offset ${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 0 }}
+              --past-offset ${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 251 }}
         fi
         
         echo ""

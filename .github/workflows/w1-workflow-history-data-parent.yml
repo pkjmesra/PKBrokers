@@ -42,7 +42,7 @@ on:
       pastoffset:
         description: 'Past number of days for which data has to be fetched'
         required: false
-        default: 0
+        default: 251
         type: number
 
 jobs:
@@ -336,7 +336,7 @@ jobs:
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/workflows/w1-workflow-history-data-child.yml/dispatches" \
-            -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$period\",\"logLevel\":\"$LOG_LEVEL\",\"kiteToken\":\"${{ secrets.KTOKEN }}\",\"pastoffset\":\"${{ inputs.pastoffset }}\"}}"
+            -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$period\",\"logLevel\":\"$LOG_LEVEL\",\"kiteToken\":\"${{ secrets.KTOKEN }}\",\"pastoffset\":\"${{ inputs.pastoffset || 251}}\"}}"
           
           sleep 2
         done
