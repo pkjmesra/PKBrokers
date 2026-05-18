@@ -1333,10 +1333,6 @@ class KiteTokenWatcher:
         """
         local_secrets = PKEnvironment().allSecrets
         self._db_instance = self._get_database()
-        
-        # Start JSON writer early
-        self.json_writer.start(kite_instruments=self._kite_instruments)
-        time.sleep(JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC)
 
         # Auto-fetch tokens if none provided
         if len(self.token_batches) == 0:
@@ -1360,6 +1356,10 @@ class KiteTokenWatcher:
             
             self.logger.info(f"Created {len(self.token_batches)} token batches with {len(tokens)} total instruments")
 
+        # Now start JSON writer with fully populated mapping
+        self.json_writer.start(kite_instruments=self._kite_instruments)
+        time.sleep(JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC)
+        
         self.logger.debug(
             f"Fetched tokens. Divided into {len(self.token_batches)} batches."
         )
