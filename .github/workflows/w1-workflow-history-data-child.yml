@@ -761,7 +761,7 @@ jobs:
       # For day period only
       # If market is open and not holiday, merges ticks.json data with database
       # If market is closed or holiday, uses DB-ONLY mode (ignores GitHub PKL and ticks.json)
-      if: inputs.period == 'day'
+    #   if: inputs.period == 'day'
       run: |
         cd pkbrokers/kite/examples/
         mkdir -p results/Data
@@ -776,6 +776,7 @@ jobs:
             python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py \
               --data-dir results/Data \
               --verbose \
+              --interval ${{ inputs.period }} \
               --past-offset ${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 251 }}
         else
             echo "🔴 Market is closed OR today is a holiday - using DB-ONLY mode (ignoring GitHub PKL and ticks.json)..."
@@ -787,6 +788,7 @@ jobs:
               --db-only \
               --data-dir results/Data \
               --verbose \
+              --interval ${{ inputs.period }} \
               --past-offset ${{ steps.calc_offset.outputs.PAST_OFFSET || inputs.pastoffset || 251 }}
         fi
         
@@ -961,7 +963,7 @@ jobs:
             # If no intraday pkl, try to generate from local ticks.json as fallback
             if [ "$FILES_COPIED" -lt 2 ]; then
                 echo "No valid intraday pkl found, trying to generate from local ticks.json..."
-                python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py --data-dir "$RESULTS_DATA_DIR" --verbose 2>/dev/null || true
+                python3 ../../../pkbrokers/scripts/generate_pkl_from_ticks.py --data-dir "$RESULTS_DATA_DIR" --verbose --interval 'minute' 2>/dev/null || true
                 
                 for PKL_FILE in "$RESULTS_DATA_DIR"/intraday_stock_data_*.pkl; do
                     if [ -f "$PKL_FILE" ]; then

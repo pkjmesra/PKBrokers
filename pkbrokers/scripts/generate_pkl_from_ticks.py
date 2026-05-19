@@ -777,7 +777,7 @@ def is_db_current(db_path: str, verbose: bool = True) -> bool:
         
         query = """
         SELECT COUNT(1) FROM instrument_history
-        WHERE (interval = 'day' OR interval IS NULL)
+        WHERE (interval in ('day','minute') OR interval IS NULL)
           AND date(timestamp) = ?
         LIMIT 1
         """
@@ -825,7 +825,7 @@ def load_from_sqlite(db_path: str, verbose: bool = True) -> Dict:
                        i.tradingsymbol
                 FROM instrument_history ih
                 JOIN instruments i ON ih.instrument_token = i.instrument_token
-                WHERE ih.interval = 'day' OR ih.interval IS NULL
+                WHERE ih.interval in ('day') OR ih.interval IS NULL
                 ORDER BY ih.instrument_token, ih.timestamp
                 """
                 df = pd.read_sql_query(query, conn)
@@ -842,7 +842,7 @@ def load_from_sqlite(db_path: str, verbose: bool = True) -> Dict:
                     query = f"""
                     SELECT instrument_token, timestamp, open, high, low, close, volume
                     FROM {table_name}
-                    WHERE interval = 'day' OR interval IS NULL
+                    WHERE interval in ('day') OR interval IS NULL
                     ORDER BY instrument_token, timestamp
                     """
                     df = pd.read_sql_query(query, conn)
@@ -1303,12 +1303,14 @@ def main():
     parser.add_argument("--trigger-history", action="store_true", help="Trigger history download workflow if data is stale")
     parser.add_argument("--past-offset", default=30, help="Past offset days to check for the existence of pkl files")
     parser.add_argument("--verbose", "-v", action="store_true", default=True, help="Verbose output")
+    parser.add_argument("--interval", default="day", help="Interval for which the pkl file has to be generated")
     args = parser.parse_args()
     
     verbose = args.verbose
     data_dir = args.data_dir
-    past_offset = int(args.past_offset) if args.past_offset else 30
-    
+    past_offset = int(args.past_offset) if args.past_offset else 375
+    data_interval = args.interval
+    past_offset = 251 if data_interval == 'day' else 375
     log("=" * 60, verbose)
     log("PKL Generator: Unified pkl file generation", verbose)
     log(f"Mode: {'SQLite Database' if args.from_db else 'Ticks JSON'}", verbose)
@@ -1357,16 +1359,16 @@ def main():
             log("❌ No database found in db-only mode!", verbose)
             sys.exit(1)
         
-        log(f"\n[DB-ONLY MODE] Loading daily candles from: {db_path}", verbose)
-        db_candles = load_from_sqlite(db_path, verbose)
-        
-        if not db_candles:
-            log("❌ No daily data found in database!", verbose)
-            sys.exit(1)
-        
-        # Save daily PKL files
-        log(f"\n[DB-ONLY MODE] Saving {len(db_candles)} daily instruments...", verbose)
-        save_pkl_files(db_candles, data_dir, verbose)
+        if data_interval == 'day':
+            log(f"\n[DB-ONLY MODE] Loading daily candles from: {db_path}", verbose)
+            db_candles = load_from_sqlite(db_path, verbose)
+            
+            if not db_candles:
+                log("❌ No daily data found in database!", verbose)
+            else:
+                # Save daily PKL files
+                log(f"\n[DB-ONLY MODE] Saving {len(db_candles)} daily instruments...", verbose)
+                save_pkl_files(db_candles, data_dir, verbose)
         
         # Also save intraday if available
         log("\n[DB-ONLY MODE] Checking for intraday data...", verbose)
