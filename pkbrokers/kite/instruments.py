@@ -33,6 +33,8 @@ import csv
 import os
 import sqlite3
 import time
+import pandas as pd
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -598,6 +600,30 @@ class KiteInstruments:
             self.logger.warning(f"Invalid expiry format: {expiry}")
             return None
 
+    def clean_symbol(s):
+        if not isinstance(s, str):
+            return s
+        # Remove common suffixes
+        return re.sub(r'-(BE|BZ|SM|ST|EQ)$', '', s, flags=re.IGNORECASE).strip()
+
+    # Load and clean NSE.csv
+    nse = pd.read_csv('NSE.csv')
+    nse_eq = nse[nse['instrument_type'] == 'EQ'].copy()
+    nse_eq['clean'] = nse_eq['tradingsymbol'].apply(clean_symbol)
+    nse_set = set(nse_eq['clean'].dropna())
+
+    # Load EQUITY_L.csv
+    equity = pd.read_csv('EQUITY_L.csv')
+    equity_set = set(equity['SYMBOL'].dropna())
+
+    common = nse_set & equity_set
+    only_nse = nse_set - equity_set
+    only_equity = equity_set - nse_set
+
+    print(f"Common symbols: {len(common)}")
+    print(f"Only in NSE (EQ): {len(only_nse)}")
+    print(f"Only in EQUITY_L: {len(only_equity)}")
+
     def _filter_instrument(self, instrument: Instrument) -> bool:
         """
         Filter instruments based on criteria for equity trading.
@@ -629,15 +655,13 @@ class KiteInstruments:
             and instrument.name is not None
         )
         if nse_symbols:
+            kite_nse_normalized_symbol = instrument.tradingsymbol.replace("-BE", "").replace("-BZ", "").replace("-SM", "").replace("ST", "").replace("EQ", "")
             # Use NSE symbol list as the primary filter
             in_nse_symbols_or_indices = (basic_conditions and (
-                instrument.tradingsymbol.replace("-BE", "").replace("-BZ", "")
-                in nse_symbols) or indices_conditions
+                kite_nse_normalized_symbol in nse_symbols) or indices_conditions
             )
             if in_nse_symbols_or_indices:
-                self._filtered_trading_symbols.append(
-                    instrument.tradingsymbol.replace("-BE", "").replace("-BZ", "")
-                )
+                self._filtered_trading_symbols.append(kite_nse_normalized_symbol)
                 self.kite_instruments[instrument.instrument_token] = instrument
             # else:
             #     # if basic_conditions:
