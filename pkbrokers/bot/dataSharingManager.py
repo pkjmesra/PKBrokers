@@ -46,9 +46,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pytz
 import requests
-
 from PKDevTools.classes import Archiver
 from PKDevTools.classes.log import default_logger
+from PKDevTools.classes.SimplePickler import SimplePickler
 
 # Maximum rows to keep for daily stock data (approximately 1 year of trading data)
 MAX_DAILY_ROWS = 251
@@ -107,7 +107,7 @@ class DataSharingManager:
         """
         self.data_dir = data_dir or DEFAULT_PATH
         self.logger = default_logger()
-        
+        self.pickler = SimplePickler(logger=self.logger)
         # Ensure data directory exists
         os.makedirs(self.data_dir, exist_ok=True)
         
@@ -828,11 +828,20 @@ class DataSharingManager:
                 self.logger.warning(f"Pkl file too small ({file_size} bytes): {pkl_path}")
                 return False, None, 0, None, None, 0
             
+            # Use safe_load; provide a fallback loader that regenerates from candle_store
+            def fallback():
+                # This would call export_daily_candles_to_pkl and return the data
+                success, _ = self.export_daily_candles_to_pkl(self._candle_store)
+                if success:
+                    with open(pkl_path, 'rb') as f:
+                        return pickle.load(f)
+                return None
             # Load data with error handling
             data = None
             try:
-                with open(pkl_path, 'rb') as f:
-                    data = pickle.load(f)
+                data, ok = self.pickler.safe_load(pkl_path, fallback_loader=fallback)
+                if not ok or data is None:
+                    return False, None, 0, None, None, 0
             except Exception as e:
                 self.logger.error(f"Failed to load pkl: {e}")
                 return False, None, 0, None, None, 0
@@ -1396,8 +1405,8 @@ class DataSharingManager:
                             latest_timestamp = last_idx
                 
                 self.logger.info(f"EXPORT: Saving data with latest timestamp: {latest_timestamp}")
-                with open(output_path, 'wb') as f:
-                    pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+                if not self.pickler.atomic_dump(data, output_path):
+                    self.logger.error("Failed to write daily pkl")
                 
                 file_size = os.path.getsize(output_path) / (1024 * 1024)  # MB
                 self.logger.info(f"Exported {len(data)} instruments ({today_count} with today's data) to {output_path} ({file_size:.2f} MB)")
@@ -1863,7 +1872,8 @@ class DataSharingManager:
                         committed_files.append(remote_path)
                     else:
                         self.logger.warning(f"Failed to commit {remote_path}: {resp.status_code} {resp.text[:200]}")
-                        
+                # except urllib3.exceptions.ProtocolError:
+                #     pass
                 except Exception as e:
                     self.logger.error(f"Error committing {local_path}: {e}")
             

@@ -49,6 +49,7 @@ from PKDevTools.classes.Environment import PKEnvironment
 from PKDevTools.classes.log import default_logger
 from PKDevTools.classes.PKJoinableQueue import PKJoinableQueue
 from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+from PKDevTools.classes.SimplePickler import SimplePickler
 
 from pkbrokers.kite.instruments import KiteInstruments
 from pkbrokers.kite.zerodhaWebSocketClient import ZerodhaWebSocketClient
@@ -69,10 +70,10 @@ OPTIMAL_MAX_QUEUE_SIZE = 10000
 JSON_SAVE_INTERVAL = 120
 DATA_QUEUE_LOG_INTERVAL = 60
 STALE_THRESHOLD_SECONDS = 300
-TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD = 5
+TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD = 10
 # Add absolute stale count trigger (e.g., 300 instruments)
-TRIGGER_RECOVERY_STALE_ABSOLUTE = 300
-RECOVERY_COOLDOWN_SECONDS = 120  # Don't triggers recovery more than once every minute
+TRIGGER_RECOVERY_STALE_ABSOLUTE = 250
+RECOVERY_COOLDOWN_SECONDS = 120  # Don't triggers recovery more than once every 2 minutes
 MAX_CONSECUTIVE_FAILURES = 5
 MIN_INSTRUMENTS_FOR_MONITOR = 500  # Minimum instruments before health monitor activates
 SECONDS_BETWEEN_WARNINGS = 30
@@ -1223,6 +1224,7 @@ class KiteTokenWatcher:
 
         self.client = client
         self.logger = default_logger()
+        self.pickler = SimplePickler(logger=self.logger)
         self._db_instance = None
         
         # Initialize shared_stats properly
