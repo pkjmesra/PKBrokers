@@ -600,30 +600,6 @@ class KiteInstruments:
             self.logger.warning(f"Invalid expiry format: {expiry}")
             return None
 
-    def clean_symbol(s):
-        if not isinstance(s, str):
-            return s
-        # Remove common suffixes
-        return re.sub(r'-(BE|BZ|SM|ST|EQ)$', '', s, flags=re.IGNORECASE).strip()
-
-    # Load and clean NSE.csv
-    nse = pd.read_csv('NSE.csv')
-    nse_eq = nse[nse['instrument_type'] == 'EQ'].copy()
-    nse_eq['clean'] = nse_eq['tradingsymbol'].apply(clean_symbol)
-    nse_set = set(nse_eq['clean'].dropna())
-
-    # Load EQUITY_L.csv
-    equity = pd.read_csv('EQUITY_L.csv')
-    equity_set = set(equity['SYMBOL'].dropna())
-
-    common = nse_set & equity_set
-    only_nse = nse_set - equity_set
-    only_equity = equity_set - nse_set
-
-    print(f"Common symbols: {len(common)}")
-    print(f"Only in NSE (EQ): {len(only_nse)}")
-    print(f"Only in EQUITY_L: {len(only_equity)}")
-
     def _filter_instrument(self, instrument: Instrument) -> bool:
         """
         Filter instruments based on criteria for equity trading.
