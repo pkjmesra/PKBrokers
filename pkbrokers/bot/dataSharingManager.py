@@ -1718,7 +1718,7 @@ class DataSharingManager:
             self.logger.error(f"Error zipping file: {e}")
             return False, None
     
-    def commit_pkl_files(self, branch_name: str = "actions-data-download", candle_store=None, max_stale_seconds: int = MAX_STALE_SECONDS) -> bool:
+    def commit_pkl_files(self, branch_name: str = "actions-data-download", candle_store=None, max_stale_seconds: int = MAX_STALE_SECONDS, retry = False) -> bool:
         """
         Commit pkl files to PKScreener's GitHub repository (actions-data-download branch).
         
@@ -1872,6 +1872,12 @@ class DataSharingManager:
                         committed_files.append(remote_path)
                     else:
                         self.logger.warning(f"Failed to commit {remote_path}: {resp.status_code} {resp.text[:200]}")
+                        if not retry:
+                            self.logger.info(f"Retrying to commit into {branch_name}!")
+                            return self.commit_pkl_files(branch_name=branch_name, 
+                                                         candle_store=candle_store,
+                                                         max_stale_seconds=max_stale_seconds,
+                                                         retry=True)
                 # except urllib3.exceptions.ProtocolError:
                 #     pass
                 except Exception as e:

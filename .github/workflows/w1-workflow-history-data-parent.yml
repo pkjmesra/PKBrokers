@@ -45,6 +45,10 @@ on:
         default: 251
         type: number
 
+permissions:
+  contents: write
+  actions: write
+
 jobs:
   holiday-check:
     runs-on: ubuntu-latest
