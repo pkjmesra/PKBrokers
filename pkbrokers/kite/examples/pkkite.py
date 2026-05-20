@@ -253,6 +253,9 @@ def kite_history():
                 PKDateUtilities.currentDateTime() - timedelta(days=365)
             ) if past_offset == 0 else PKDateUtilities.nthPastTradingDateStringFromFutureDate(n=past_offset)
             print(f"from_date set to {from_date} for --pastoffset: {args.pastoffset}. This means the history data will be fetched starting from {from_date}.")
+            if args.history == 'minute':
+                args.pastoffset = 375 # set it to the full day's value
+                print(f"past_offset set to 375 minutes for period:{args.history}")
         except ValueError:
             print(f"Invalid value for --pastoffset: {args.pastoffset}. It should be an integer representing the number of past trading days to fetch data for.")
             sys.exit(1)
