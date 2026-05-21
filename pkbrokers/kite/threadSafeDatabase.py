@@ -160,7 +160,7 @@ class HighPerformanceTursoWriter:
                     break
                 else:
                     self.logger.error(
-                        f"Writer {self.writer_id}: Connection attempt {connection_attempts + 1} failed: {e}"
+                        f"🛑 🛑 🛑 🛑 Writer {self.writer_id}: Connection attempt {connection_attempts + 1} failed: {e}"
                     )
                 connection_attempts += 1
                 time.sleep(min(2**connection_attempts, MAX_EXPONENTIAL_BACKOFF_INTERVAL_SEC))
@@ -178,12 +178,12 @@ class HighPerformanceTursoWriter:
                 self.logger.debug(f"Writer {self.writer_id}: Using local SQLite fallback: {local_db_path}")
             except Exception as local_error:
                 self.logger.error(
-                    f"Writer {self.writer_id}: Local fallback also failed: {local_error}"
+                    f"🛑 🛑 🛑 🛑 Writer {self.writer_id}: Local fallback also failed: {local_error}"
                 )
 
         if conn is None:
             self.logger.error(
-                f"Writer {self.writer_id}: Failed to connect after {MAX_CONNECTION_ATTEMPTS} attempts"
+                f"🛑 🛑 🛑 🛑 Writer {self.writer_id}: Failed to connect after {MAX_CONNECTION_ATTEMPTS} attempts"
             )
         return conn
 
@@ -391,7 +391,7 @@ class HighPerformanceTursoWriter:
 
         except Exception as e:
             self.logger.error(
-                f"Writer {self.writer_id} batch insert for {len(tick_data)} failed: {e}"
+                f"🛑 🛑 🛑 🛑 Writer {self.writer_id} batch insert for {len(tick_data)} failed: {e}"
             )
             if not retrial:
                 conn = self._get_connection()

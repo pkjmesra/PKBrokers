@@ -86,7 +86,7 @@ class TickMonitor:
                 fetch_all = cursor.fetchall()
                 return [row[0] for row in fetch_all]
         except Exception as e:
-            self.logger.error(e)
+            self.logger.error(f"🛑 🛑 🛑 🛑 {e}")
         return []
 
     async def monitor_stale_updates(self):

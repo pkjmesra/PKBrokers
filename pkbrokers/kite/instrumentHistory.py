@@ -39,6 +39,8 @@ from PKDevTools.classes import Archiver
 from PKDevTools.classes.log import default_logger
 from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
+from pkbrokers.kite.tokenManager import TokenManager
+
 MAX_CANDLES_COUNT = 365
 
 
@@ -151,6 +153,7 @@ class KiteTickerHistory:
     BASE_URL = "https://kite.zerodha.com/oms/instruments/historical"
     RATE_LIMIT = 3  # requests per second (Kite API limit)
     RATE_LIMIT_WINDOW = 1.0  # seconds
+    _token_manager = TokenManager()
 
     def __init__(
         self,
@@ -204,6 +207,7 @@ class KiteTickerHistory:
         self.lock = Lock()  # For thread-safe rate limiting
         self.failed_tokens = []
 
+        self._token_manager = KiteTickerHistory._token_manager
         self.update_session_headers()
 
         # Copy all cookies from the auth response
@@ -252,6 +256,9 @@ class KiteTickerHistory:
                 self._initialize_database()
 
     def update_session_headers(self):
+        token = self._token_manager.get_valid_token()
+        if not token:
+            raise ValueError("Cannot obtain valid Kite token")
         # Set all required headers and cookies
         self.session.headers.update(
             {
@@ -260,6 +267,8 @@ class KiteTickerHistory:
                 "X-Kite-Version": "3.0.0",
             }
         )
+        self.logger.debug("Session headers updated with current token")
+
 
     def table_exists(self, cursor, table_name):
         try:
@@ -452,7 +461,7 @@ class KiteTickerHistory:
             self.db_conn.execute("ROLLBACK")
             self.logger.error(f"🛑 🛑 🛑 🛑 Error saving to database: {str(e)}")
             self.logger.error(
-                f"Rollback:Failed Inserting {len(candles)} rows for token:{instrument_token} and interval:{interval}\n{str(e)}"
+                f"🛑 🛑 🛑 🛑 Rollback:Failed Inserting {len(candles)} rows for token:{instrument_token} and interval:{interval}\n{str(e)}"
             )
             self.failed_tokens.append(instrument_token)
             raise
@@ -492,7 +501,7 @@ class KiteTickerHistory:
                     return self._execute_safe(query=query, params=params, retrial=True)
             else:
                 self.logger.error(
-                    f"Error executing:Retrial:{retrial} for query:{query}. {e}"
+                    f"🛑 🛑 🛑 🛑 Error executing:Retrial:{retrial} for query:{query}. {e}"
                 )
                 if not retrial:
                     # Re-Initialize database connection
@@ -526,7 +535,7 @@ class KiteTickerHistory:
         interval: str = "day",
         oi: bool = True,
         continuous: bool = False,
-        max_retries: int = 3,
+        max_retries: int = 10,
         forceFetch=False,
         insertOnly=False,
     ) -> Dict:
@@ -696,43 +705,28 @@ class KiteTickerHistory:
 
                 data["source"] = "api"
                 return data
-            except requests.exceptions.RequestException as e:
-                self.logger.error(e)
+            except (requests.exceptions.RequestException, requests.exceptions.HTTPError) as e:
+                self.logger.error(f"🛑 🛑 🛑 🛑 {e}")
                 last_error = e
                 if attempt < max_retries - 1:
                     if response and response.status_code not in [400, 500]:
                         if response.status_code in [401, 403]:
-                            if attempt <= max_retries - 2:
-                                # Still the first try. Let's just retry with a possible existing
-                                # valid token that bot may already have
-                                from pkbrokers.kite.examples.pkkite import (
-                                    remote_bot_auth_token,
-                                )
-
-                                remote_bot_auth_token()
-                            elif attempt <= max_retries - 1:
-                                # We failed even with the most recent token that was provided by
-                                # the bot. So let's try and refresh the token instead and ask
-                                # the bot to refresh the token.
-                                self.logger.error(
-                                    "❌❌❌ There may be a need for refreshing the token! ❌❌❌"
-                                )
-                                from pkbrokers.kite.examples.pkkite import (
-                                    try_refresh_token,
-                                )
-
-                                try_refresh_token()
+                            self.logger.warning(f"Token expired (HTTP {response.status_code}), refreshing...")
+                            # Invalidate cache so next get_valid_token() forces a fresh token
+                            self._token_manager.invalidate_token()
                         self.update_session_headers()
+                        # Continue to next retry (will use new token)
+                        continue
                     time.sleep(2**attempt)
                 else:
                     if response and response.status_code in [401, 403]:
                         self.logger.error(
-                            "❌❌❌ Either check the rate-limit violations or manually refresh the token! ❌❌❌"
+                            "🛑 🛑 🛑 🛑 ❌❌❌ Either check the rate-limit violations or manually refresh the token! ❌❌❌"
                         )
                 continue
 
         self.logger.error(
-            f"Failed after {max_retries} attempts for {instrument_token}: {str(last_error)}"
+            f"🛑 🛑 🛑 🛑 Failed after {max_retries} attempts for {instrument_token}: {str(last_error)}"
         )
         raise requests.exceptions.RequestException(
             f"Failed after {max_retries} attempts for {instrument_token}: {str(last_error)}"

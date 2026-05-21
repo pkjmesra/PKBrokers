@@ -142,7 +142,7 @@ class KiteAuthenticator:
                 }
             self._validate_credentials(credentials)
         except Exception as e:
-            default_logger().error(e)
+            default_logger().error(f"🛑 🛑 🛑 🛑 {e}")
             pass
 
         try:

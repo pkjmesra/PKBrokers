@@ -231,7 +231,7 @@ class DatabaseWriterProcess:
                     and not retrial
                 ) or ("connection" in str(e).lower() or "network" in str(e).lower()):
                     self.logger.error(
-                        "Reinitializing turso database connection due to stream error"
+                        "🛑 🛑 🛑 🛑 Reinitializing turso database connection due to stream error"
                     )
                     try:
                         conn.close()
@@ -361,7 +361,7 @@ class DatabaseWriterProcess:
             except Exception as e:
                 consecutive_errors += 1
                 self.logger.error(
-                    f"Database writer error ({consecutive_errors}): {str(e)}"
+                    f"🛑 🛑 🛑 🛑 Database writer error ({consecutive_errors}): {str(e)}"
                 )
 
                 # If we have too many consecutive errors, sleep longer to avoid tight loop

@@ -618,7 +618,7 @@ class TickHealthMonitor:
                     
                     if unhealthy_batches:
                         self.logger.error(
-                            f"❌ {len(unhealthy_batches)} WebSocket batches are unhealthy "
+                            f"🛑 🛑 🛑 🛑 ❌ {len(unhealthy_batches)} WebSocket batches are unhealthy "
                             f"(no ticks in {self.stale_threshold}s): {unhealthy_batches}"
                         )
                         self._trigger_recovery()
@@ -631,7 +631,7 @@ class TickHealthMonitor:
                         # NO ticks received for any instrument - critical!
                         dead_processes = self._get_dead_websocket_processes()
                         self.logger.error(
-                            f"❌ CRITICAL: No ticks received for ANY instrument for {time_since_last_any_tick:.1f}s "
+                            f"🛑 🛑 🛑 🛑 ❌ CRITICAL: No ticks received for ANY instrument for {time_since_last_any_tick:.1f}s "
                             f"Dead processes: {dead_processes}"
                         )
                         self._trigger_recovery()
@@ -647,7 +647,7 @@ class TickHealthMonitor:
                             if (stale_percentage > TRIGGER_RECOVERY_STALE_PERCENTAGE_THRESHOLD or 
                                 len(stale_instruments) > TRIGGER_RECOVERY_STALE_ABSOLUTE):
                                 self.logger.error(
-                                    f"⚠️ {stale_percentage:.1f}% of instruments ({len(stale_instruments)} of {total_instruments} instruments) are stale! Triggering recovery..."
+                                    f"🛑 🛑 🛑 🛑 {stale_percentage:.1f}% of instruments ({len(stale_instruments)} of {total_instruments} instruments) are stale! Triggering recovery..."
                                 )
                                 self._trigger_recovery()
                             elif stale_percentage > 10:

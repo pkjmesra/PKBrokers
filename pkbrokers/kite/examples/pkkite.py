@@ -297,14 +297,6 @@ def setupLogger(logLevel=LOG_LEVEL):
         filter=None,
     )
 
-
-def try_refresh_token():
-    from pkbrokers.bot.orchestrator import orchestrate_consumer
-
-    access_token = orchestrate_consumer(command="/refresh_token")
-    _save_update_environment(access_token=access_token)
-
-
 def _save_update_environment(access_token: str = None):
     try:
 
@@ -385,15 +377,17 @@ def save_optimized_format(ticks_data, output_dir=None):
 def remote_bot_auth_token():
     from PKDevTools.classes.log import default_logger
 
-    from pkbrokers.bot.orchestrator import orchestrate_consumer
+    from pkbrokers.kite.tokenManager import TokenManager
+    tm = TokenManager()
+    token = tm.get_valid_token(force_refresh=True)   # force refresh at startup
+    if token:
+        print("Token obtained and cached")
+    else:
+        print("🛑 🛑 🛑 🛑 Failed to obtain token")
+        default_logger().error(f"🛑 🛑 🛑 🛑 Failed to obtain token")
 
     try:
-        access_token = orchestrate_consumer(command="/token")
-        # If token is None or empty, try refresh_token to generate a new one
-        if not access_token or access_token == "None" or len(str(access_token).strip()) < 10:
-            default_logger().warning("⚠️ Token is None or invalid, requesting /refresh_token...")
-            access_token = orchestrate_consumer(command="/refresh_token")
-        _save_update_environment(access_token=access_token)
+        _save_update_environment(access_token=token)
     except Exception as e:
         default_logger().error(f"🛑 🛑 🛑 🛑 Error while fetching remote auth token from bot: {e}")
 
@@ -445,7 +439,7 @@ def pkkite():
                 print("Running locally? GITHUB_OUTPUT env variable NOT FOUND!")
                 remote_bot_auth_token()
 
-            try_refresh_token()
+            remote_bot_auth_token()
             kite_history()
 
     if args.instruments:
@@ -466,7 +460,7 @@ def pkkite():
                 commit_ticks(pickle_path, branch_name="actions-data-download")
             else:
                 default_logger().error(
-                    f"Error pickling. File does not exist: {pickle_path}."
+                    f"🛑 🛑 🛑 🛑 Error pickling. File does not exist: {pickle_path}."
                 )
 
     if args.orchestrate:
@@ -505,7 +499,7 @@ def pkkite():
                     default_logger().warning("⚠️ No fallback data available, starting fresh")
 
         except Exception as e:
-            default_logger().error(e)
+            default_logger().error(f"🛑 🛑 🛑 🛑 {e}")
             pass
         remote_bot_auth_token()
         orchestrate()

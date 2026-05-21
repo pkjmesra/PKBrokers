@@ -415,7 +415,7 @@ class WebSocketProcess:
                         except Exception as e:
                             if not self._is_stop_requested():
                                 self.logger.error(
-                                    f"Websocket_index:{self.websocket_index}: Message processing error: {str(e)}"
+                                    f"🛑 🛑 🛑 🛑 Websocket_index:{self.websocket_index}: Message processing error: {str(e)}"
                                 )
                             break
                             
@@ -431,7 +431,7 @@ class WebSocketProcess:
             except Exception as e:
                 if not self._is_stop_requested():
                     self.logger.error(
-                        f"Websocket_index:{self.websocket_index}: WebSocket connection error: {str(e)}. Reconnecting in {HTTP_400_429_WAIT_TIME} seconds..."
+                        f"🛑 🛑 🛑 🛑 Websocket_index:{self.websocket_index}: WebSocket connection error: {str(e)}. Reconnecting in {HTTP_400_429_WAIT_TIME} seconds..."
                     )
                 if "http 400" in str(e).lower() or "http 429" in str(e).lower():
                     self.logger.warning(
