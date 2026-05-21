@@ -727,8 +727,9 @@ class PKTickOrchestrator:
             
             threading.Thread(target=data_refresher, daemon=True).start()
             
-            signal.signal(signal.SIGINT, self.signal_handler)
-            signal.signal(signal.SIGTERM, self.signal_handler)
+            if __name__ == "__main__":
+                signal.signal(signal.SIGINT, self.signal_handler)
+                signal.signal(signal.SIGTERM, self.signal_handler)
             self.start()
 
             # Keep main process alive and monitor child processes
