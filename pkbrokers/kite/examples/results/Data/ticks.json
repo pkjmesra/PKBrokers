@@ -37546,7 +37546,7 @@
   },
   "3404289": {
     "instrument_token": 3404289,
-    "trading_symbol": "VISACHROME-BE",
+    "trading_symbol": "VISASTEEL-BE",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-20T15:27:27+05:30",
@@ -37636,7 +37636,7 @@
   },
   "2380801": {
     "instrument_token": 2380801,
-    "trading_symbol": "IFBAGRO-BE",
+    "trading_symbol": "NA",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-20T15:28:31+05:30",
@@ -37651,7 +37651,7 @@
   },
   "694017": {
     "instrument_token": 694017,
-    "trading_symbol": "PRECOT",
+    "trading_symbol": "NA",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-20T15:25:34+05:30",
@@ -37681,7 +37681,7 @@
   },
   "3800833": {
     "instrument_token": 3800833,
-    "trading_symbol": "VIPCLOTHNG-BE",
+    "trading_symbol": "NA",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-20T15:28:12+05:30",
@@ -37921,7 +37921,7 @@
   },
   "3062785": {
     "instrument_token": 3062785,
-    "trading_symbol": "SEMAC-BE",
+    "trading_symbol": "NA",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-20T14:31:08+05:30",
@@ -37966,7 +37966,7 @@
   },
   "1275137": {
     "instrument_token": 1275137,
-    "trading_symbol": "KESORAMIND-BE",
+    "trading_symbol": "NA",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-20T15:28:40+05:30",
