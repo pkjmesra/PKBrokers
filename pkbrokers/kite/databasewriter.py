@@ -75,7 +75,7 @@ class DatabaseWriterProcess:
             conn.execute("PRAGMA mmap_size = 30000000000")  # 30GB mmap
             return conn
         except Exception as e:
-            self.logger.error(f"Failed to create local connection: {str(e)}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Failed to create local connection: {str(e)}")
             raise
 
     def _create_turso_connection(self):
@@ -109,7 +109,7 @@ class DatabaseWriterProcess:
                 raise
 
         except Exception as e:
-            self.logger.error(f"Failed to create Turso connection: {str(e)}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Failed to create Turso connection: {str(e)}")
             raise
 
     def _check_blocked_db_connection(self, e):
@@ -219,7 +219,7 @@ class DatabaseWriterProcess:
                 )
 
             except Exception as e:
-                self.logger.error(f"Database insert error: {str(e)}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Database insert error: {str(e)}")
                 try:
                     if hasattr(conn, "rollback"):
                         conn.rollback()
@@ -292,7 +292,7 @@ class DatabaseWriterProcess:
                 conn.executemany(sql, data)
 
         except Exception as e:
-            self.logger.error(f"Local batch insert error: {str(e)}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Local batch insert error: {str(e)}")
             conn.close()
             return self._create_local_connection()
 
@@ -386,7 +386,7 @@ class DatabaseWriterProcess:
             try:
                 self._insert_batch(connection, batch)
             except Exception as e:
-                self.logger.error(f"Final flush error: {str(e)}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Final flush error: {str(e)}")
 
         # Close connection
         try:
@@ -395,7 +395,7 @@ class DatabaseWriterProcess:
         except BaseException:
             pass
 
-        self.logger.warning("Database writer process stopped")
+        self.logger.warning("⚠️ Database writer process stopped")
 
     def _process_tick_data(self, tick_data):
         """Process tick data for database insertion"""

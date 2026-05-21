@@ -498,7 +498,7 @@ class InMemoryCandleStore:
             return True
             
         except Exception as e:
-            self.logger.error(f"Error processing tick: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error processing tick: {e}")
             return False
     
     def process_ticks_batch(self, ticks: List[Dict[str, Any]]) -> int:
@@ -863,9 +863,9 @@ class InMemoryCandleStore:
             if data:
                 self.logger.debug(f"Saved ticks.json with {len(data)} instruments")
             else:
-                self.logger.warning(f"Saved empty ticks.json - no ticks received yet")
+                self.logger.warning(f"⚠️ Saved empty ticks.json - no ticks received yet")
         except Exception as e:
-            self.logger.error(f"Error saving ticks.json: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error saving ticks.json: {e}")
     
     def has_recent_data(self, max_age_seconds: int = 300) -> bool:
         """Check if the candle store has data newer than max_age_seconds."""
@@ -922,12 +922,12 @@ class InMemoryCandleStore:
             self.save_ticks_json()
             
         except Exception as e:
-            self.logger.error(f"Error persisting candle store: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error persisting candle store: {e}")
     
     def _load_from_disk(self):
         """Load store data from disk."""
         if not os.path.exists(CANDLE_STORE_FILE):
-            self.logger.warning("No existing candle store file found")
+            self.logger.warning("⚠️ No existing candle store file found")
             return
         
         try:
@@ -968,7 +968,7 @@ class InMemoryCandleStore:
             )
             
         except Exception as e:
-            self.logger.error(f"Error loading candle store: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error loading candle store: {e}")
     
     def _start_persist_thread(self):
         """Start background thread for periodic persistence."""
@@ -978,7 +978,7 @@ class InMemoryCandleStore:
                 try:
                     self._persist_to_disk()
                 except Exception as e:
-                    self.logger.error(f"Persist thread error: {e}")
+                    self.logger.error(f"🛑 🛑 🛑 🛑 Persist thread error: {e}")
         
         thread = threading.Thread(target=persist_loop, daemon=True, name="candle_persist")
         thread.start()
@@ -1134,7 +1134,7 @@ class InMemoryCandleStore:
                     self.shared_stats[key] = value
                 logger.debug(f"Copied existing stats to new shared_stats: {dict(self.shared_stats)}")
             except Exception as e:
-                logger.error(f"Error copying stats: {e}")
+                logger.error(f"🛑 🛑 🛑 🛑 Error copying stats: {e}")
 
 
 # Singleton accessor

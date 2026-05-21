@@ -85,7 +85,7 @@ def collect_from_candle_store() -> Optional[Dict[str, Any]]:
         stats = store.get_stats()
         
         if stats.get('instrument_count', 0) == 0:
-            logger.warning("InMemoryCandleStore has no instruments")
+            logger.warning("⚠️ InMemoryCandleStore has no instruments")
             return None
         
         all_data = {}
@@ -110,7 +110,7 @@ def collect_from_candle_store() -> Optional[Dict[str, Any]]:
                     if candles:
                         instrument_data["candles"][interval] = candles
                 except Exception as e:
-                    logger.warning(f"Error getting {interval} candles for {symbol}: {e}")
+                    logger.warning(f"⚠️ Error getting {interval} candles for {symbol}: {e}")
             
             # Add day summary OHLCV
             day_ohlcv = store.get_day_ohlcv(instrument_token=token)
@@ -123,10 +123,10 @@ def collect_from_candle_store() -> Optional[Dict[str, Any]]:
         return all_data
         
     except ImportError as e:
-        logger.warning(f"PKBrokers not available: {e}")
+        logger.warning(f"⚠️ PKBrokers not available: {e}")
         return None
     except Exception as e:
-        logger.error(f"Error collecting from candle store: {e}")
+        logger.error(f"🛑 🛑 🛑 🛑 Error collecting from candle store: {e}")
         return None
 
 
@@ -151,7 +151,7 @@ def collect_from_ticks_json(ticks_path: str) -> Optional[Dict[str, Any]]:
         return ticks_data
         
     except (json.JSONDecodeError, IOError) as e:
-        logger.error(f"Error loading ticks.json: {e}")
+        logger.error(f"🛑 🛑 🛑 🛑 Error loading ticks.json: {e}")
         return None
 
 
@@ -176,7 +176,7 @@ def collect_from_pickle(pickle_path: str) -> Optional[Dict[str, Any]]:
         return data
         
     except Exception as e:
-        logger.error(f"Error loading pickle: {e}")
+        logger.error(f"🛑 🛑 🛑 🛑 Error loading pickle: {e}")
         return None
 
 
@@ -255,7 +255,7 @@ def publish_data(
         return True
         
     except Exception as e:
-        logger.error(f"Error publishing {data_type} data: {e}")
+        logger.error(f"🛑 🛑 🛑 🛑 Error publishing {data_type} data: {e}")
         return False
 
 
@@ -314,7 +314,7 @@ def update_metadata(
         return True
         
     except Exception as e:
-        logger.error(f"Error updating metadata: {e}")
+        logger.error(f"🛑 🛑 🛑 🛑 Error updating metadata: {e}")
         return False
 
 
@@ -351,7 +351,7 @@ def cleanup_old_snapshots(output_dir: str, keep_days: int = 7):
                 continue
                 
     except Exception as e:
-        logger.warning(f"Error during cleanup: {e}")
+        logger.warning(f"⚠️ Error during cleanup: {e}")
 
 
 def main():
@@ -442,7 +442,7 @@ def main():
         logger.info(f"Successfully published data for {instrument_count} instruments")
         return 0
     else:
-        logger.warning("No data was published")
+        logger.warning("⚠️ No data was published")
         return 1
 
 

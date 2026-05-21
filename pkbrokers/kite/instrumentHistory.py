@@ -230,7 +230,7 @@ class KiteTickerHistory:
                 )
             except Exception as e:
                 if "BLOCKED" in str(e).upper() or "forbidden" in str(e).lower():
-                    self.logger.warning(f"Turso database blocked, using local SQLite: {e}")
+                    self.logger.warning(f"⚠️ Turso database blocked, using local SQLite: {e}")
                     self._use_local_db = True
                     self.db_conn = sqlite3.connect(self._local_db_path, check_same_thread=False)
                 else:
@@ -245,7 +245,7 @@ class KiteTickerHistory:
 
     def _check_blocked_db_connection(self, e):
         if "BLOCKED" in str(e).upper() or "forbidden" in str(e).lower():
-            self.logger.warning(f"Turso blocked during init, switching to local: {e}")
+            self.logger.warning(f"⚠️ Turso blocked during init, switching to local: {e}")
             self._use_local_db = True
             self.db_conn = sqlite3.connect(self._local_db_path, check_same_thread=False)
             if not self.table_exists(self.db_conn.cursor(), "instrument_history"):
@@ -272,7 +272,7 @@ class KiteTickerHistory:
             )
             return cursor.fetchone() is not None
         except Exception as e:
-            self.logger.error(f"Error checking table existence: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error checking table existence: {e}")
             return False
 
     def _initialize_database(self):
@@ -450,7 +450,7 @@ class KiteTickerHistory:
         except Exception as e:
             # Rollback if any error occurs
             self.db_conn.execute("ROLLBACK")
-            self.logger.error(f"Error saving to database: {str(e)}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error saving to database: {str(e)}")
             self.logger.error(
                 f"Rollback:Failed Inserting {len(candles)} rows for token:{instrument_token} and interval:{interval}\n{str(e)}"
             )
@@ -483,7 +483,7 @@ class KiteTickerHistory:
             error_str = str(e).upper()
             if "BLOCKED" in error_str or "FORBIDDEN" in error_str:
                 # Database blocked - switch to local SQLite
-                self.logger.warning(f"Turso blocked, switching to local SQLite: {e}")
+                self.logger.warning(f"⚠️ Turso blocked, switching to local SQLite: {e}")
                 if not self._use_local_db:
                     self._use_local_db = True
                     self.db_conn = sqlite3.connect(self._local_db_path, check_same_thread=False)

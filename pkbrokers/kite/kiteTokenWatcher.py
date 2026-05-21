@@ -23,6 +23,22 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 """
+# Already self‑healing
+# Component	                | Mechanism	                                   | Recovers from
+# WebSocket child processes	| _monitor_processes restarts any dead process | Process crash, deadlock, network drop
+#                           | individually	                               | 
+# Entire WebSocket client	| KiteTokenWatcher._watchdog (every 60s)       | All processes dead
+#                           | restarts if no process is alive	
+# Stale batches             |                                              | Individual WebSocket connection stuck but process alive
+# (no ticks for 5 min)	    | _monitor_processes restarts that batch	   | 
+# Health monitor	        | _trigger_recovery restarts entire client if  | Global tick outage
+#                           | too many stale instruments or dead processes | 
+# Token expiry	            | _refresh_token and callback try to 
+#                           | re‑authenticate	                           | 403 / enctoken errors
+# JSON writer	            | Runs in separate process; if it dies, parent | Writer crash
+#                           | logs but doesn’t restart it (see below)	   | 
+# Database writer	        | Similar to JSON writer – not monitored for   | Writer crash
+#                           | crashes	
 
 import json
 import multiprocessing
@@ -79,6 +95,9 @@ MIN_INSTRUMENTS_FOR_MONITOR = 500  # Minimum instruments before health monitor a
 SECONDS_BETWEEN_WARNINGS = 30
 INSTRUMENT_COUNT_LOG_INTERVAL = 300
 HEALTH_CHECK_INTERVAL = 10
+CLIENT_WATCHDOG_HEALTH_CHECK_INTERVAL = 60
+THREAD_JOIN_TIMEOUT = 10
+MAX_RECOVERY_ATTEMPT = 20
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
 OTHER_INDICES = [
@@ -178,7 +197,7 @@ class TickHealthMonitor:
         self._stop_event = threading.Event()
         self._recovering = False
         self._recovery_attempts = 0
-        self._max_recovery_attempts = 3
+        self._max_recovery_attempts = MAX_RECOVERY_ATTEMPT
         self._last_recovery_time = 0
         self._recovery_cooldown = RECOVERY_COOLDOWN_SECONDS  # Don't recover more than once per 2 minutes
         self._consecutive_failures = 0
@@ -236,6 +255,7 @@ class TickHealthMonitor:
         # Reset recovery attempts on successful tick reception
         if self._recovery_attempts > 0:
             self._recovery_attempts = 0
+            self._max_recovery_attempts = 0
             self.logger.debug("✅ Tick received - Recovery attempts reset")
         
         # Reset recovering flag if it was set
@@ -401,25 +421,27 @@ class TickHealthMonitor:
         # Check consecutive failures
         self._consecutive_failures += 1
         if self._consecutive_failures > self._max_consecutive_failures:
-            self.logger.error(f"❌ {self._consecutive_failures} consecutive failures! Manual intervention may be needed.")
+            self.logger.error(f"🛑 🛑 🛑 🛑 ❌ {self._consecutive_failures} consecutive failures! Manual intervention may be needed.")
             # Reset counter after logging
             self._consecutive_failures = 0
         
-        self.logger.warning("⚠️ Triggering recovery...")
+        self.logger.warning("⚠️ ⚠️ Triggering recovery...")
         self._last_recovery_time = time.time()
         self.stats['recovery_count'] += 1
+        self._recovery_attempts += 1
         self._recovering = True
-        
+        if self._recovery_attempts > self._max_recovery_attempts:
+            self.logger.error(f"🛑 🛑 🛑 🛑 ❌ {self._recovery_attempts} recovery attempt failures! Manual intervention may be needed.")
         try:
             # Step 1: Check if token needs refresh
             if self._is_token_expired():
-                self.logger.warning("Token may be expired, refreshing...")
+                self.logger.warning("⚠️ Token may be expired, refreshing...")
                 self._refresh_token()
             
             # Step 2: Check which WebSocket processes are dead
             dead_processes = self._get_dead_websocket_processes()
             if dead_processes:
-                self.logger.warning(f"Dead WebSocket processes: {dead_processes}")
+                self.logger.warning(f"⚠️ Dead WebSocket processes: {dead_processes}")
             
             # Step 3: Force restart of WebSocket client
             if hasattr(self.watcher, 'client') and self.watcher.client:
@@ -433,7 +455,7 @@ class TickHealthMonitor:
                 if hasattr(self.watcher.client, 'ws_processes'):
                     for i, p in enumerate(self.watcher.client.ws_processes):
                         if p and p.is_alive():
-                            self.logger.warning(f"Force terminating process {i}")
+                            self.logger.warning(f"⚠️ Force terminating process {i}")
                             p.terminate()
                             p.join(timeout=3)
             
@@ -456,7 +478,7 @@ class TickHealthMonitor:
                 self.watcher.client.start()
                 self.logger.info("✅ WebSocket client restarted successfully")
             else:
-                self.logger.error("Cannot recover - no token batches available")
+                self.logger.error("🛑 🛑 🛑 🛑 Cannot recover - no token batches available")
             
             # Step 5: Reset tracking
             self.last_tick_time.clear()
@@ -465,7 +487,7 @@ class TickHealthMonitor:
             self._recovery_attempts = 0
             
         except Exception as e:
-            self.logger.error(f"Recovery failed: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Recovery failed: {e}")
             import traceback
             traceback.print_exc()
         finally:
@@ -506,9 +528,9 @@ class TickHealthMonitor:
                 os.environ["KTOKEN"] = new_token
                 self.logger.info("✅ Token refreshed successfully")
             else:
-                self.logger.warning("Token refresh returned invalid token")
+                self.logger.warning("⚠️ Token refresh returned invalid token")
         except Exception as e:
-            self.logger.error(f"Token refresh failed: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Token refresh failed: {e}")
 
     def _get_unhealthy_batches(self, current_time: float) -> List[int]:
         """
@@ -634,13 +656,13 @@ class TickHealthMonitor:
                     # Check for dead WebSocket processes
                     dead_processes = self._get_dead_websocket_processes()
                     if dead_processes:
-                        self.logger.warning(f"Dead WebSocket processes detected: {dead_processes}")
+                        self.logger.warning(f"⚠️ Dead WebSocket processes detected: {dead_processes}")
                         self._trigger_recovery()
                         
                 time.sleep(1)
                 
             except Exception as e:
-                self.logger.error(f"Health monitor error: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Health monitor error: {e}")
                 import traceback
                 traceback.print_exc()
                 time.sleep(5)
@@ -688,7 +710,7 @@ class JSONFileWriter:
             self.logger.debug(f"Lock acquired by {self.writer_id}")
             yield
         except Exception as e:
-            self.logger.error(f"Error acquiring lock: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error acquiring lock: {e}")
             raise
         finally:
             if lock_fd:
@@ -698,7 +720,7 @@ class JSONFileWriter:
                     lock_fd.close()
                     self.logger.debug(f"Lock released by {self.writer_id}")
                 except Exception as e:
-                    self.logger.error(f"Error releasing lock: {e}")
+                    self.logger.error(f"🛑 🛑 🛑 🛑 Error releasing lock: {e}")
 
     def _check_already_running(self):
         """Check if another writer process is already running using PID file"""
@@ -710,25 +732,25 @@ class JSONFileWriter:
                 # Check if process with this PID is still running
                 try:
                     os.kill(pid, 0)  # Signal 0 just checks if process exists
-                    self.logger.warning(f"Another JSON writer process (PID: {pid}) is already running!")
+                    self.logger.warning(f"⚠️ Another JSON writer process (PID: {pid}) is already running!")
                     return True
                 except OSError:
                     # Process not running, safe to start
                     self.logger.debug(f"Stale PID file found for PID {pid}, cleaning up")
                     os.unlink(pid_file)
             except (ValueError, IOError) as e:
-                self.logger.error(f"Error reading PID file: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error reading PID file: {e}")
         return False
 
     def start(self, kite_instruments={}):
         """Start the JSON writer process only once"""
         if self._started:
-            self.logger.warning("JSON writer already started, ignoring duplicate start")
+            self.logger.warning("⚠️ JSON writer already started, ignoring duplicate start")
             return
         
         # Check if another instance is already running
         if self._check_already_running():
-            self.logger.error("Cannot start - another JSON writer instance is running")
+            self.logger.error("🛑 🛑 🛑 🛑 Cannot start - another JSON writer instance is running")
             return
         
         self._started = True
@@ -742,7 +764,7 @@ class JSONFileWriter:
             with open(self.json_file_path + ".pid", 'w') as f:
                 f.write(str(self.process.pid))
         except Exception as e:
-            self.logger.error(f"Error writing PID file: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error writing PID file: {e}")
         
         self.logger.debug(f"JSON writer started with PID: {self.process.pid}")
 
@@ -806,7 +828,7 @@ class JSONFileWriter:
             
             # Check for data loss during serialization
             if len(parsed) != len(data):
-                self.logger.warning(f"Data loss detected: {len(data)} -> {len(parsed)}")
+                self.logger.warning(f"⚠️ Data loss detected: {len(data)} -> {len(parsed)}")
                 return False, parsed, "Data loss during serialization"
             
             # Validate each instrument has required fields
@@ -814,7 +836,7 @@ class JSONFileWriter:
             for token, instrument in parsed.items():
                 missing_fields = [f for f in required_fields if f not in instrument]
                 if missing_fields:
-                    self.logger.warning(f"Instrument {token} missing fields: {missing_fields}")
+                    self.logger.warning(f"⚠️ Instrument {token} missing fields: {missing_fields}")
                     return False, parsed, f"Missing required fields: {missing_fields}"
                 
                 # Validate ohlcv has required fields
@@ -822,13 +844,13 @@ class JSONFileWriter:
                 if 'ohlcv' in instrument:
                     missing_ohlcv = [f for f in ohlcv_fields if f not in instrument['ohlcv']]
                     if missing_ohlcv:
-                        self.logger.warning(f"Instrument {token} missing OHLCV fields: {missing_ohlcv}")
+                        self.logger.warning(f"⚠️ Instrument {token} missing OHLCV fields: {missing_ohlcv}")
                         return False, parsed, f"Missing OHLCV fields: {missing_ohlcv}"
             
             return True, parsed, None
             
         except (TypeError, ValueError, json.JSONDecodeError) as e:
-            self.logger.error(f"JSON validation failed: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 JSON validation failed: {e}")
             return False, None, str(e)
 
     def _write_atomic(self, data):
@@ -854,7 +876,7 @@ class JSONFileWriter:
             self.logger.debug(f"Successfully wrote {len(data)} instruments to {self.json_file_path}")
             
         except Exception as e:
-            self.logger.error(f"Error in atomic write: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error in atomic write: {e}")
             # Clean up temp file if it exists
             try:
                 if os.path.exists(temp_file):
@@ -890,12 +912,12 @@ class JSONFileWriter:
                 is_valid, validated_data, error_msg = self._validate_json_structure(deduped_data)
                 
                 if not is_valid:
-                    self.logger.warning(f"Data validation failed: {error_msg}")
+                    self.logger.warning(f"⚠️ Data validation failed: {error_msg}")
                     if validated_data:
-                        self.logger.warning("Attempting to salvage by using parsed data")
+                        self.logger.warning("⚠️ Attempting to salvage by using parsed data")
                         validated_data = self._deduplicate_data(validated_data)
                     else:
-                        self.logger.warning("Data is corrupted beyond repair, skipping save")
+                        self.logger.warning("⚠️ Data is corrupted beyond repair, skipping save")
                         return
             else:
                 # Skip validation, use deduped data directly
@@ -909,7 +931,7 @@ class JSONFileWriter:
             self.logger.info(f"✅ Successfully saved {len(validated_data)} unique instruments to {self.json_file_path}")
             
         except Exception as e:
-            self.logger.error(f"❌ Error saving JSON file: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 ❌ Error saving JSON file: {e}")
             # Clean up temp file if it exists
             try:
                 if temp_file and os.path.exists(temp_file):
@@ -934,7 +956,7 @@ class JSONFileWriter:
                     f"Loaded existing data from {self.json_file_path} with {len(data.keys())} instruments."
                 )
             except Exception as e:
-                self.logger.error(f"Error loading JSON file: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error loading JSON file: {e}")
 
         last_save_time = time.time()
         save_interval = JSON_SAVE_INTERVAL
@@ -956,7 +978,7 @@ class JSONFileWriter:
                         
                         # CRITICAL FIX: Validate tick_data is dict, not tuple
                         if isinstance(tick_data, tuple):
-                            self.logger.error(f"Received tuple instead of dict: {tick_data[:2] if len(tick_data) > 2 else tick_data}")
+                            self.logger.error(f"🛑 🛑 🛑 🛑 Received tuple instead of dict: {tick_data[:2] if len(tick_data) > 2 else tick_data}")
                             continue  # Skip malformed data
                         
                         if isinstance(tick_data, dict) and 'instrument_token' in tick_data:
@@ -964,12 +986,12 @@ class JSONFileWriter:
                             processed_count += 1
                             ticks_processed_this_loop += 1
                         else:
-                            self.logger.warning(f"Skipping invalid tick data type: {type(tick_data)}")
+                            self.logger.warning(f"⚠️ Skipping invalid tick data type: {type(tick_data)}")
                             
                     except Empty:
                         break
                     except Exception as e:
-                        self.logger.error(f"Error getting tick from queue: {e}")
+                        self.logger.error(f"🛑 🛑 🛑 🛑 Error getting tick from queue: {e}")
                         break
 
                 # Process batch
@@ -996,7 +1018,7 @@ class JSONFileWriter:
                 if current_time - last_log_time >= log_interval:
                     queue_size = self.data_queue.qsize()
                     if queue_size > 5000:
-                        self.logger.warning(f"JSON writer input queue backlog: {queue_size} items")
+                        self.logger.warning(f"⚠️ JSON writer input queue backlog: {queue_size} items")
                     elif queue_size > 1000:
                         self.logger.debug(f"JSON writer queue size: {queue_size}")
                     last_log_time = current_time
@@ -1005,14 +1027,14 @@ class JSONFileWriter:
                 time.sleep(0.01)  # REDUCED from 0.05
 
             except Exception as e:
-                self.logger.error(f"JSON writer error: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 JSON writer error: {e}")
                 import traceback
                 traceback.print_exc()
                 time.sleep(1)
 
         # Final save
         self._save_to_file(data, validate=True)
-        self.logger.warning("JSON writer process stopped")
+        self.logger.warning("⚠️ JSON writer process stopped")
 
     def _update_instrument_data(self, data, tick_data):
         """Update instrument data with latest tick information"""
@@ -1091,15 +1113,15 @@ class JSONFileWriter:
                     self.data_queue.put(tick_data, timeout=0.1)
                     valid_count += 1
                 else:
-                    self.logger.warning(f"Skipping invalid tick in batch: {type(tick_data)}")
+                    self.logger.warning(f"⚠️ Skipping invalid tick in batch: {type(tick_data)}")
             
             if valid_count == 0:
-                self.logger.warning("No valid ticks in batch, all skipped")
+                self.logger.warning("⚠️ No valid ticks in batch, all skipped")
                 return False
                 
             return True
         except Exception as e:
-            self.logger.warning(f"JSON writer queue full or error, dropping batch: {e}")
+            self.logger.warning(f"⚠️ JSON writer queue full or error, dropping batch: {e}")
             return False
         
     def add_tick(self, tick_data):
@@ -1128,7 +1150,7 @@ class JSONFileWriter:
             self.data_queue.put(tick_data, timeout=0.1)
             return True
         except Exception:
-            self.logger.warning("JSON writer queue full, dropping tick")
+            self.logger.warning("⚠️ JSON writer queue full, dropping tick")
             return False
 
     def stop(self):
@@ -1143,9 +1165,9 @@ class JSONFileWriter:
             if os.path.exists(pid_file):
                 os.unlink(pid_file)
         except Exception as e:
-            self.logger.error(f"Error cleaning up PID file: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error cleaning up PID file: {e}")
         
-        self.logger.warning("JSON writer stopped")
+        self.logger.warning("⚠️ JSON writer stopped")
 
 
 class KiteTokenWatcher:
@@ -1206,6 +1228,7 @@ class KiteTokenWatcher:
         self._watcher_queue = watcher_queue or Queue(maxsize=OPTIMAL_MAX_QUEUE_SIZE)
         self._db_queue = Queue(maxsize=OPTIMAL_MAX_QUEUE_SIZE)
         self._processing_thread = None
+        self._client_watchdog_thread = None
         self._db_thread = None
         self._shutdown_event = threading.Event()
         self._stop_queue = None
@@ -1311,7 +1334,7 @@ class KiteTokenWatcher:
                 except Empty:
                     continue
                 except Exception as e:
-                    self.logger.error(f"Error in stop listener: {e}")
+                    self.logger.error(f"🛑 🛑 🛑 🛑 Error in stop listener: {e}")
                     break
 
         self._stop_listener_thread = threading.Thread(
@@ -1319,6 +1342,32 @@ class KiteTokenWatcher:
         )
         self._stop_listener_thread.start()
         self.logger.debug("Started stop signal listener thread")
+
+    def _watchdog(self):
+        """Periodically check WebSocket client health and restart if dead."""
+        while not self._shutdown_event.is_set():
+            time.sleep(CLIENT_WATCHDOG_HEALTH_CHECK_INTERVAL)
+            if self.client and hasattr(self.client, 'ws_processes'):
+                alive = any(p.is_alive() for p in self.client.ws_processes)
+                if not alive:
+                    self.logger.warning("WebSocket client appears dead. Restarting...")
+                    self.client.stop()
+                    # Recreate and start
+                    local_secrets = PKEnvironment().allSecrets
+                    self.client = ZerodhaWebSocketClient(
+                        enctoken=os.environ.get("KTOKEN", local_secrets.get("KTOKEN", "")),
+                        user_id=os.environ.get("KUSER", local_secrets.get("KUSER", "")),
+                        token_batches=self.token_batches,
+                        watcher_queue=self._watcher_queue,
+                        db_conn=self._db_instance,
+                        ws_stop_event=self.ws_stop_event,
+                    )
+                    self.client.start()
+            if self._processing_thread and not self._processing_thread.is_alive():
+                self.logger.error("Tick processing thread died! Restarting watcher...")
+                self.stop()
+                self.watch()
+                return
 
     def watch(self, test_mode=False):
         """
@@ -1341,8 +1390,8 @@ class KiteTokenWatcher:
             tokens = self._fetch_tokens_with_fallback()
             
             if len(tokens) == 0:
-                self.logger.error("❌ No tokens could be fetched from any source!")
-                self.logger.warning("Will use fallback indices only...")
+                self.logger.error("🛑 🛑 🛑 🛑 ❌ No tokens could be fetched from any source!")
+                self.logger.warning("⚠️ Will use fallback indices only...")
                 # Use at least indices so we get some data
                 tokens = list(set(NIFTY_50 + BSE_SENSEX + OTHER_INDICES))
             
@@ -1403,12 +1452,17 @@ class KiteTokenWatcher:
 
             self.logger.debug("Started tick processing and database threads")
             self.client.start()
+            # Start client watchdog threads
+            self._client_watchdog_thread = threading.Thread(
+                target=self._watchdog, daemon=True, name="client_watchdog"
+            )
+            self._client_watchdog_thread.start()
 
         except KeyboardInterrupt:
-            self.logger.warning("Keyboard interrupt received, shutting down...")
+            self.logger.warning("⚠️ Keyboard interrupt received, shutting down...")
             self.stop()
         except Exception as e:
-            self.logger.error(f"Error in client: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error in client: {e}")
             self.stop()
 
     def _fetch_tokens_with_fallback(self) -> List[int]:
@@ -1427,7 +1481,7 @@ class KiteTokenWatcher:
             instruments = kite.fetch_instruments()
             self._kite_instruments = kite.kite_instruments if len(instruments) > 0 else {}
         except Exception as db_error:
-            self.logger.warning(f"Database unavailable, using fallback: {db_error}")
+            self.logger.warning(f"⚠️ Database unavailable, using fallback: {db_error}")
             self._kite_instruments = {}
             instruments = []
         
@@ -1446,11 +1500,11 @@ class KiteTokenWatcher:
             if tokens:
                 self._register_loaded_tokens(tokens)
         except Exception as db_error:
-            self.logger.warning(f"Could not get equities from DB, using fallback: {db_error}")
+            self.logger.warning(f"⚠️ Could not get equities from DB, using fallback: {db_error}")
             tokens = []
         
         if len(tokens) == 0:
-            self.logger.warning("No tokens from DB, applying fallback strategies...")
+            self.logger.warning("⚠️ No tokens from DB, applying fallback strategies...")
             
             # Fallback 0: Use kite_instruments directly
             if self._kite_instruments and len(self._kite_instruments) > 0:
@@ -1485,19 +1539,19 @@ class KiteTokenWatcher:
                             if tokens:
                                 self._register_loaded_tokens(tokens)
                 except Exception as pkscreener_error:
-                    self.logger.warning(f"PKScreener fallback failed: {pkscreener_error}")
+                    self.logger.warning(f"⚠️ PKScreener fallback failed: {pkscreener_error}")
             
             # Fallback 2: Use only indices as last resort
             if len(tokens) == 0:
                 tokens = list(set(NIFTY_50 + BSE_SENSEX + OTHER_INDICES))
-                self.logger.warning(f"Using fallback indices only: {len(tokens)} instruments")
+                self.logger.warning(f"⚠️ Using fallback indices only: {len(tokens)} instruments")
                 self._register_loaded_tokens(tokens)
         
         # Always include indices
         tokens = list(set(NIFTY_50 + BSE_SENSEX + OTHER_INDICES + tokens))
         
         if len(tokens) <= len(NIFTY_50 + BSE_SENSEX + OTHER_INDICES):
-            self.logger.warning(f"Only {len(tokens)} index tokens available. Ticks will be limited to indices only.")
+            self.logger.warning(f"⚠️ Only {len(tokens)} index tokens available. Ticks will be limited to indices only.")
         
         return tokens
 
@@ -1555,16 +1609,16 @@ class KiteTokenWatcher:
             if hasattr(self.json_writer, 'data_queue'):
                 queue_size = self.json_writer.data_queue.qsize()
                 if queue_size > 5000:
-                    self.logger.warning(f"⚠️ JSON writer queue backlog: {queue_size} items - writer may be a bottleneck!")
+                    self.logger.warning(f"⚠️ ⚠️ JSON writer queue backlog: {queue_size} items - writer may be a bottleneck!")
             
             elapsed = time.time() - start_time
             if elapsed > 0.5:
-                self.logger.warning(f"JSON flush took {elapsed:.2f}s for {len(self._tick_batch)} ticks")
+                self.logger.warning(f"⚠️ JSON flush took {elapsed:.2f}s for {len(self._tick_batch)} ticks")
             
             self._tick_batch.clear()
             
         except Exception as e:
-            self.logger.error(f"Error flushing to JSON writer: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error flushing to JSON writer: {e}")
             
     def _process_tick_batch(self, tick_batch):
         """
@@ -1615,11 +1669,11 @@ class KiteTokenWatcher:
                 if hasattr(self.json_writer, 'data_queue'):
                     queue_size = self.json_writer.data_queue.qsize()
                     if queue_size > 10000:
-                        self.logger.warning(f"⚠️ JSON writer queue backlog: {queue_size} items")
+                        self.logger.warning(f"⚠️ ⚠️ JSON writer queue backlog: {queue_size} items")
                     elif queue_size > 5000:
                         self.logger.debug(f"JSON writer queue size: {queue_size}")
             except Exception as e:
-                self.logger.error(f"Error sending to JSON writer: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error sending to JSON writer: {e}")
             
             # FIX: Update in-memory candle store with properly formatted tick data
             try:
@@ -1674,7 +1728,7 @@ class KiteTokenWatcher:
                     f"Successfully added {len(processed_batch)} records to database queue"
                 )
         except Exception as e:
-            self.logger.error(f"Error inserting to database: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error inserting to database: {e}")
 
     def _flush_candles_to_db(self):
         """Send completed 1‑minute candles from candle store to DB."""
@@ -1703,7 +1757,7 @@ class KiteTokenWatcher:
                 
                 if queue_size > 5000:
                     adaptive_batch_size = 1000
-                    self.logger.warning(f"Queue backlog: {queue_size}, increasing batch size to {adaptive_batch_size}")
+                    self.logger.warning(f"⚠️ Queue backlog: {queue_size}, increasing batch size to {adaptive_batch_size}")
                 elif queue_size > 1000:
                     adaptive_batch_size = 200
                 else:
@@ -1717,7 +1771,7 @@ class KiteTokenWatcher:
                     except Empty:
                         break
                     except Exception as e:
-                        self.logger.error(f"Tick retrieval error: {e}")
+                        self.logger.error(f"🛑 🛑 🛑 🛑 Tick retrieval error: {e}")
                         break
 
                     current_time = datetime.now()
@@ -1757,10 +1811,10 @@ class KiteTokenWatcher:
                 time.sleep(0.001)
                 
             except KeyboardInterrupt:
-                self.logger.warning("Keyboard interrupt received in processing thread")
+                self.logger.warning("⚠️ Keyboard interrupt received in processing thread")
                 break
             except Exception as e:
-                self.logger.error(f"Unexpected error in tick processing: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Unexpected error in tick processing: {e}")
                 continue
 
         self._flush_to_json_writer()
@@ -1776,7 +1830,7 @@ class KiteTokenWatcher:
             )
 
         self._db_queue.put(None)  # Signal database thread to exit
-        self.logger.warning("Exiting tick processing thread")
+        self.logger.warning("⚠️ Exiting tick processing thread")
 
     def _process_db_operations(self):
         """
@@ -1803,7 +1857,7 @@ class KiteTokenWatcher:
                 try:
                     self._process_tick_batch(batch)
                 except Exception as e:
-                    self.logger.error(f"Full processing failed, using fallback: {e}")
+                    self.logger.error(f"🛑 🛑 🛑 🛑 Full processing failed, using fallback: {e}")
                     # Fallback to simple processing if full processing fails
                     self._process_batch_fallback(batch)
 
@@ -1811,10 +1865,10 @@ class KiteTokenWatcher:
                 # Normal timeout, continue waiting
                 continue
             except Exception as e:
-                self.logger.error(f"Database thread error: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Database thread error: {e}")
                 continue
 
-        self.logger.warning("Exiting database processing thread")
+        self.logger.warning("⚠️ Exiting database processing thread")
 
     def _process_batch_fallback(self, tick_batch):
         """
@@ -1831,7 +1885,7 @@ class KiteTokenWatcher:
                     db.insert_ticks(processed_batch)
                     self.logger.info(f"Fallback inserted {len(processed_batch)} records")
         except Exception as e:
-            self.logger.error(f"Fallback processing also failed: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Fallback processing also failed: {e}")
 
     def _prepare_batch_for_insertion(self, tick_batch):
         """
@@ -1947,7 +2001,7 @@ class KiteTokenWatcher:
             
         except Exception as e:
             os.unlink(temp_path)
-            self.logger.error(f"Failed to atomically save pickle: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Failed to atomically save pickle: {e}")
             raise
     
     def _register_loaded_tokens(self, tokens: List[int]):
@@ -2083,16 +2137,16 @@ class KiteTokenWatcher:
         if self.client:
             try:
                 self.client.stop()
-                self.logger.warning("WebSocket client stopped")
+                self.logger.warning("⚠️ WebSocket client stopped")
             except Exception as e:
-                self.logger.error(f"Error stopping client: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error stopping client: {e}")
         
         # Save candle store data before shutdown
         try:
             self._candle_store.save_ticks_json()
             self.logger.info("Saved candle store to ticks.json")
         except Exception as e:
-            self.logger.error(f"Error saving candle store: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error saving candle store: {e}")
         
         # Export pkl files with candle data
         try:
@@ -2131,7 +2185,7 @@ class KiteTokenWatcher:
                     self._atomic_pickle_dump(data, dest_daily)
                     self.logger.info(f"Created date-suffixed copy using atomic write: stock_data_{today_suffix}.pkl")
             else:
-                self.logger.warning("Daily pkl export failed or no data")
+                self.logger.warning("⚠️ Daily pkl export failed or no data")
             
             # Export intraday candles to pkl
             self.logger.info("Starting intraday pkl export...")
@@ -2146,7 +2200,7 @@ class KiteTokenWatcher:
                     shutil.copy(intraday_path, dest_intraday)
                     self.logger.info(f"Created date-suffixed copy: intraday_stock_data_{today_suffix}.pkl")
             else:
-                self.logger.warning("Intraday pkl export from candle store failed, trying ticks.json fallback...")
+                self.logger.warning("⚠️ Intraday pkl export from candle store failed, trying ticks.json fallback...")
                 
                 # Fallback: convert ticks.json directly to intraday pkl
                 ticks_json_path = os.path.join(results_dir, "ticks.json")
@@ -2159,12 +2213,12 @@ class KiteTokenWatcher:
                     if success_ticks:
                         self.logger.info(f"Successfully converted ticks.json to pkl: {ticks_pkl_path}")
                     else:
-                        self.logger.warning("Failed to convert ticks.json to pkl")
+                        self.logger.warning("⚠️ Failed to convert ticks.json to pkl")
                 else:
-                    self.logger.warning(f"No ticks.json found at {ticks_json_path}")
+                    self.logger.warning(f"⚠️ No ticks.json found at {ticks_json_path}")
                 
         except Exception as e:
-            self.logger.error(f"Error exporting pkl files: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error exporting pkl files: {e}")
 
         # Signal shutdown to all components
         self._shutdown_event.set()
@@ -2180,17 +2234,22 @@ class KiteTokenWatcher:
             pass  # Queue might be full
 
         # Wait for threads with reasonable timeouts
-        thread_timeout = 10.0
+        thread_timeout = THREAD_JOIN_TIMEOUT
 
         if self._processing_thread and self._processing_thread.is_alive():
             self._processing_thread.join(timeout=thread_timeout)
             if self._processing_thread.is_alive():
-                self.logger.warning("Processing thread did not terminate gracefully")
+                self.logger.warning("⚠️ Processing thread did not terminate gracefully")
 
         if self._db_thread and self._db_thread.is_alive():
             self._db_thread.join(timeout=thread_timeout)
             if self._db_thread.is_alive():
-                self.logger.warning("Database thread did not terminate gracefully")
+                self.logger.warning("⚠️ Database thread did not terminate gracefully")
+
+        if self._client_watchdog_thread and self._client_watchdog_thread.is_alive():
+            self._client_watchdog_thread.join(timeout=thread_timeout)
+            if self._client_watchdog_thread.is_alive():
+                self.logger.warning("⚠️ Client Watchdog thread did not terminate gracefully")
 
         self.logger.info("Shutdown complete")
 

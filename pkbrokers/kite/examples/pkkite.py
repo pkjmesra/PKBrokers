@@ -160,7 +160,7 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False, ws_stop_event=None
         shared_stats['kite_ticks_received'] = True
         logger.debug(f"Updated shared_stats in kite_ticks: {dict(shared_stats)}")
     else:
-        logger.warning("shared_stats is None, creating local dict")
+        logger.warning("⚠️ shared_stats is None, creating local dict")
         shared_stats = {
             'instrument_count': 0,
             'instruments_with_ticks': 0,
@@ -220,7 +220,7 @@ def kite_ticks(stop_queue=None, parent=None, test_mode=False, ws_stop_event=None
         watcher.stop()
     except Exception as e:
         from PKDevTools.classes.log import default_logger
-        default_logger().error(f"Kite ticks watcher error: {e}")
+        default_logger().error(f"🛑 🛑 🛑 🛑 Kite ticks watcher error: {e}")
         watcher.stop()
 
 
@@ -322,7 +322,7 @@ def _save_update_environment(access_token: str = None):
                 f"Token updated in os.environment: {PKEnvironment().KTOKEN}"
             )
     except Exception as e:
-        default_logger().error(f"Error while fetching remote auth token from bot: {e}")
+        default_logger().error(f"🛑 🛑 🛑 🛑 Error while fetching remote auth token from bot: {e}")
 
 
 def commit_ticks(file_name="ticks.json", branch_name="main"):
@@ -348,7 +348,7 @@ def commit_ticks(file_name="ticks.json", branch_name="main"):
             )
             default_logger().info(f"File committed:{tick_file}")
     except Exception as e:
-        default_logger().error(f"Error commiting {tick_file} to {branch_name}: {e}")
+        default_logger().error(f"🛑 🛑 🛑 🛑 Error commiting {tick_file} to {branch_name}: {e}")
 
 
 def save_optimized_format(ticks_data, output_dir=None):
@@ -378,7 +378,7 @@ def save_optimized_format(ticks_data, output_dir=None):
         default_logger().debug(f"Saved optimized format: {output_path}")
         return output_path
     except Exception as e:
-        default_logger().error(f"Error saving optimized format: {e}")
+        default_logger().error(f"🛑 🛑 🛑 🛑 Error saving optimized format: {e}")
         return None
 
 
@@ -391,11 +391,11 @@ def remote_bot_auth_token():
         access_token = orchestrate_consumer(command="/token")
         # If token is None or empty, try refresh_token to generate a new one
         if not access_token or access_token == "None" or len(str(access_token).strip()) < 10:
-            default_logger().warning("Token is None or invalid, requesting /refresh_token...")
+            default_logger().warning("⚠️ Token is None or invalid, requesting /refresh_token...")
             access_token = orchestrate_consumer(command="/refresh_token")
         _save_update_environment(access_token=access_token)
     except Exception as e:
-        default_logger().error(f"Error while fetching remote auth token from bot: {e}")
+        default_logger().error(f"🛑 🛑 🛑 🛑 Error while fetching remote auth token from bot: {e}")
 
 def pkkite():
     if sys.platform.startswith("darwin"):
@@ -492,17 +492,17 @@ def pkkite():
                 data_mgr.data_received_from_instance = True
                 default_logger().info("Received data from running instance")
             except Exception as pkl_error:
-                default_logger().warning(f"Could not get pkl files from running instance: {pkl_error}")
+                default_logger().warning(f"⚠️ Could not get pkl files from running instance: {pkl_error}")
                 
                 # Try GitHub fallback
-                default_logger().warning("Trying GitHub fallback for pkl files...")
+                default_logger().warning("⚠️ Trying GitHub fallback for pkl files...")
                 success_daily, _ = data_mgr.download_from_github(file_type="daily")
                 success_intraday, _ = data_mgr.download_from_github(file_type="intraday")
                 
                 if success_daily or success_intraday:
                     default_logger().info("Downloaded data from GitHub actions-data-download branch")
                 else:
-                    default_logger().warning("No fallback data available, starting fresh")
+                    default_logger().warning("⚠️ No fallback data available, starting fresh")
 
         except Exception as e:
             default_logger().error(e)

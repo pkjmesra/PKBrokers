@@ -62,7 +62,7 @@ class PKTickBotConsumer:
             return response.json().get("result", [])
 
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"Error getting updates: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 🛑 🛑 🛑 🛑 Error getting updates: {e}")
             return []
 
     def send_command(self, command: str = "/ticks") -> bool:
@@ -81,7 +81,7 @@ class PKTickBotConsumer:
             return True
 
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"Error sending command: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 🛑 🛑 🛑 🛑 Error sending command: {e}")
             return False
 
     def download_file(self, file_id: str, file_path: str) -> bool:
@@ -107,7 +107,7 @@ class PKTickBotConsumer:
             return True
 
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"Error downloading file: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 🛑 🛑 🛑 🛑 Error downloading file: {e}")
             return False
 
     def extract_zip(self, zip_path: str, extract_path: str) -> bool:
@@ -117,7 +117,7 @@ class PKTickBotConsumer:
                 zip_ref.extractall(extract_path)
             return True
         except Exception as e:
-            self.logger.error(f"Error extracting zip: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 🛑 🛑 🛑 🛑 Error extracting zip: {e}")
             return False
 
     def reassemble_parts(self, part_paths: List[str], output_path: str) -> bool:
@@ -129,7 +129,7 @@ class PKTickBotConsumer:
                         output_file.write(part_file.read())
             return True
         except Exception as e:
-            self.logger.error(f"Error reassembling parts: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 🛑 🛑 🛑 🛑 Error reassembling parts: {e}")
             return False
 
     def get_ticks(
@@ -224,7 +224,7 @@ class PKTickBotConsumer:
             return False, "No valid file received or extraction failed"
 
         except Exception as e:
-            self.logger.error(f"Error in get_ticks: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 🛑 🛑 🛑 🛑 Error in get_ticks: {e}")
             return False, str(e)
 
     def get_status(self) -> bool:
@@ -309,7 +309,7 @@ async def get_pktickbot_response_command(command: str = "/ticks"):
             return response
 
         except asyncio.TimeoutError:
-            log.default_logger().warning(f"No response from bot within {MAX_NETWORK_TIMEOUT} seconds for command '{command}'")
+            log.default_logger().warning(f"⚠️ No response from bot within {MAX_NETWORK_TIMEOUT} seconds for command '{command}'")
             return {
                 "type": "timeout",
                 "content": f"No response from bot within {MAX_NETWORK_TIMEOUT} seconds",

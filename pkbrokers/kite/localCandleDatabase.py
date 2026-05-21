@@ -142,7 +142,7 @@ class LocalCandleDatabase:
             conn.commit()
             self.logger.debug(f"Initialized daily database: {self.daily_db_path}")
         except Exception as e:
-            self.logger.error(f"Error initializing daily database: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error initializing daily database: {e}")
             raise
         
     def _init_intraday_db(self):
@@ -181,7 +181,7 @@ class LocalCandleDatabase:
             conn.commit()
             self.logger.debug(f"Initialized intraday database: {self.intraday_db_path}")
         except Exception as e:
-            self.logger.error(f"Error initializing intraday database: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error initializing intraday database: {e}")
             raise
         
     def _get_daily_connection(self) -> sqlite3.Connection:
@@ -229,15 +229,15 @@ class LocalCandleDatabase:
                     auth_token = env.DB_AUTH_TOKEN
                     
                     if not db_url or not auth_token:
-                        self.logger.warning("Turso credentials not available, skipping sync")
+                        self.logger.warning("⚠️ Turso credentials not available, skipping sync")
                         return False
                         
                     turso_conn = libsql.connect(database=db_url, auth_token=auth_token)
                 except Exception as e:
                     if "BLOCKED" in str(e) or "reads are blocked" in str(e).lower():
-                        self.logger.warning("Turso database blocked (quota exceeded), using local data only")
+                        self.logger.warning("⚠️ Turso database blocked (quota exceeded), using local data only")
                     else:
-                        self.logger.error(f"Failed to connect to Turso: {e}")
+                        self.logger.error(f"🛑 🛑 🛑 🛑 Failed to connect to Turso: {e}")
                     return False
             
             # Sync daily data
@@ -251,9 +251,9 @@ class LocalCandleDatabase:
             
         except Exception as e:
             if "BLOCKED" in str(e) or "reads are blocked" in str(e).lower():
-                self.logger.warning("Turso database blocked during sync, using local data")
+                self.logger.warning("⚠️ Turso database blocked during sync, using local data")
             else:
-                self.logger.error(f"Error syncing from Turso: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error syncing from Turso: {e}")
             return False
             
     def _sync_daily_from_turso(self, turso_conn):
@@ -289,7 +289,7 @@ class LocalCandleDatabase:
                 self.logger.info(f"Synced {len(rows)} daily candle records from Turso")
                 
         except Exception as e:
-            self.logger.error(f"Error syncing daily data from Turso: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error syncing daily data from Turso: {e}")
             raise
             
     def _sync_intraday_from_turso(self, turso_conn):
@@ -325,7 +325,7 @@ class LocalCandleDatabase:
                 self.logger.info(f"Synced {len(rows)} intraday candle records from Turso")
                 
         except Exception as e:
-            self.logger.error(f"Error syncing intraday data from Turso: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error syncing intraday data from Turso: {e}")
             raise
             
     def update_from_ticks(self, candle_store) -> bool:
@@ -340,14 +340,14 @@ class LocalCandleDatabase:
         """
         try:
             if candle_store is None:
-                self.logger.warning("No candle store provided")
+                self.logger.warning("⚠️ No candle store provided")
                 return False
                 
             # Get all symbols from candle store
             symbols = candle_store.get_all_symbols()
             
             if not symbols:
-                self.logger.warning("No symbols in candle store")
+                self.logger.warning("⚠️ No symbols in candle store")
                 return False
                 
             daily_records = []
@@ -440,7 +440,7 @@ class LocalCandleDatabase:
             return True
             
         except Exception as e:
-            self.logger.error(f"Error updating from ticks: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error updating from ticks: {e}")
             return False
             
     def update_daily_candle(self, symbol: str, date_str: str, 
@@ -471,7 +471,7 @@ class LocalCandleDatabase:
             
             conn.commit()
         except Exception as e:
-            self.logger.error(f"Error updating daily candle for {symbol} on {date_str}: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error updating daily candle for {symbol} on {date_str}: {e}")
         
     def update_intraday_candle(self, symbol: str, timestamp: str, interval: str,
                                open_price: float, high: float, low: float,
@@ -501,7 +501,7 @@ class LocalCandleDatabase:
             
             conn.commit()
         except Exception as e:
-            self.logger.error(f"Error updating intraday candle for {symbol} at {timestamp}: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error updating intraday candle for {symbol} at {timestamp}: {e}")
         
     def get_daily_candles(self, symbol: Optional[str] = None, 
                          start_date: Optional[str] = None,
@@ -680,7 +680,7 @@ class LocalCandleDatabase:
                 }
             }
         except Exception as e:
-            self.logger.error(f"Error getting database stats: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error getting database stats: {e}")
             return {}
 
 

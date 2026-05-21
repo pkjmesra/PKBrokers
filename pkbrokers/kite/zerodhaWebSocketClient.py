@@ -193,10 +193,10 @@ class WebSocketProcess:
         if not enctoken or len(enctoken) == 0:
             # Log helpful debug info
             import os
-            self.logger.error(f"KTOKEN in env: {bool(os.environ.get('KTOKEN'))}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 KTOKEN in env: {bool(os.environ.get('KTOKEN'))}")
             try:
                 from PKDevTools.classes.Environment import PKEnvironment
-                self.logger.error(f"KTOKEN in PKEnvironment: {bool(PKEnvironment().KTOKEN)}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 KTOKEN in PKEnvironment: {bool(PKEnvironment().KTOKEN)}")
             except:
                 pass
             raise ValueError("enctoken must not be blank")
@@ -383,7 +383,7 @@ class WebSocketProcess:
                                     try:
                                         self.data_queue.put(tick_data, timeout=1)
                                     except Exception:
-                                        self.logger.warning(f"Queue full, dropping tick")
+                                        self.logger.warning(f"⚠️ Queue full, dropping tick")
 
                             elif isinstance(message, str):
                                 try:
@@ -450,7 +450,7 @@ class WebSocketProcess:
                                 self.encToken_invalidated = False  # Reset on success
                                 continue  # Retry with new token
                         except Exception as callback_err:
-                            self.logger.error(f"Token refresh callback failed: {callback_err}")
+                            self.logger.error(f"🛑 🛑 🛑 🛑 Token refresh callback failed: {callback_err}")
                     
                     # Fallback to direct auth if callback fails or not available
                     try:
@@ -463,7 +463,7 @@ class WebSocketProcess:
                             self.encToken_invalidated = False
                             continue
                     except Exception as auth_err:
-                        self.logger.error(f"Direct auth failed: {auth_err}")
+                        self.logger.error(f"🛑 🛑 🛑 🛑 Direct auth failed: {auth_err}")
                 await asyncio.sleep(NETWORK_WAIT_TIME)
 
     def setupLogger(self):
@@ -490,7 +490,7 @@ class WebSocketProcess:
         if hasattr(self, "websocket") and self.websocket:
             try:
                 await self.websocket.close()
-                self.logger.warning(f"Websocket_index:{self.websocket_index} closed!")
+                self.logger.warning(f"⚠️ Websocket_index:{self.websocket_index} closed!")
             except BaseException:
                 pass
 
@@ -506,11 +506,11 @@ class WebSocketProcess:
         try:
             asyncio.run(self._connect_websocket())
         except KeyboardInterrupt:
-            self.logger.warning("Keyboard interrupt received")
+            self.logger.warning("⚠️ Keyboard interrupt received")
         except Exception as e:
-            self.logger.error(f"WebSocket process error: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 WebSocket process error: {e}")
         finally:
-            self.logger.warning(f"Websocket_index:{self.websocket_index}: Process exiting")
+            self.logger.warning(f"⚠️ Websocket_index:{self.websocket_index}: Process exiting")
 
     def multiprocessingForWindows(self):
         if sys.platform.startswith("win"):
@@ -569,7 +569,7 @@ def websocket_process_worker(args):
         process.run()
     except Exception as e:
         from PKDevTools.classes.log import default_logger
-        default_logger().error(f"WebSocket process {websocket_index} error: {e}")
+        default_logger().error(f"🛑 🛑 🛑 🛑 WebSocket process {websocket_index} error: {e}")
     finally:
         if hasattr(process, "close"):
             try:
@@ -626,7 +626,7 @@ class ZerodhaWebSocketClient:
                 
                 return new_token
         except Exception as e:
-            self.logger.error(f"Token refresh failed: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Token refresh failed: {e}")
         
         return None
     
@@ -774,7 +774,7 @@ class ZerodhaWebSocketClient:
                     last_flush = time.time()
 
             except Exception as e:
-                self.logger.error(f"Error processing ticks: {str(e)}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error processing ticks: {str(e)}")
 
         if batch:
             self._flush_to_db(batch)
@@ -786,7 +786,7 @@ class ZerodhaWebSocketClient:
             if self.db_conn:
                 self.db_conn.insert_ticks(batch)
         except Exception as e:
-            self.logger.error(f"Database error: {str(e)}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Database error: {str(e)}")
             import traceback
 
             traceback.print_exc()
@@ -795,15 +795,22 @@ class ZerodhaWebSocketClient:
         """Monitor and restart failed processes."""
         try:
             while not self.stop_event.is_set():
-                if self.ws_stop_event and self.ws_stop_event.is_set():
-                    self.logger.warning("External stop requested, shutting down WebSocket processes...")
-                    self.stop_event.set()
-                    break
-                    
+                # --- Check external stop event safely ---
+                try:
+                    if self.ws_stop_event and self.ws_stop_event.is_set():
+                        self.logger.warning("⚠️ External stop requested, shutting down WebSocket processes...")
+                        self.stop_event.set()
+                        break
+                except (BrokenPipeError, EOFError, ConnectionError, AttributeError) as e:
+                    self.logger.warning(f"⚠️ Ignoring broken pipe while checking ws_stop_event: {e}")
+                    # Do NOT break – continue monitoring
+                except Exception as e:
+                    self.logger.error(f"🛑 🛑 🛑 🛑 Unexpected error checking ws_stop_event: {e}", exc_info=True)
+                # --- Restart dead processes ---
                 for i, p in enumerate(self.ws_processes):
-                    if not p.is_alive():
-                        exitcode = p.exitcode
-                        self.logger.warning(f"Websocket_index:{i} died (exitcode: {exitcode}), restarting...")
+                    if p and not p.is_alive():
+                        exitcode = p.exitcode if p else "Unknown"
+                        self.logger.warning(f"⚠️ Websocket_index:{i} died (exitcode: {exitcode}), restarting...")
                         base_args = process_args[i]
                         full_args = base_args + (self.ws_stop_event,)
                         new_p = self.mp_context.Process(
@@ -813,13 +820,14 @@ class ZerodhaWebSocketClient:
                         new_p.daemon = True
                         new_p.start()
                         self.ws_processes[i] = new_p
-
+                        self.update_batch_tick_time(i)
+                # --- Check stale batches and restart ---
                 current_time = time.time()
                 for i, batch_tokens in enumerate(self.token_batches):
                     last_tick = self.batch_last_tick_time.get(i, 0)
                     if current_time - last_tick > STALE_THRESHOLD_SECONDS:   # 5 minutes without a tick
-                        self.logger.warning(f"Batch {i} has no ticks for {current_time-last_tick:.0f}s → restarting process")
-                        if self.ws_processes[i] and self.ws_processes[i].is_alive():
+                        self.logger.warning(f"⚠️ Batch {i} is stale and has no ticks for {current_time-last_tick:.0f}s → restarting process")
+                        if i < len(self.ws_processes) and self.ws_processes[i] and self.ws_processes[i].is_alive():
                             self.ws_processes[i].terminate()
                             self.ws_processes[i].join(timeout=5)
                         # Restart the process
@@ -829,13 +837,13 @@ class ZerodhaWebSocketClient:
                         new_p.daemon = True
                         new_p.start()
                         self.ws_processes[i] = new_p
-                        self.batch_last_tick_time[i] = current_time   # reset after restart
-                
+                        self.update_batch_tick_time(i)   # reset after restart
+                # --- Full restart if all batches dead (optional) ---
                 # Every RECOVERY_COOLDOWN_SECONDS seconds, check total ticks across all processes
                 if int(time.time()) % RECOVERY_COOLDOWN_SECONDS == 0:
                     total_ticks = sum(self.batch_last_tick_time.values())
-                    if total_ticks < 100 and self._stop_requested is False:
-                        self.logger.error("All batches nearly dead → forcing full token refresh")
+                    if total_ticks < 100 and not self._stop_requested:
+                        self.logger.error("🛑 🛑 🛑 🛑 All batches nearly dead → forcing full token refresh/restart")
                         self._refresh_token()
                         # Restart all processes
                         for p in self.ws_processes:
@@ -843,11 +851,18 @@ class ZerodhaWebSocketClient:
                                 p.terminate()
                         self.start()   # restart everything
                         break
+                
+                # Check that the processor thread is still alive
+                if hasattr(self, 'processor_thread') and not self.processor_thread.is_alive():
+                    self.logger.error("🛑 🛑 🛑 🛑 Processor thread died! Restarting client...")
+                    self.stop()
+                    self.start()
+                    break
 
                 time.sleep(NETWORK_WAIT_TIME)
 
         except Exception as e:
-            self.logger.error(f"Error in monitor: {str(e)}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Monitor loop fatal error ❌❌❌❌: {e}", exc_info=True)
         finally:
             self.stop()
 
@@ -879,13 +894,13 @@ class ZerodhaWebSocketClient:
         token = PKEnvironment().KTOKEN
         
         if not token or len(token) < 10:
-            self.logger.warning("Token invalid, refreshing...")
+            self.logger.warning("⚠️ Token invalid, refreshing...")
             try:
                 from pkbrokers.kite.examples.externals import kite_auth
                 kite_auth()
                 token = PKEnvironment().KTOKEN
             except Exception as e:
-                self.logger.error(f"Failed to refresh token: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Failed to refresh token: {e}")
                 return
         
         # Pass token to all child processes
@@ -942,7 +957,7 @@ class ZerodhaWebSocketClient:
             return
         self._stop_requested = True
         
-        self.logger.warning("Stopping WebSocket client")
+        self.logger.warning("⚠️ Stopping WebSocket client")
         try:
             self.stop_event.set()
         except:
@@ -958,7 +973,7 @@ class ZerodhaWebSocketClient:
             if p and p.is_alive():
                 p.join(timeout=10)
                 if p.is_alive():
-                    self.logger.warning(f"Process {i} not responding, terminating...")
+                    self.logger.warning(f"⚠️ Process {i} not responding, terminating...")
                     p.terminate()
                     p.join(timeout=5)
 
@@ -975,4 +990,4 @@ class ZerodhaWebSocketClient:
         # if hasattr(self, "manager"):
         #     self.manager.shutdown()
 
-        self.logger.warning("Shutdown complete")
+        self.logger.warning("⚠️ Shutdown complete")

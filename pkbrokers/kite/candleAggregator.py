@@ -184,7 +184,7 @@ class CandleAggregator:
         # Get resample rule
         rule = CandleAggregator.INTERVAL_RULES.get(target_interval)
         if rule is None:
-            logger.warning(f"Unknown interval: {target_interval}, defaulting to 1D")
+            logger.warning(f"⚠️ Unknown interval: {target_interval}, defaulting to 1D")
             rule = '1D'
         
         # Make a copy to avoid modifying original
@@ -207,7 +207,7 @@ class CandleAggregator:
             try:
                 df.index = pd.to_datetime(df.index)
             except Exception as e:
-                logger.error(f"Could not convert index to datetime: {e}")
+                logger.error(f"🛑 🛑 🛑 🛑 Could not convert index to datetime: {e}")
                 return pd.DataFrame()
         
         # Perform aggregation
@@ -272,7 +272,7 @@ class CandleAggregator:
         # Get resample rule
         rule = CandleAggregator.INTERVAL_RULES.get(target_interval)
         if rule is None:
-            logger.warning(f"Unknown interval: {target_interval}, defaulting to 1T")
+            logger.warning(f"⚠️ Unknown interval: {target_interval}, defaulting to 1T")
             rule = '1T'
         
         # Make a copy
@@ -301,7 +301,7 @@ class CandleAggregator:
             try:
                 df.index = pd.to_datetime(df.index)
             except Exception as e:
-                logger.error(f"Could not convert index to datetime: {e}")
+                logger.error(f"🛑 🛑 🛑 🛑 Could not convert index to datetime: {e}")
                 return pd.DataFrame()
         
         # Sort by timestamp
@@ -369,7 +369,7 @@ class CandleAggregator:
             try:
                 results[interval] = CandleAggregator.aggregate_candles(df, interval)
             except Exception as e:
-                default_logger().error(f"Error aggregating to {interval}: {e}")
+                default_logger().error(f"🛑 🛑 🛑 🛑 Error aggregating to {interval}: {e}")
                 results[interval] = pd.DataFrame()
         
         return results

@@ -223,7 +223,7 @@ class KiteInstruments:
         try:
             self._init_db(drop_table=recreate_schema)
         except Exception as e:
-            self.logger.warning(f"Initial DB setup failed: {e}")
+            self.logger.warning(f"⚠️ Initial DB setup failed: {e}")
 
     def _sanitize_header_value(self, value: str) -> str:
         """
@@ -321,7 +321,7 @@ class KiteInstruments:
         except Exception as e:
             # Handle database errors gracefully
             if "BLOCKED" in str(e).upper() or "forbidden" in str(e).lower():
-                self.logger.warning(f"Database blocked during table_exists check: {e}")
+                self.logger.warning(f"⚠️ Database blocked during table_exists check: {e}")
                 return False  # Assume table doesn't exist, will be created
             raise
 
@@ -350,7 +350,7 @@ class KiteInstruments:
         except Exception as e:
             # If any database operation fails with BLOCKED, switch to local mode and retry
             if "BLOCKED" in str(e).upper() or "forbidden" in str(e).lower():
-                self.logger.warning(f"Database blocked, switching to local SQLite mode: {e}")
+                self.logger.warning(f"⚠️ Database blocked, switching to local SQLite mode: {e}")
                 self.local = True
                 self._do_init_db(drop_table)
             else:
@@ -456,7 +456,7 @@ class KiteInstruments:
             except Exception as e:
                 # Handle Turso blocked/unavailable - fallback to local
                 if "BLOCKED" in str(e).upper() or "forbidden" in str(e).lower():
-                    self.logger.warning(f"Turso database blocked, falling back to local SQLite: {e}")
+                    self.logger.warning(f"⚠️ Turso database blocked, falling back to local SQLite: {e}")
                     self.local = True  # Switch to local mode for subsequent calls
                     return sqlite3.connect(self.db_path, timeout=30)
                 raise
@@ -484,7 +484,7 @@ class KiteInstruments:
                 )
                 self.logger.debug(f"{self._nse_trading_symbols}")
             except Exception as e:
-                self.logger.warning(f"Failed to fetch NSE symbols: {str(e)}")
+                self.logger.warning(f"⚠️ Failed to fetch NSE symbols: {str(e)}")
                 self._nse_trading_symbols = []
 
         return self._nse_trading_symbols
@@ -539,7 +539,7 @@ class KiteInstruments:
         except Exception as e:
             # Database unavailable - needs refresh
             if "BLOCKED" in str(e).upper():
-                self.logger.warning(f"Database blocked in _needs_refresh: {e}")
+                self.logger.warning(f"⚠️ Database blocked in _needs_refresh: {e}")
             return True
 
     def _normalize_instrument(self, raw: Dict[str, str]) -> Optional[Instrument]:
@@ -579,7 +579,7 @@ class KiteInstruments:
                 nse_stock=is_nse_stock,
             )
         except (ValueError, KeyError) as e:
-            self.logger.warning(f"Skipping malformed instrument: {str(e)}")
+            self.logger.warning(f"⚠️ Skipping malformed instrument: {str(e)}")
             return None
 
     def _normalize_expiry(self, expiry: Optional[str]) -> Optional[str]:
@@ -597,7 +597,7 @@ class KiteInstruments:
         try:
             return datetime.strptime(expiry, "%Y-%m-%d").strftime("%Y-%m-%d")
         except ValueError:
-            self.logger.warning(f"Invalid expiry format: {expiry}")
+            self.logger.warning(f"⚠️ Invalid expiry format: {expiry}")
             return None
 
     def _filter_instrument(self, instrument: Instrument) -> bool:
@@ -701,7 +701,7 @@ class KiteInstruments:
             return filtered_instruments
 
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"Failed to fetch instruments: {str(e)}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Failed to fetch instruments: {str(e)}")
             raise
         # except UnicodeEncodeError:
         #     from pkbrokers.kite.examples.pkkite import try_refresh_token
@@ -712,9 +712,9 @@ class KiteInstruments:
         #         "Authorization": f"token {self.api_key}:{PKEnvironment().KTOKEN}",
         #     }
         except Exception as e:
-            self.logger.error(f"Unexpected error processing instruments: {str(e)}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Unexpected error processing instruments: {str(e)}")
             if not reTrial and "codec can't encode character" in str(e):
-                self.logger.error("Encoding error likely due to non-ASCII characters in API response. Consider sanitizing headers or checking API data.")
+                self.logger.error("🛑 🛑 🛑 🛑 Encoding error likely due to non-ASCII characters in API response. Consider sanitizing headers or checking API data.")
                 self.headers = {
                     "User-Agent": "Python-urllib/3.13",
                     "X-Kite-Version": "3",
@@ -735,7 +735,7 @@ class KiteInstruments:
             better performance. Handles both new inserts and updates.
         """
         if not instruments:
-            self.logger.warning("No instruments to store")
+            self.logger.warning("⚠️ No instruments to store")
             return
 
         self.logger.info(f"Updating/Inserting {len(instruments)} instruments")
@@ -799,7 +799,7 @@ class KiteInstruments:
                 conn.commit()
                 self.logger.info(f"Stored/updated {len(data)} instruments")
             except Exception as e:
-                self.logger.error(f"Error storing instruments: {str(e)}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error storing instruments: {str(e)}")
                 raise
 
     def sync_instruments(
@@ -833,7 +833,7 @@ class KiteInstruments:
                 )
             return True
         except Exception as e:
-            self.logger.error(f"Sync failed: {str(e)}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Sync failed: {str(e)}")
             return False
 
     def get_instrument_count(self) -> int:
@@ -851,9 +851,9 @@ class KiteInstruments:
         except Exception as e:
             # Handle database blocked/unavailable
             if "BLOCKED" in str(e).upper():
-                self.logger.warning("Database blocked (quota exceeded), returning 0")
+                self.logger.warning("⚠️ Database blocked (quota exceeded), returning 0")
             else:
-                self.logger.error(f"Error getting instrument count: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error getting instrument count: {e}")
             return 0
 
     def get_nse_stock_count(self) -> int:
@@ -870,9 +870,9 @@ class KiteInstruments:
                 return cursor.fetchone()[0]
         except Exception as e:
             if "BLOCKED" in str(e).upper():
-                self.logger.warning("Database blocked (quota exceeded), returning 0")
+                self.logger.warning("⚠️ Database blocked (quota exceeded), returning 0")
             else:
-                self.logger.error(f"Error getting NSE stock count: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error getting NSE stock count: {e}")
             return 0
 
     def get_equities(
@@ -946,9 +946,9 @@ class KiteInstruments:
         except Exception as e:
             # Handle database blocked/unavailable
             if "BLOCKED" in str(e).upper():
-                self.logger.warning("Database blocked (quota exceeded), returning empty list")
+                self.logger.warning("⚠️ Database blocked (quota exceeded), returning empty list")
             else:
-                self.logger.error(f"Error getting equities: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error getting equities: {e}")
             return []
 
     def get_or_fetch_instrument_tokens(
@@ -1050,7 +1050,7 @@ class KiteInstruments:
                     return result
                 return None
             except Exception as e:
-                self.logger.error(f"Error getting instrument: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error getting instrument: {e}")
                 return None
 
     def get_nse_stocks(self) -> List[Dict]:
@@ -1094,7 +1094,7 @@ class KiteInstruments:
                 conn.commit()
                 return cursor.rowcount > 0
         except Exception as e:
-            self.logger.error(f"Failed to update NSE stock status: {str(e)}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Failed to update NSE stock status: {str(e)}")
             return False
 
     def migrate_to_nse_stock_column(self) -> bool:
@@ -1111,7 +1111,7 @@ class KiteInstruments:
         try:
             nse_symbols = self._get_nse_trading_symbols()
             if not nse_symbols:
-                self.logger.warning("No NSE symbols available for migration")
+                self.logger.warning("⚠️ No NSE symbols available for migration")
                 return False
 
             with self._get_connection() as conn:
@@ -1149,5 +1149,5 @@ class KiteInstruments:
                 return True
 
         except Exception as e:
-            self.logger.error(f"Migration failed: {str(e)}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Migration failed: {str(e)}")
             return False

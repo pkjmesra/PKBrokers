@@ -106,7 +106,7 @@ class StatsCollector:
                 time.sleep(1)
                 
             except Exception as e:
-                logger.error(f"Stats collector error: {e}")
+                logger.error(f"🛑 🛑 🛑 🛑 Stats collector error: {e}")
     
     def get_stats(self):
         """Get current stats (safe to call from any process)"""
@@ -317,15 +317,15 @@ class PKTickOrchestrator:
                     kite_auth()
                     logger.info("Kite authentication successful")
                 except Exception as auth_e:
-                    logger.error(f"Kite authentication failed: {auth_e}")
-                    logger.warning("Proceeding without valid token - WebSocket will fail")
+                    logger.error(f"🛑 🛑 🛑 🛑 Kite authentication failed: {auth_e}")
+                    logger.warning("⚠️ Proceeding without valid token - WebSocket will fail")
             
             from pkbrokers.kite.examples.pkkite import kite_ticks
             
             logger.debug(f"Starting kite_ticks process with ws_stop_event: {ws_stop_event}")
             # If shared_stats is None, try to recreate it
             if shared_stats is None:
-                logger.warning("shared_stats is None, creating new manager dict")
+                logger.warning("⚠️ shared_stats is None, creating new manager dict")
                 from multiprocessing import Manager
                 manager = Manager()
                 shared_stats = manager.dict()
@@ -391,17 +391,17 @@ class PKTickOrchestrator:
                                     logger.debug(f"✓ Commit #{commit_count} successful")
                                 except Exception as commit_err:
                                     error_count += 1
-                                    logger.error(f"✗ Commit #{commit_count} failed (error #{error_count}): {commit_err}", exc_info=True)
+                                    logger.error(f"🛑 🛑 🛑 🛑 ✗ Commit #{commit_count} failed (error #{error_count}): {commit_err}", exc_info=True)
                                     # Don't update last_ticks_commit on failure, so it will retry
                     except Exception as e:
-                        logger.error(f"Fatal error in stats_sender: {e}", exc_info=True)
+                        logger.error(f"🛑 🛑 🛑 🛑 Fatal error in stats_sender: {e}", exc_info=True)
                         time.sleep(5)  # Brief pause before retrying
             threading.Thread(target=stats_sender, daemon=True).start()
             kite_ticks(stop_queue=stop_queue, ws_stop_event=ws_stop_event, shared_stats=shared_stats, child_process_ref=child_process_ref)
         except KeyboardInterrupt:
             logger.info("kite_ticks process interrupted")
         except Exception as e:
-            logger.error(f"kite_ticks error: {e}")
+            logger.error(f"🛑 🛑 🛑 🛑 kite_ticks error: {e}")
 
     @staticmethod
     def run_telegram_bot(bot_token: Optional[str], ticks_file_path: Optional[str], chat_id: Optional[str], shared_stats: dict):
@@ -428,7 +428,7 @@ class PKTickOrchestrator:
             bot.run()
 
         except Exception as e:
-            logger.error(f"Telegram bot error: {e}")
+            logger.error(f"🛑 🛑 🛑 🛑 Telegram bot error: {e}")
 
     def bot_callback(self):
         if hasattr(self, "test_mode"):
@@ -488,11 +488,11 @@ class PKTickOrchestrator:
     def stop(self, processes=[]):
         """Stop both processes gracefully with proper resource cleanup"""
         logger = default_logger()
-        logger.warning("Stopping processes...")
+        logger.warning("⚠️ Stopping processes...")
         # self.stats_collector.stop()
         # Set WebSocket stop event if it exists
         if self.ws_stop_event:
-            logger.warning("Signaling WebSocket processes to stop...")
+            logger.warning("⚠️ Signaling WebSocket processes to stop...")
             self.ws_stop_event.set()
 
         # Try to stop watcher through queue for a graceful shutdown
@@ -500,7 +500,7 @@ class PKTickOrchestrator:
             self.stop_queue.put("STOP")
             time.sleep(2)  # Give time to process
         except Exception as e:
-            logger.error(f"Error sending stop signal to KiteTokenWatcher: {e}")
+            logger.error(f"🛑 🛑 🛑 🛑 Error sending stop signal to KiteTokenWatcher: {e}")
 
         # Stop processes with proper cleanup
         processes = (
@@ -512,7 +512,7 @@ class PKTickOrchestrator:
         for process, name in processes:
             if process and process.is_alive():
                 try:
-                    logger.warning(f"Stopping {name} (PID: {process.pid})...")
+                    logger.warning(f"⚠️ Stopping {name} (PID: {process.pid})...")
                     # Give more time for kite_process to shutdown gracefully
                     join_timeout = 10
                     kill_timeout = 5
@@ -531,7 +531,7 @@ class PKTickOrchestrator:
                     process.close()
 
                 except Exception as e:
-                    logger.error(f"Error stopping {name}: {e}")
+                    logger.error(f"🛑 🛑 🛑 🛑 Error stopping {name}: {e}")
                 finally:
                     if name == "kite process":
                         self.kite_process = None
@@ -566,7 +566,7 @@ class PKTickOrchestrator:
         """Restart kite process if market conditions change"""
         logger = default_logger()
         if self.test_mode:
-            logger.warning("Running in TEST mode! Skipping test to re-run/stop Kite process!")
+            logger.warning("⚠️ Running in TEST mode! Skipping test to re-run/stop Kite process!")
             return
         current_should_run = self.should_run_kite_process()
         kite_running = self.kite_process and self.kite_process.is_alive()
@@ -588,7 +588,7 @@ class PKTickOrchestrator:
 
         # If kite is running but shouldn't be, stop it
         elif not current_should_run and kite_running:
-            logger.warning("Market hours ended - stopping kite process")
+            logger.warning("⚠️ Market hours ended - stopping kite process")
             self.kite_process.terminate()
             self.kite_process.join(timeout=5)
             self.kite_process = None
@@ -611,7 +611,7 @@ class PKTickOrchestrator:
                     except queue.Empty:
                         continue
                     except Exception as e:
-                        logger.error(f"Error in stats reader: {e}")
+                        logger.error(f"🛑 🛑 🛑 🛑 Error in stats reader: {e}")
             
             threading.Thread(target=stats_reader, daemon=True).start()
             
@@ -644,7 +644,7 @@ class PKTickOrchestrator:
                             
                             # CRITICAL FIX: If kite process is not running, we need to get fresh data
                             if not self.kite_process or not self.kite_process.is_alive():
-                                logger.warning("Kite process not running - attempting to refresh from GitHub")
+                                logger.warning("⚠️ Kite process not running - attempting to refresh from GitHub")
                                 # Download fresh ticks.json from GitHub
                                 
                                 try:
@@ -705,7 +705,7 @@ class PKTickOrchestrator:
                                             break
                                             
                                 except Exception as e:
-                                    logger.error(f"Failed to refresh from GitHub: {e}")
+                                    logger.error(f"🛑 🛑 🛑 🛑 Failed to refresh from GitHub: {e}")
                             
                             # Now try to refresh pkl with updated candle store
                             data_mgr.refresh_pkl_if_stale(candle_store, max_stale_seconds)
@@ -723,7 +723,7 @@ class PKTickOrchestrator:
                                     data_mgr.export_intraday_candles_to_pkl(candle_store)
                     
                     except Exception as e:
-                        logger.error(f"Error in data refresher thread: {e}")
+                        logger.error(f"🛑 🛑 🛑 🛑 Error in data refresher thread: {e}")
             
             threading.Thread(target=data_refresher, daemon=True).start()
             
@@ -759,7 +759,7 @@ class PKTickOrchestrator:
                         )
                         break
                     else:
-                        logger.warning("Bot process died, restarting...")
+                        logger.warning("⚠️ Bot process died, restarting...")
                         self.bot_process = self.mp_context.Process(
                             target=PKTickOrchestrator.run_telegram_bot, 
                             args=(self.bot_token, self.ticks_file_path, self.chat_id, self.shared_stats,), 
@@ -868,14 +868,14 @@ class PKTickOrchestrator:
                                     kite_auth()
                                     self.token_generated_at_least_once = True
                         except Exception as e:
-                            logger.error(f"Error while updating token: {e}")
+                            logger.error(f"🛑 🛑 🛑 🛑 Error while updating token: {e}")
 
             self.stop()
 
         except KeyboardInterrupt:
-            logger.warning("Keyboard interrupt received")
+            logger.warning("⚠️ Keyboard interrupt received")
         except Exception as e:
-            logger.error(f"Unexpected error in orchestrator: {e}")
+            logger.error(f"🛑 🛑 🛑 🛑 Unexpected error in orchestrator: {e}")
         finally:
             self.stop()
             logger.info("Orchestrator stopped completely")
@@ -897,7 +897,7 @@ class PKTickOrchestrator:
     def signal_handler(self, signum, frame):
         """Handle shutdown signals"""
         logger = default_logger()
-        logger.warning(f"Received signal {signum}. Shutting down gracefully...")
+        logger.warning(f"⚠️ Received signal {signum}. Shutting down gracefully...")
         self.shutdown_requested = True
 
     def get_consumer(self):
@@ -954,9 +954,9 @@ def orchestrate():
                     logger.info(f"✅ Successfully downloaded ticks.json from {url} with {len(ticks_data)} instruments")
                     break
                 else:
-                    logger.warning(f"Failed to download from {url}: HTTP {response.status_code}")
+                    logger.warning(f"⚠️ Failed to download from {url}: HTTP {response.status_code}")
             except Exception as e:
-                logger.warning(f"Error downloading from {url}: {e}")
+                logger.warning(f"⚠️ Error downloading from {url}: {e}")
         
         if ticks_data:
             # After downloading ticks.json, check if it's recent enough
@@ -986,7 +986,7 @@ def orchestrate():
                 logger.info(f"Downloaded ticks.json latest timestamp: {latest_timestamp} ({age_seconds/60:.1f} minutes old)")
                 
                 if age_seconds > 3600:  # Older than 1 hour
-                    logger.warning(f"⚠️ Downloaded ticks.json is {age_seconds/60:.1f} minutes old - data may be stale!")
+                    logger.warning(f"⚠️ ⚠️ Downloaded ticks.json is {age_seconds/60:.1f} minutes old - data may be stale!")
 
             # Save locally for future use
             ticks_path = os.path.join(Archiver.get_user_data_dir(), "ticks.json")
@@ -995,7 +995,7 @@ def orchestrate():
                     json.dump(ticks_data, f)
                 logger.info(f"✅ Saved ticks.json locally to {ticks_path}")
             except Exception as e:
-                logger.warning(f"Could not save ticks.json locally: {e}")
+                logger.warning(f"⚠️ Could not save ticks.json locally: {e}")
             
             # Process ticks and populate candle store
             logger.info(f"Processing {len(ticks_data)} instruments into candle store...")
@@ -1071,7 +1071,7 @@ def orchestrate():
                 candle_store._persist_to_disk()
                 logger.info("✅ Persisted candle store to disk")
             except Exception as e:
-                logger.warning(f"Could not persist candle store: {e}")
+                logger.warning(f"⚠️ Could not persist candle store: {e}")
             
             # VERIFY the population worked
             stats = candle_store.get_stats()
@@ -1080,18 +1080,18 @@ def orchestrate():
             
             # If still empty, something went wrong
             if instruments_with_ticks == 0:
-                logger.error("❌ CRITICAL: Candle store still empty after GitHub population!")
+                logger.error("🛑 🛑 🛑 🛑 ❌ CRITICAL: Candle store still empty after GitHub population!")
             else:
                 # Test that timestamps are correct
                 sample_symbols = list(candle_store.symbol_to_token.keys())[:5]
                 logger.info(f"Sample symbols in candle store: {sample_symbols}")
                 
         else:
-            logger.error("❌ CRITICAL: Could not download ticks.json from any GitHub source")
-            logger.error("Candle store will remain empty - data will be stale!")
+            logger.error("🛑 🛑 🛑 🛑 ❌ CRITICAL: Could not download ticks.json from any GitHub source")
+            logger.error("🛑 🛑 🛑 🛑 Candle store will remain empty - data will be stale!")
         
     except Exception as e:
-        logger.error(f"FATAL ERROR in GitHub population: {e}")
+        logger.error(f"🛑 🛑 🛑 🛑 FATAL ERROR in GitHub population: {e}")
         import traceback
         traceback.print_exc()
     
@@ -1131,7 +1131,7 @@ def orchestrate():
             except Exception as commit_e:
                 logger.debug(f"Error committing received data: {commit_e}")
         else:
-            logger.warning("No running instance or no data received, will try GitHub fallback")
+            logger.warning("⚠️ No running instance or no data received, will try GitHub fallback")
             
             # Try GitHub fallback
             success_daily, daily_path = data_mgr.download_from_github(file_type="daily")
@@ -1146,10 +1146,10 @@ def orchestrate():
                     if test_data and len(test_data) > 0:
                         logger.info(f"✅ Validated daily pkl: {daily_path} with {len(test_data)} instruments")
                     else:
-                        logger.warning(f"⚠️ Daily pkl is empty or invalid: {daily_path}")
+                        logger.warning(f"⚠️ ⚠️ Daily pkl is empty or invalid: {daily_path}")
                         success_daily = False
                 except Exception as val_err:
-                    logger.error(f"❌ Daily pkl validation failed: {val_err}")
+                    logger.error(f"🛑 🛑 🛑 🛑 ❌ Daily pkl validation failed: {val_err}")
                     success_daily = False
             
             # Similar validation for intraday pkl
@@ -1160,10 +1160,10 @@ def orchestrate():
                     if test_data and len(test_data) > 0:
                         logger.info(f"✅ Validated intraday pkl: {intraday_path} with {len(test_data)} instruments")
                     else:
-                        logger.warning(f"⚠️ Intraday pkl is empty or invalid: {intraday_path}")
+                        logger.warning(f"⚠️ ⚠️ Intraday pkl is empty or invalid: {intraday_path}")
                         success_intraday = False
                 except Exception as val_err:
-                    logger.error(f"❌ Intraday pkl validation failed: {val_err}")
+                    logger.error(f"🛑 🛑 🛑 🛑 ❌ Intraday pkl validation failed: {val_err}")
                     success_intraday = False
 
             if success_daily or success_intraday:
@@ -1209,12 +1209,12 @@ def orchestrate():
                         logger.info(f"Loaded {loaded} instruments from intraday pkl into candle store")
                         
                 except Exception as load_err:
-                    logger.warning(f"Error loading pkl into candle store: {load_err}")
+                    logger.warning(f"⚠️ Error loading pkl into candle store: {load_err}")
             else:
-                logger.warning("No fallback data available, starting fresh")
+                logger.warning("⚠️ No fallback data available, starting fresh")
                 
     except Exception as e:
-        logger.warning(f"Could not get data from running instance or GitHub: {e}")
+        logger.warning(f"⚠️ Could not get data from running instance or GitHub: {e}")
     
     orchestrator.run()
 

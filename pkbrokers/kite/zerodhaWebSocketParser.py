@@ -102,7 +102,7 @@ class ZerodhaWebSocketParser:
                     ticks.append(tick)
 
         except Exception as e:
-            logger.error(f"Error parsing message: {e}")
+            logger.error(f"🛑 🛑 🛑 🛑 Error parsing message: {e}")
 
         return ticks
 
@@ -130,7 +130,7 @@ class ZerodhaWebSocketParser:
                 exchange_timestamp=timestamp,
             )
         except Exception as e:
-            logger.error(f"Error parsing Index message: {e}")
+            logger.error(f"🛑 🛑 🛑 🛑 Error parsing Index message: {e}")
 
         return None
 
@@ -400,5 +400,5 @@ class ZerodhaWebSocketParser:
             return Tick(**data)
 
         except Exception as e:
-            logger.error(f"Error parsing packet: {e}")
+            logger.error(f"🛑 🛑 🛑 🛑 Error parsing packet: {e}")
             return None

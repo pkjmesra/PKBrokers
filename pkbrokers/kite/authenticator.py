@@ -218,15 +218,15 @@ class KiteAuthenticator:
                     f"Token updated in GitHub secrets:{prev_token != PKEnvironment().KTOKEN}"
                 )
             except Exception as e:
-                default_logger().error(f"Error while updating GitHub secret:{e}")
+                default_logger().error(f"🛑 🛑 🛑 🛑 Error while updating GitHub secret:{e}")
                 pass
             return access_token
 
         except requests.exceptions.RequestException as e:
-            default_logger().error(f"RequestException:Authentication failed:{e}")
+            default_logger().error(f"🛑 🛑 🛑 🛑 RequestException:Authentication failed:{e}")
             raise requests.exceptions.RequestException(
                 f"Authentication failed: {str(e)}"
             ) from e
         except Exception as e:
-            default_logger().error(f"Authentication failed because of error:{e}")
+            default_logger().error(f"🛑 🛑 🛑 🛑 Authentication failed because of error:{e}")
             raise ValueError(f"Authentication error: {str(e)}") from e

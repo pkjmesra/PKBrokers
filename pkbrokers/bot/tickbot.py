@@ -163,7 +163,7 @@ class PKTickBot:
             kite_auth()
             update.message.reply_text(PKEnvironment().KTOKEN)
         except Exception as e:
-            self.logger.error(f"Could not generate/refresh token:{e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Could not generate/refresh token:{e}")
             update.message.reply_text("N/A")
 
     def send_token(self, update: Update, context: CallbackContext) -> None:
@@ -239,7 +239,7 @@ class PKTickBot:
             )
             
         except Exception as e:
-            self.logger.error(f"Error restarting watcher: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error restarting watcher: {e}")
             update.message.reply_text(f"❌ Error: {e}")
 
     def send_zipped(self, file_name, file_path, update):
@@ -322,7 +322,7 @@ class PKTickBot:
                         os.unlink(part_path)
 
         except Exception as e:
-            self.logger.error(f"Error sending zipped ticks file ({file_name}): {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error sending zipped ticks file ({file_name}): {e}")
             update.message.reply_text(
                 f"❌ Error preparing or sending file ({file_name}). Please try again later."
             )
@@ -372,7 +372,7 @@ class PKTickBot:
                 update.message.reply_text(
                     "❌ instrument_history.db file not found. Please wait for data to be collected."
                 )
-            self.logger.warning("instrument_history.db not found in any standard location")
+            self.logger.warning("⚠️ instrument_history.db not found in any standard location")
             
     def find_part_files(self, base_path: str) -> list:
         """Find any existing part files for a given base path"""
@@ -513,7 +513,7 @@ class PKTickBot:
                     stats = self.shared_stats
                 else:
                     stats = {} # Default to empty if shared_stats is not populated yet
-                    self.logger.warning("shared_stats is None in status command!")
+                    self.logger.warning("⚠️ shared_stats is None in status command!")
 
                 import pytz
                 ist = pytz.timezone('Asia/Kolkata')
@@ -544,7 +544,7 @@ class PKTickBot:
             update.message.reply_text(status_msg)
 
         except Exception as e:
-            self.logger.error(f"Error in status command: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error in status command: {e}")
             update.message.reply_text("❌ Error checking status")
 
     def error_handler(self, update: object, context: CallbackContext) -> None:
@@ -596,11 +596,11 @@ class PKTickBot:
                     candle_store = get_candle_store()
                     
                     # Ensure data is fresh before committing
-                    logger.warning("Ensuring data freshness before shutdown...")
+                    logger.warning("⚠️ Ensuring data freshness before shutdown...")
                     data_mgr.ensure_data_freshness(candle_store)
                     
                     # Export pkl files with current data
-                    logger.warning("Exporting pkl files before shutdown...")
+                    logger.warning("⚠️ Exporting pkl files before shutdown...")
                     data_mgr.export_daily_candles_to_pkl(candle_store)
                     data_mgr.export_intraday_candles_to_pkl(candle_store)
                     
@@ -608,7 +608,7 @@ class PKTickBot:
                     data_mgr.commit_pkl_files(candle_store=candle_store)
                     logger.info("Data exported and committed before shutdown")
                 except Exception as export_e:
-                    logger.error(f"Error exporting data before shutdown: {export_e}")
+                    logger.error(f"🛑 🛑 🛑 🛑 Error exporting data before shutdown: {export_e}")
                 
                 try:
                     # Signal the main process to shutdown
@@ -620,7 +620,7 @@ class PKTickBot:
                     except SystemExit:
                         thread.interrupt_main()
                 except Exception as e:
-                    logger.error(f"Error sending shutdown signal: {e}")
+                    logger.error(f"🛑 🛑 🛑 🛑 Error sending shutdown signal: {e}")
                     sys.exit(1)
             else:
                 info_msg = (
@@ -632,7 +632,7 @@ class PKTickBot:
                 )
         else:
             # Log the error before we do anything else, so we can see it even if something breaks.
-            logger.error("Exception while handling an update:", exc_info=context.error)
+            logger.error("🛑 🛑 🛑 🛑 Exception while handling an update:", exc_info=context.error)
 
         # Build the message with some markup and additional information about what happened.
         update_str = update.to_dict() if isinstance(update, Update) else str(update)
@@ -733,7 +733,7 @@ class PKTickBot:
                 update.message.reply_text("❌ No daily candle data available")
                 
         except Exception as e:
-            self.logger.error(f"Error sending daily pkl: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error sending daily pkl: {e}")
             update.message.reply_text(f"❌ Error: {e}")
     
     def send_intraday_pkl(self, update: Update, context: CallbackContext) -> None:
@@ -778,7 +778,7 @@ class PKTickBot:
                 update.message.reply_text("❌ No intraday candle data available")
                 
         except Exception as e:
-            self.logger.error(f"Error sending intraday pkl: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error sending intraday pkl: {e}")
             update.message.reply_text(f"❌ Error: {e}")
 
     def request_data(self, update: Update, context: CallbackContext) -> None:
@@ -823,7 +823,7 @@ class PKTickBot:
             self.logger.info("Data sent to requesting instance (with freshness ensured)")
             
         except Exception as e:
-            self.logger.error(f"Error in request_data: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error in request_data: {e}")
             update.message.reply_text(f"❌ Error: {e}")
     
     def handle_document_received(self, update: Update, context: CallbackContext) -> None:
@@ -860,7 +860,7 @@ class PKTickBot:
                     self.logger.info(f"Successfully received and extracted {file_name}")
                     
         except Exception as e:
-            self.logger.error(f"Error handling received document: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error handling received document: {e}")
 
     def send_candles(self, update: Update, context: CallbackContext) -> None:
         """Send aggregated candle data for all timeframes (1m, 5m, 15m, 30m, 60m, daily)"""
@@ -946,7 +946,7 @@ class PKTickBot:
                         chat_id=self.chat_id, text="🚀 PKTickBot started successfully!"
                     )
                 except Exception as e:
-                    self.logger.warning(f"Could not send startup message: {e}")
+                    self.logger.warning(f"⚠️ Could not send startup message: {e}")
 
             # Start polling
             self.updater.start_polling()
@@ -955,7 +955,7 @@ class PKTickBot:
             self.updater.idle()
 
         except Exception as e:
-            self.logger.error(f"Bot error: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Bot error: {e}")
             raise
         finally:
             if self.updater:

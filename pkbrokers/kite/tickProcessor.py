@@ -156,7 +156,7 @@ class TickProcessor:
                 
                 self.logger.debug(f"Loaded {len(self.instruments_map)} instrument mappings")
         except Exception as e:
-            self.logger.warning(f"Could not load instrument mappings: {e}")
+            self.logger.warning(f"⚠️ Could not load instrument mappings: {e}")
     
     def set_data_queue(self, data_queue: queue.Queue):
         """Set the data queue for receiving ticks."""
@@ -165,7 +165,7 @@ class TickProcessor:
     def start(self):
         """Start the tick processing thread."""
         if self._processor_thread is not None and self._processor_thread.is_alive():
-            self.logger.warning("Tick processor already running")
+            self.logger.warning("⚠️ Tick processor already running")
             return
         
         self._stop_event.clear()
@@ -203,7 +203,7 @@ class TickProcessor:
                 self.process_tick(tick_data)
                 
             except Exception as e:
-                self.logger.error(f"Error in tick processor: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error in tick processor: {e}")
                 self.stats['errors'] += 1
                 time.sleep(0.01)
     
@@ -236,7 +236,7 @@ class TickProcessor:
             return success
             
         except Exception as e:
-            self.logger.error(f"Error processing tick: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error processing tick: {e}")
             self.stats['errors'] += 1
             return False
     
@@ -395,7 +395,7 @@ class TickProcessor:
             return True
             
         except Exception as e:
-            self.logger.error(f"Error exporting pickle: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error exporting pickle: {e}")
             return False
     
     def export_ticks_json(self, file_path: str = None) -> bool:
@@ -421,7 +421,7 @@ class TickProcessor:
             return True
             
         except Exception as e:
-            self.logger.error(f"Error exporting ticks.json: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error exporting ticks.json: {e}")
             return False
     
     def get_stats(self) -> Dict[str, Any]:

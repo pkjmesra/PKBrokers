@@ -135,7 +135,7 @@ class HighPerformanceTursoWriter:
         try:
             import libsql
         except ImportError as e:
-            self.logger.error(f"Import error in writer process {self.writer_id}: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Import error in writer process {self.writer_id}: {e}")
             return
 
         # Create connection with retry logic
@@ -258,7 +258,7 @@ class HighPerformanceTursoWriter:
                     time.sleep(MIN_CPU_SPIN_INTERVAL_SEC)
 
             except Exception as e:
-                self.logger.error(f"Writer {self.writer_id} loop error: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Writer {self.writer_id} loop error: {e}")
                 import traceback
 
                 traceback.print_exc()
@@ -277,7 +277,7 @@ class HighPerformanceTursoWriter:
 
         try:
             conn.close()
-            self.logger.warning(f"Writer {self.writer_id}: Closed connection")
+            self.logger.warning(f"⚠️ Writer {self.writer_id}: Closed connection")
         except BaseException:
             pass
 
@@ -532,7 +532,7 @@ class ThreadSafeDatabase:
             )
             return cursor.fetchone() is not None
         except Exception as e:
-            self.logger.error(f"Error checking table existence for {table_name}: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error checking table existence for {table_name}: {e}")
             return False
 
     def _initialize_db(self, force_drop: bool = False):
@@ -547,7 +547,7 @@ class ThreadSafeDatabase:
                     cursor.execute("DROP TABLE IF EXISTS market_depth")
                     cursor.execute("DROP TABLE IF EXISTS ticks")
                 except Exception as e:
-                    self.logger.error(f"Error dropping tables: {e}")
+                    self.logger.error(f"🛑 🛑 🛑 🛑 Error dropping tables: {e}")
 
             # Only create if it doesn't exist
             if not self.table_exists(cursor, "ticks"):
@@ -573,7 +573,7 @@ class ThreadSafeDatabase:
                         )
                     """)
                 except Exception as e:
-                    self.logger.error(f"Error creating ticks table: {e}")
+                    self.logger.error(f"🛑 🛑 🛑 🛑 Error creating ticks table: {e}")
                 try:
                     # Optimized indexes for batch inserts
                     cursor.execute("""
@@ -581,7 +581,7 @@ class ThreadSafeDatabase:
                         ON ticks(instrument_token, timestamp)
                     """)
                 except Exception as e:
-                    self.logger.error(f"Error creating ticks index: {e}")
+                    self.logger.error(f"🛑 🛑 🛑 🛑 Error creating ticks index: {e}")
 
             if not self.table_exists(cursor, "market_depth"):
                 has_commit = True
@@ -607,7 +607,7 @@ class ThreadSafeDatabase:
                         ON market_depth(instrument_token, timestamp, depth_type)
                     """)
                 except Exception as e:
-                    self.logger.error(f"Error creating market_depth table/index: {e}")
+                    self.logger.error(f"🛑 🛑 🛑 🛑 Error creating market_depth table/index: {e}")
 
             try:
                 # Local database optimizations
@@ -621,7 +621,7 @@ class ThreadSafeDatabase:
                 if has_commit:
                     conn.commit()
             except Exception as e:
-                self.logger.error(f"Error setting PRAGMA: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error setting PRAGMA: {e}")
 
     def _get_local_connection(self):
         """Get optimized local SQLite connection"""
@@ -727,7 +727,7 @@ class ThreadSafeDatabase:
 
         # Log performance occasionally
         if total_dropped > 0:
-            self.logger.warning(f"Dropped {total_dropped} ticks due to full queues")
+            self.logger.warning(f"⚠️ Dropped {total_dropped} ticks due to full queues")
 
     def insert_candles_batch(self, candles: List[Dict[str, Any]]):
         """Insert aggregated 1‑minute candles (not raw ticks)."""
@@ -781,7 +781,7 @@ class ThreadSafeDatabase:
                 conn.commit()
                 self.logger.debug(f"Inserted {len(params_list)} candles")
             except Exception as e:
-                self.logger.error(f"Candle insert error: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Candle insert error: {e}")
                 
     def _insert_ticks_local(self, ticks: List[Dict[str, Any]]):
         """Local SQLite implementation as fallback"""
@@ -861,7 +861,7 @@ class ThreadSafeDatabase:
                     cursor.executemany(DEPTH_INSERT_SQL, depth_data)
                 conn.commit()
             except Exception as e:
-                self.logger.error(f"Local insert error: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Local insert error: {e}")
                 try:
                     conn.rollback()
                 except BaseException:
@@ -876,7 +876,7 @@ class ThreadSafeDatabase:
 
     def close_all(self):
         """Close all connections and writers"""
-        self.logger.warning("Stopping all writers...")
+        self.logger.warning("⚠️ Stopping all writers...")
         for writer in self.turso_writers:
             writer.stop()
         self.turso_writers = []
@@ -1396,7 +1396,7 @@ class ThreadSafeDatabase:
                 cursor.execute(sql, params)
                 return cursor.fetchall()
             except Exception as e:
-                self.logger.error(f"Query error: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Query error: {e}")
                 return []
 
     def execute(self, sql: str, params: tuple = ()) -> None:
@@ -1407,7 +1407,7 @@ class ThreadSafeDatabase:
                 cursor.execute(sql, params)
                 conn.commit()
             except Exception as e:
-                self.logger.error(f"Execute error: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Execute error: {e}")
                 try:
                     conn.rollback()
                 except BaseException:
@@ -1421,7 +1421,7 @@ class ThreadSafeDatabase:
                 cursor.executemany(sql, params_list)
                 conn.commit()
             except Exception as e:
-                self.logger.error(f"Batch execute error: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Batch execute error: {e}")
                 try:
                     conn.rollback()
                 except BaseException:

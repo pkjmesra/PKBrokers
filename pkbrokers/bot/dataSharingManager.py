@@ -252,7 +252,7 @@ class DataSharingManager:
             return holiday_dates
             
         except Exception as e:
-            self.logger.error(f"Error fetching holidays: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error fetching holidays: {e}")
             return []
     
     def is_market_about_to_close(self, minutes_before: int = 5) -> bool:
@@ -363,11 +363,11 @@ class DataSharingManager:
             if is_fresh and stale_seconds <= max_stale_seconds:
                 self.logger.info(f"[Refresh #{self._refresh_count}] ✓ Post-refresh validation: Fresh - {latest_date} {latest_time} (stale: {stale_seconds}s)")
             else:
-                self.logger.warning(f"[Refresh #{self._refresh_count}] ⚠ Post-refresh validation: Still stale by {stale_seconds}s")
+                self.logger.warning(f"⚠️ [Refresh #{self._refresh_count}] ⚠ Post-refresh validation: Still stale by {stale_seconds}s")
             
             return True
         else:
-            self.logger.error(f"[Refresh #{self._refresh_count}] ❌ Failed to refresh daily pkl")
+            self.logger.error(f"🛑 🛑 🛑 🛑 [Refresh #{self._refresh_count}] ❌ Failed to refresh daily pkl")
             return False
     
     def refresh_intraday_pkl_if_stale(self, candle_store, max_stale_seconds: int = MAX_STALE_SECONDS) -> bool:
@@ -544,11 +544,11 @@ class DataSharingManager:
                     self.logger.debug(f"Failed to download from {url}: {e}")
                     continue
             
-            self.logger.warning(f"Could not download {file_type} pkl from GitHub after trying {len(urls_to_try)} URLs")
+            self.logger.warning(f"⚠️ Could not download {file_type} pkl from GitHub after trying {len(urls_to_try)} URLs")
             return False, None, 0
             
         except Exception as e:
-            self.logger.error(f"Error downloading from GitHub: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error downloading from GitHub: {e}")
             return False, None, 0
     
     def validate_pkl_freshness(self, pkl_path: str) -> Tuple[bool, Optional[datetime], int, Optional[datetime], Optional[datetime.time], int]:
@@ -592,7 +592,7 @@ class DataSharingManager:
             # Check file size first - if too small, it's definitely corrupted
             file_size = os.path.getsize(pkl_path)
             if file_size < 1024:  # Less than 1KB - likely corrupted or empty
-                self.logger.warning(f"Pkl file too small ({file_size} bytes): {pkl_path}")
+                self.logger.warning(f"⚠️ Pkl file too small ({file_size} bytes): {pkl_path}")
                 return False, None, 0, None, None, 0
             
             # Try to load with error handling and recovery attempts
@@ -612,7 +612,7 @@ class DataSharingManager:
                 self.logger.info("==========================")
             except (pickle.UnpicklingError, EOFError, ValueError) as e:
                 load_error = e
-                self.logger.warning(f"Failed to load pkl (attempt 1): {e}")
+                self.logger.warning(f"⚠️ Failed to load pkl (attempt 1): {e}")
                 
                 # Attempt 2: Try to load with protocol auto-detection
                 try:
@@ -628,7 +628,7 @@ class DataSharingManager:
                             data = pickle.load(f)
                             self.logger.info("Successfully loaded pkl on second attempt")
                 except Exception as e2:
-                    self.logger.warning(f"Failed to load pkl (attempt 2): {e2}")
+                    self.logger.warning(f"⚠️ Failed to load pkl (attempt 2): {e2}")
                     
                     # Attempt 3: Try to load as gzipped pickle (some files might be compressed)
                     try:
@@ -637,12 +637,12 @@ class DataSharingManager:
                             data = pickle.load(f)
                         self.logger.info("Successfully loaded pkl as gzipped file")
                     except Exception as e3:
-                        self.logger.warning(f"Failed to load as gzipped: {e3}")
+                        self.logger.warning(f"⚠️ Failed to load as gzipped: {e3}")
             
             # If still no data, try to recover from backup or recreate
             if data is None:
-                self.logger.error(f"❌ Pkl file is corrupted and unrecoverable: {pkl_path}")
-                self.logger.error(f"   Error: {load_error}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 ❌ Pkl file is corrupted and unrecoverable: {pkl_path}")
+                self.logger.error(f"🛑 🛑 🛑 🛑    Error: {load_error}")
                 
                 # Try to find a backup or dated version
                 backup_path = self._find_backup_pkl(pkl_path)
@@ -664,11 +664,11 @@ class DataSharingManager:
                         shutil.copy2(backup_path, pkl_path)
                         self.logger.info(f"Restored corrupted pkl from backup")
                     except Exception as backup_e:
-                        self.logger.error(f"Backup also corrupted: {backup_e}")
+                        self.logger.error(f"🛑 🛑 🛑 🛑 Backup also corrupted: {backup_e}")
                         return False, None, 0, None, None, 0
                 else:
                     # No backup found - return stale so it will be regenerated
-                    self.logger.warning(f"No backup found for corrupted pkl. Will regenerate.")
+                    self.logger.warning(f"⚠️ No backup found for corrupted pkl. Will regenerate.")
                     return False, None, 0, None, None, 0
             
             if not data:
@@ -778,7 +778,7 @@ class DataSharingManager:
                 # Detailed logging based on scenario
                 if is_market_open_now:
                     # During market hours
-                    self.logger.warning(f"Pkl data is stale during market hours. "
+                    self.logger.warning(f"⚠️ Pkl data is stale during market hours. "
                                     f"Latest: {latest_datetime}, Current: {now}, "
                                     f"Stale by {stale_seconds} seconds ({stale_seconds/SECONDS_IN_1_MINUTE:.1f} minutes)")
                 elif latest_date == current_date and not is_market_open_now:
@@ -787,7 +787,7 @@ class DataSharingManager:
                                     f"Last trading day was {last_trading_date}")
                 else:
                     # Outside market hours
-                    self.logger.warning(f"Pkl data is stale. Latest: {latest_datetime}, "
+                    self.logger.warning(f"⚠️ Pkl data is stale. Latest: {latest_datetime}, "
                                     f"Reference: {reference_datetime}, "
                                     f"Missing {missing_days} trading days, Stale by {stale_seconds} seconds")
             
@@ -799,7 +799,7 @@ class DataSharingManager:
             return is_fresh, latest_date, missing_days if not is_fresh else 0, last_trading_date, latest_time, stale_seconds
             
         except Exception as e:
-            self.logger.error(f"Error validating pkl freshness: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error validating pkl freshness: {e}")
             import traceback
             self.logger.error(traceback.format_exc())
             return False, None, 0, None, None, 0
@@ -825,7 +825,7 @@ class DataSharingManager:
             # Check file size first - if too small, it's definitely corrupted
             file_size = os.path.getsize(pkl_path)
             if file_size < 1024:
-                self.logger.warning(f"Pkl file too small ({file_size} bytes): {pkl_path}")
+                self.logger.warning(f"⚠️ Pkl file too small ({file_size} bytes): {pkl_path}")
                 return False, None, 0, None, None, 0
             
             # Use safe_load; provide a fallback loader that regenerates from candle_store
@@ -843,7 +843,7 @@ class DataSharingManager:
                 if not ok or data is None:
                     return False, None, 0, None, None, 0
             except Exception as e:
-                self.logger.error(f"Failed to load pkl: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Failed to load pkl: {e}")
                 return False, None, 0, None, None, 0
             
             if not data:
@@ -915,7 +915,7 @@ class DataSharingManager:
                             self.logger.info(f"Latest from {symbol}: {dt}")
             
             if latest_datetime is None:
-                self.logger.warning(f"No valid timestamps found in pkl: {pkl_path}")
+                self.logger.warning(f"⚠️ No valid timestamps found in pkl: {pkl_path}")
                 return False, None, 0, None, None, 0
             
             self.logger.info(f"Overall latest timestamp: {latest_datetime}")
@@ -951,12 +951,12 @@ class DataSharingManager:
                     else:
                         is_fresh = False
                         stale_seconds = seconds_since_last_tick
-                        self.logger.warning(f"⚠️ Data is stale during market hours. Latest: {latest_datetime}, Current: {now}, Gap: {seconds_since_last_tick}s")
+                        self.logger.warning(f"⚠️ ⚠️ Data is stale during market hours. Latest: {latest_datetime}, Current: {now}, Gap: {seconds_since_last_tick}s")
                 else:
                     # Data from a previous day - stale
                     is_fresh = False
                     stale_seconds = int((now - latest_datetime).total_seconds())
-                    self.logger.warning(f"⚠️ Data from previous day ({latest_date}) during market hours. Stale by {stale_seconds}s")
+                    self.logger.warning(f"⚠️ ⚠️ Data from previous day ({latest_date}) during market hours. Stale by {stale_seconds}s")
             else:
                 # OUTSIDE MARKET HOURS:
                 # Data should be up to the last market close
@@ -977,7 +977,7 @@ class DataSharingManager:
                 else:
                     is_fresh = False
                     stale_seconds = int((reference_datetime - latest_datetime).total_seconds())
-                    self.logger.warning(f"⚠️ Data is stale by {stale_seconds} seconds. Latest: {latest_datetime}, Reference: {reference_datetime}")
+                    self.logger.warning(f"⚠️ ⚠️ Data is stale by {stale_seconds} seconds. Latest: {latest_datetime}, Reference: {reference_datetime}")
             
             # Calculate missing trading days
             last_trading_date = PKDateUtilities.tradingDate()
@@ -994,7 +994,7 @@ class DataSharingManager:
             return is_fresh, latest_date, missing_days, last_trading_date, latest_time, stale_seconds
             
         except Exception as e:
-            self.logger.error(f"Error in enhanced validation: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error in enhanced validation: {e}")
             import traceback
             self.logger.error(traceback.format_exc())
             return False, None, 0, None, None, 0
@@ -1065,7 +1065,7 @@ class DataSharingManager:
             
             github_token = os.environ.get('GITHUB_TOKEN') or os.environ.get('CI_PAT')
             if not github_token:
-                self.logger.error("GITHUB_TOKEN or CI_PAT not found. Cannot trigger workflow.")
+                self.logger.error("🛑 🛑 🛑 🛑 GITHUB_TOKEN or CI_PAT not found. Cannot trigger workflow.")
                 return False
             
             # Trigger PKBrokers history workflow
@@ -1092,11 +1092,11 @@ class DataSharingManager:
                 self.logger.info("Successfully triggered history download workflow")
                 return True
             else:
-                self.logger.error(f"Failed to trigger workflow: {response.status_code} - {response.text}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Failed to trigger workflow: {response.status_code} - {response.text}")
                 return False
                 
         except Exception as e:
-            self.logger.error(f"Error triggering history download workflow: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error triggering history download workflow: {e}")
             return False
     
     def ensure_data_freshness_and_commit(self, pkl_path: str = None, candle_store=None) -> bool:
@@ -1123,7 +1123,7 @@ class DataSharingManager:
                 return True
             
             if missing_days > 0 or stale_seconds > 0:
-                self.logger.warning(f"Data is stale by {missing_days} trading days or {stale_seconds} seconds. ")
+                self.logger.warning(f"⚠️ Data is stale by {missing_days} trading days or {stale_seconds} seconds. ")
                 
                 # If we have candle_store, try to refresh immediately
                 if candle_store:
@@ -1142,13 +1142,13 @@ class DataSharingManager:
                     self.logger.info("History download workflow triggered. Fresh data will be available after workflow completes.")
                     return True
                 else:
-                    self.logger.warning("Failed to trigger history download workflow")
+                    self.logger.warning("⚠️ Failed to trigger history download workflow")
                     return False
             
             return True
             
         except Exception as e:
-            self.logger.error(f"Error ensuring data freshness: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error ensuring data freshness: {e}")
             return False
     
     def prepare_daily_pkl_for_sending(self, candle_store, max_stale_seconds: int = MAX_STALE_SECONDS) -> bool:
@@ -1179,9 +1179,9 @@ class DataSharingManager:
         if stale_seconds > max_stale_seconds:
             self.logger.info(f"daily_candles.pkl is stale by {stale_seconds}s (>{max_stale_seconds}s). Regenerating...")
         elif missing_days > 0:
-            self.logger.warning(f"daily_candles.pkl is missing {missing_days} trading days. Regenerating...")
+            self.logger.warning(f"⚠️ daily_candles.pkl is missing {missing_days} trading days. Regenerating...")
         else:
-            self.logger.warning("daily_candles.pkl does not exist or is invalid. Regenerating...")
+            self.logger.warning("⚠️ daily_candles.pkl does not exist or is invalid. Regenerating...")
         
         # Regenerate/update the daily PKL with current data from candle_store
         success, _ = self.export_daily_candles_to_pkl(candle_store, merge_with_historical=True)
@@ -1195,7 +1195,7 @@ class DataSharingManager:
             
             return True
         else:
-            self.logger.error("❌ Failed to regenerate daily_candles.pkl.")
+            self.logger.error("🛑 🛑 🛑 🛑 ❌ Failed to regenerate daily_candles.pkl.")
             return False
 
     def export_daily_candles_to_pkl(self, candle_store, merge_with_historical: bool = True) -> Tuple[bool, Optional[str]]:
@@ -1286,9 +1286,9 @@ class DataSharingManager:
                         
                         self.logger.info(f"Loaded {len(data)} instruments from historical pkl into merge buffer")
                     else:
-                        self.logger.warning("Could not download historical pkl from GitHub - will export only today's candle data")
+                        self.logger.warning("⚠️ Could not download historical pkl from GitHub - will export only today's candle data")
                 except Exception as he:
-                    self.logger.warning(f"Could not load historical data: {he}")
+                    self.logger.warning(f"⚠️ Could not load historical data: {he}")
             
             # Now add today's candles from the candle store
             today_count = 0
@@ -1406,7 +1406,7 @@ class DataSharingManager:
                 
                 self.logger.info(f"EXPORT: Saving data with latest timestamp: {latest_timestamp}")
                 if not self.pickler.atomic_dump(data, output_path):
-                    self.logger.error("Failed to write daily pkl")
+                    self.logger.error("🛑 🛑 🛑 🛑 Failed to write daily pkl")
                 
                 file_size = os.path.getsize(output_path) / (1024 * 1024)  # MB
                 self.logger.info(f"Exported {len(data)} instruments ({today_count} with today's data) to {output_path} ({file_size:.2f} MB)")
@@ -1419,11 +1419,11 @@ class DataSharingManager:
                 
                 return True, output_path
             else:
-                self.logger.warning("No daily candle data to export")
+                self.logger.warning("⚠️ No daily candle data to export")
                 return False, None
                 
         except Exception as e:
-            self.logger.error(f"Error exporting daily candles: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error exporting daily candles: {e}")
             import traceback
             self.logger.error(traceback.format_exc())
             return False, None
@@ -1485,11 +1485,11 @@ class DataSharingManager:
                 self.logger.info(f"Exported {len(data)} intraday instruments to {output_path} ({file_size:.2f} MB), latest: {latest_date}")
                 return True, output_path, latest_date
             else:
-                self.logger.warning("No intraday candle data to export")
+                self.logger.warning("⚠️ No intraday candle data to export")
                 return False, None, latest_date
                 
         except Exception as e:
-            self.logger.error(f"Error exporting intraday candles: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error exporting intraday candles: {e}")
             return False, None, None
     
     def convert_ticks_json_to_pkl(self, ticks_json_path: str = None) -> Tuple[bool, Optional[str]]:
@@ -1513,14 +1513,14 @@ class DataSharingManager:
                 ticks_json_path = os.path.join(self.data_dir, "ticks.json")
             
             if not os.path.exists(ticks_json_path):
-                self.logger.warning(f"ticks.json not found at: {ticks_json_path}")
+                self.logger.warning(f"⚠️ ticks.json not found at: {ticks_json_path}")
                 return False, None
             
             with open(ticks_json_path, 'r') as f:
                 ticks_data = json.load(f)
             
             if not ticks_data:
-                self.logger.warning("Empty ticks.json file")
+                self.logger.warning("⚠️ Empty ticks.json file")
                 return False, None
             
             self.logger.info(f"Converting {len(ticks_data)} instruments from ticks.json to pkl")
@@ -1579,11 +1579,11 @@ class DataSharingManager:
                 
                 return True, output_path
             else:
-                self.logger.warning("No valid data in ticks.json to convert")
+                self.logger.warning("⚠️ No valid data in ticks.json to convert")
                 return False, None
                 
         except Exception as e:
-            self.logger.error(f"Error converting ticks.json to pkl: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error converting ticks.json to pkl: {e}")
             return False, None
     
     def load_pkl_into_candle_store(self, pkl_path: str, candle_store, interval: str = 'day') -> int:
@@ -1604,14 +1604,14 @@ class DataSharingManager:
         """
         try:
             if not os.path.exists(pkl_path):
-                self.logger.warning(f"Pkl file not found: {pkl_path}")
+                self.logger.warning(f"⚠️ Pkl file not found: {pkl_path}")
                 return 0
             
             with open(pkl_path, 'rb') as f:
                 data = pickle.load(f)
             
             if not data:
-                self.logger.warning(f"Empty pkl file: {pkl_path}")
+                self.logger.warning(f"⚠️ Empty pkl file: {pkl_path}")
                 return 0
             
             loaded = 0
@@ -1691,7 +1691,7 @@ class DataSharingManager:
             return loaded
             
         except Exception as e:
-            self.logger.error(f"Error loading pkl file: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error loading pkl file: {e}")
             return 0
     
     def zip_file(self, file_path: str) -> Tuple[bool, Optional[str]]:
@@ -1715,7 +1715,7 @@ class DataSharingManager:
             return True, zip_path
             
         except Exception as e:
-            self.logger.error(f"Error zipping file: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error zipping file: {e}")
             return False, None
     
     def commit_pkl_files(self, branch_name: str = "actions-data-download", candle_store=None, max_stale_seconds: int = MAX_STALE_SECONDS, retry = False) -> bool:
@@ -1742,7 +1742,7 @@ class DataSharingManager:
             # Get GitHub token
             github_token = os.environ.get('CI_PAT') or os.environ.get('GITHUB_TOKEN')
             if not github_token:
-                self.logger.warning("No GitHub token found, cannot commit pkl files")
+                self.logger.warning("⚠️ No GitHub token found, cannot commit pkl files")
                 return False
             
             # Refresh data if needed before committing
@@ -1770,7 +1770,7 @@ class DataSharingManager:
                     files_to_commit.append((daily_pkl, "actions-data-download/daily_candles.pkl"))
                     self.logger.debug(f"Daily pkl size: {file_size/(1024*1024):.2f} MB - ✓ Valid")
                 else:
-                    self.logger.warning(f"Daily pkl size ({file_size/(1024*1024):.2f} MB) below minimum ({DAILY_PKL_MIN_SIZE/(1024*1024):.0f} MB) - skipping")
+                    self.logger.warning(f"⚠️ Daily pkl size ({file_size/(1024*1024):.2f} MB) below minimum ({DAILY_PKL_MIN_SIZE/(1024*1024):.0f} MB) - skipping")
             
             # Check for intraday pkl with size validation
             intraday_pkl = self.get_intraday_pkl_path()
@@ -1781,7 +1781,7 @@ class DataSharingManager:
                     files_to_commit.append((intraday_pkl, "actions-data-download/intraday_1m_candles.pkl"))
                     self.logger.debug(f"Intraday pkl size: {file_size/(1024*1024):.2f} MB - ✓ Valid")
                 else:
-                    self.logger.warning(f"Intraday pkl size ({file_size/(1024*1024):.2f} MB) below minimum ({INTRADAY_PKL_MIN_SIZE/(1024*1024):.0f} MB) - skipping")
+                    self.logger.warning(f"⚠️ Intraday pkl size ({file_size/(1024*1024):.2f} MB) below minimum ({INTRADAY_PKL_MIN_SIZE/(1024*1024):.0f} MB) - skipping")
             
             # Check for date-suffixed daily pkl with size validation
             dated_daily = os.path.join(self.data_dir, f"stock_data_{today_suffix}.pkl")
@@ -1791,7 +1791,7 @@ class DataSharingManager:
                     files_to_commit.append((dated_daily, f"actions-data-download/stock_data_{today_suffix}.pkl"))
                     self.logger.debug(f"Dated daily pkl size: {file_size/(1024*1024):.2f} MB - ✓ Valid")
                 else:
-                    self.logger.warning(f"Dated daily pkl size ({file_size/(1024*1024):.2f} MB) below minimum ({DAILY_PKL_MIN_SIZE/(1024*1024):.0f} MB) - skipping")
+                    self.logger.warning(f"⚠️ Dated daily pkl size ({file_size/(1024*1024):.2f} MB) below minimum ({DAILY_PKL_MIN_SIZE/(1024*1024):.0f} MB) - skipping")
             
             # Check for date-suffixed intraday pkl with size validation
             dated_intraday = os.path.join(self.data_dir, f"intraday_stock_data_{today_suffix}.pkl")
@@ -1801,10 +1801,10 @@ class DataSharingManager:
                     files_to_commit.append((dated_intraday, f"actions-data-download/intraday_stock_data_{today_suffix}.pkl"))
                     self.logger.debug(f"Dated intraday pkl size: {file_size/(1024*1024):.2f} MB - ✓ Valid")
                 else:
-                    self.logger.warning(f"Dated intraday pkl size ({file_size/(1024*1024):.2f} MB) below minimum ({INTRADAY_PKL_MIN_SIZE/(1024*1024):.0f} MB) - skipping")
+                    self.logger.warning(f"⚠️ Dated intraday pkl size ({file_size/(1024*1024):.2f} MB) below minimum ({INTRADAY_PKL_MIN_SIZE/(1024*1024):.0f} MB) - skipping")
             
             if not files_to_commit:
-                self.logger.warning("No valid pkl files to commit (all files below size thresholds or missing)")
+                self.logger.warning("⚠️ No valid pkl files to commit (all files below size thresholds or missing)")
                 return False
             
             # Remove duplicate remote paths (keep first occurrence)
@@ -1837,7 +1837,7 @@ class DataSharingManager:
                     min_size = DAILY_PKL_MIN_SIZE if is_daily else INTRADAY_PKL_MIN_SIZE
                     
                     if file_size < min_size:
-                        self.logger.warning(f"File {remote_path} size ({file_size/(1024*1024):.2f} MB) dropped below minimum during processing - skipping")
+                        self.logger.warning(f"⚠️ File {remote_path} size ({file_size/(1024*1024):.2f} MB) dropped below minimum during processing - skipping")
                         continue
                     
                     # Read file content
@@ -1851,7 +1851,7 @@ class DataSharingManager:
                     if resp.status_code == 200:
                         sha = resp.json().get('sha')
                     elif resp.status_code != 404:
-                        self.logger.warning(f"Unexpected response checking {remote_path}: {resp.status_code}")
+                        self.logger.warning(f"⚠️ Unexpected response checking {remote_path}: {resp.status_code}")
                     
                     # Create/update file
                     put_url = f"{api_base}/contents/{remote_path}"
@@ -1871,7 +1871,7 @@ class DataSharingManager:
                         self.logger.info(f"✅ Committed {remote_path} ({file_size/(1024*1024):.2f} MB) to PKScreener/{branch_name}")
                         committed_files.append(remote_path)
                     else:
-                        self.logger.warning(f"Failed to commit {remote_path}: {resp.status_code} {resp.text[:200]}")
+                        self.logger.warning(f"⚠️ Failed to commit {remote_path}: {resp.status_code} {resp.text[:200]}")
                         if not retry:
                             self.logger.info(f"Retrying to commit into {branch_name}!")
                             return self.commit_pkl_files(branch_name=branch_name, 
@@ -1881,18 +1881,18 @@ class DataSharingManager:
                 # except urllib3.exceptions.ProtocolError:
                 #     pass
                 except Exception as e:
-                    self.logger.error(f"Error committing {local_path}: {e}")
+                    self.logger.error(f"🛑 🛑 🛑 🛑 Error committing {local_path}: {e}")
             
             if committed_files:
                 self.last_commit_time = datetime.now(KOLKATA_TZ)
                 self.logger.info(f"✅ Successfully committed {len(committed_files)} files to PKScreener")
                 return True
             
-            self.logger.warning("No files were successfully committed")
+            self.logger.warning("⚠️ No files were successfully committed")
             return False
             
         except Exception as e:
-            self.logger.error(f"Error committing pkl files: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error committing pkl files: {e}")
             return False
     
     def should_commit(self) -> bool:

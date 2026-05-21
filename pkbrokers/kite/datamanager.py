@@ -899,15 +899,15 @@ class InstrumentDataManager:
                     return dt.astimezone(kolkata_tz).isoformat()
                     
                 except ValueError as e:
-                    self.logger.warning(f"Could not parse timestamp string '{timestamp_obj}': {e}")
+                    self.logger.warning(f"⚠️ Could not parse timestamp string '{timestamp_obj}': {e}")
                     return timestamp_obj
                     
             else:
-                self.logger.warning(f"Unsupported timestamp type: {type(timestamp_obj)}")
+                self.logger.warning(f"⚠️ Unsupported timestamp type: {type(timestamp_obj)}")
                 return str(timestamp_obj)
                 
         except Exception as e:
-            self.logger.error(f"Error normalizing timestamp {timestamp_obj}: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error normalizing timestamp {timestamp_obj}: {e}")
             return str(timestamp_obj)
 
     def _detect_data_format(self, data: Any) -> str:
@@ -1074,7 +1074,7 @@ class InstrumentDataManager:
         except Exception as e:
             error_str = str(e)
             if "BLOCKED" in error_str.upper() or "forbidden" in error_str.lower():
-                self.logger.warning(f"Turso database blocked, falling back to local: {e}")
+                self.logger.warning(f"⚠️ Turso database blocked, falling back to local: {e}")
                 self._db_blocked = True
                 # Try local connection as fallback
                 try:
@@ -1082,10 +1082,10 @@ class InstrumentDataManager:
                     self.db_conn = self._create_local_connection()
                     return True
                 except Exception as local_error:
-                    self.logger.error(f"Local connection also failed: {local_error}")
+                    self.logger.error(f"🛑 🛑 🛑 🛑 Local connection also failed: {local_error}")
                     return False
             else:
-                self.logger.error(f"Database connection failed: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Database connection failed: {e}")
             return False
 
     def _create_local_connection(self):
@@ -1105,7 +1105,7 @@ class InstrumentDataManager:
             conn.execute("PRAGMA mmap_size = 30000000000")
             return conn
         except Exception as e:
-            self.logger.error(f"Failed to create local connection: {str(e)}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Failed to create local connection: {str(e)}")
             raise
 
     def _create_turso_connection(self):
@@ -1124,7 +1124,7 @@ class InstrumentDataManager:
             return conn
 
         except Exception as e:
-            self.logger.error(f"Failed to create Turso connection: {str(e)}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Failed to create Turso connection: {str(e)}")
             raise
 
     def _check_pickle_exists_locally(self) -> bool:
@@ -1213,13 +1213,13 @@ class InstrumentDataManager:
                 self._save_pickle_file()
                 
             else:
-                self.logger.error(f"Unknown data format in local pickle file:{type(loaded_data).__name__}: {list(loaded_data.keys())[:3] if isinstance(loaded_data, dict) else loaded_data}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Unknown data format in local pickle file:{type(loaded_data).__name__}: {list(loaded_data.keys())[:3] if isinstance(loaded_data, dict) else loaded_data}")
                 return None
             
             return self.pickle_data
             
         except Exception as e:
-            self.logger.error(f"Failed to load local pickle file: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Failed to load local pickle file: {e}")
             return None
 
     def _create_dataframe_format(self, symbol_data: Dict, all_timestamps: set) -> Dict:
@@ -1329,7 +1329,7 @@ class InstrumentDataManager:
             }
             
         except Exception as e:
-            self.logger.error(f"Error converting to hybrid format: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error converting to hybrid format: {e}")
             return self._create_empty_hybrid_format()
         
     def _convert_hybrid_to_old_format(self, hybrid_data: Dict) -> Dict:
@@ -1403,7 +1403,7 @@ class InstrumentDataManager:
             return old_format_data
         
         else:
-            self.logger.warning("Hybrid format data doesn't contain expected structure")
+            self.logger.warning("⚠️ Hybrid format data doesn't contain expected structure")
             return {}
         
     def _load_pickle_from_github(self) -> Optional[Dict]:
@@ -1480,19 +1480,19 @@ class InstrumentDataManager:
                 self._save_pickle_file()
                 
             else:
-                self.logger.error(f"Unknown data format in GitHub pickle file:{type(loaded_data).__name__}: {list(loaded_data.keys())[:3] if isinstance(loaded_data, dict) else loaded_data}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Unknown data format in GitHub pickle file:{type(loaded_data).__name__}: {list(loaded_data.keys())[:3] if isinstance(loaded_data, dict) else loaded_data}")
                 return None
 
             return self.pickle_data
             
         except Exception as e:
-            self.logger.error(f"Failed to load pickle from GitHub: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Failed to load pickle from GitHub: {e}")
             return None
 
     def _save_pickle_file(self):
         """Save data to pickle file in symbol-indexed DataFrame format."""
         if self.pickle_data is None:
-            self.logger.warning("No data to save")
+            self.logger.warning("⚠️ No data to save")
             return
 
         self.local_pickle_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1537,7 +1537,7 @@ class InstrumentDataManager:
             return max_datetime
             
         except Exception as e:
-            self.logger.error(f"Error finding max date: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error finding max date: {e}")
             return None
 
     def _get_recent_data_from_kite(self, start_date: datetime) -> Optional[Dict]:
@@ -1559,7 +1559,7 @@ class InstrumentDataManager:
             trading_instruments = self._get_trading_intruments()
 
             if not trading_instruments:
-                self.logger.warning("No trading instruments found to fetch data")
+                self.logger.warning("⚠️ No trading instruments found to fetch data")
                 return None
 
             # Format dates
@@ -1580,10 +1580,10 @@ class InstrumentDataManager:
             return historical_data
 
         except ImportError:
-            self.logger.error("KiteTickerHistory module not available")
+            self.logger.error("🛑 🛑 🛑 🛑 KiteTickerHistory module not available")
             return None
         except Exception as e:
-            self.logger.error(f"Error fetching data from Kite: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 🛑 🛑 🛑 🛑 Error fetching data from Kite: {e}")
             return None
 
     def _fetch_data_from_database(
@@ -1639,7 +1639,7 @@ class InstrumentDataManager:
                 )
                 self._db_blocked = True
             else:
-                self.logger.error(f"Error fetching data from database: {e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error fetching data from database: {e}")
             return {}
 
     def _orchestrate_ticks_download(self) -> bool:
@@ -1659,14 +1659,14 @@ class InstrumentDataManager:
                 self.logger.debug("Ticks download completed successfully")
                 return True
             else:
-                self.logger.error("Ticks download failed or file not created")
+                self.logger.error("🛑 🛑 🛑 🛑 Ticks download failed or file not created")
                 return False
 
         except ImportError:
-            self.logger.error("orchestrate_consumer not available")
+            self.logger.error("🛑 🛑 🛑 🛑 orchestrate_consumer not available")
             return False
         except Exception as e:
-            self.logger.error(f"Error during ticks download: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error during ticks download: {e}")
             return False
 
     def _load_and_process_ticks_json(self) -> Optional[Dict]:
@@ -1719,7 +1719,7 @@ class InstrumentDataManager:
             return processed_data
 
         except Exception as e:
-            self.logger.error(f"Error processing ticks.json: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error processing ticks.json: {e}")
             return None
 
     def _format_date(self, date: Union[str, datetime]) -> str:
@@ -1771,7 +1771,7 @@ class InstrumentDataManager:
             results = cursor.fetchall()
             return [row[0] for row in results] if results else []
         except Exception as e:
-            self.logger.error(f"Error fetching tradingsymbols from database: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Error fetching tradingsymbols from database: {e}")
             return []
 
     def _process_database_data(self, results: List, columns: List[str]) -> Dict:
@@ -1818,7 +1818,7 @@ class InstrumentDataManager:
                         else:
                             timestamp_key = str(timestamp)
                     except ValueError:
-                        self.logger.error(f"Could not parse timestamp: {timestamp}")
+                        self.logger.error(f"🛑 🛑 🛑 🛑 Could not parse timestamp: {timestamp}")
                         continue
 
                 symbol_data[timestamp_key] = {
@@ -1982,7 +1982,7 @@ class InstrumentDataManager:
             return True
 
         except Exception as e:
-            self.logger.error(f"Failed to convert pickle file: {e}")
+            self.logger.error(f"🛑 🛑 🛑 🛑 Failed to convert pickle file: {e}")
             return False
 
     def _load_pickle_data(self):
@@ -1997,7 +1997,7 @@ class InstrumentDataManager:
             self.logger.info("Pickle file found on GitHub, downloading...")
             self._load_pickle_from_github()
         else:
-            self.logger.warning("No pickle file found locally or remotely")
+            self.logger.warning("⚠️ No pickle file found locally or remotely")
 
     def execute(self, fetch_kite=False, skip_db=False) -> bool:
         """
@@ -2149,8 +2149,8 @@ class InstrumentDataManager:
             try:
                 missing_symbols = self._get_missing_tradingsymbols()
                 if len(missing_symbols) > 0:
-                    self.logger.error(f"Symbols found missing from pkl file but present in DB: {missing_symbols}. You may wish to enable 'fetch_kite' in instrumentDataManager.execute().")
+                    self.logger.error(f"🛑 🛑 🛑 🛑 Symbols found missing from pkl file but present in DB: {missing_symbols}. You may wish to enable 'fetch_kite' in instrumentDataManager.execute().")
             except Exception as e:
-                self.logger.error(f"Error while trying to find missing symbols:{e}")
+                self.logger.error(f"🛑 🛑 🛑 🛑 Error while trying to find missing symbols:{e}")
         self.logger.debug("Data synchronization process completed")
         return self.pickle_data is not None
