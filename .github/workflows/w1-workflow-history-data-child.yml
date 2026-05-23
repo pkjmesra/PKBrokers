@@ -1329,11 +1329,14 @@ jobs:
 
     - name: Run weekend scan
       run: |
+        pwd
+        ls -l
         BINARY_NAME="${{ steps.exe-names.outputs.binary_name }}"
         echo "Running scan with command: -a Y -e -o X:12:0"
         ./"$BINARY_NAME" -a Y -e -o X:12:0 -l
       env:
         PK_DEBUG_ALL: 1
+        RUNNER: 1
 
     - name: Commit resulting PKL files after scan (to PKScreener actions-data-download)
       env:
