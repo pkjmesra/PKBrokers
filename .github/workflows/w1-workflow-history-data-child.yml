@@ -1230,7 +1230,7 @@ jobs:
         python-version: '3.11'
 
     - name: Install dependencies for download script
-      run: pip install requests, PKDevTools
+      run: pip install requests PKDevTools
 
     - name: Create .env.dev file with secrets (required for scan)
       env:
