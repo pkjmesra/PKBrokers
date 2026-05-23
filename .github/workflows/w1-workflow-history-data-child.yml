@@ -34,6 +34,7 @@
 # 4. Exports database to PKL files using unified generator
 # 5. Commits updated PKL files to PKScreener actions-data-download branch (using local files only)
 # 6. Chains to next period (day -> minute) automatically
+# 7. (Weekends only) Runs an additional scan and commits the resulting PKL files
 #
 # UPDATED BEHAVIOR:
 # - DB-ONLY MODE (after 3:30 PM IST): Uses ONLY SQLite database, ignores GitHub PKL and ticks.json
@@ -44,6 +45,7 @@
 # - Uses cache_file_name from Archiver for date instead of current date
 # - instrument_history.db is zipped before commit to stay under 100MB limit
 # - PKL commit uses local files only (no GitHub download)
+# - Redundant DB commits are skipped when the DB was simply downloaded from cache
 # =============================================================================
 
 name: 1. History Data Child
@@ -373,6 +375,7 @@ jobs:
       # OPTIMIZED STEP: First check if today's instrument_history db.zip exists in the repo.
       # If it does, download and use it. Otherwise, run pkkite.py to fetch historical data.
       # Uses the calculated offset to determine how many days to fetch only as a fallback.
+      id: run_historical
       run: |
         cd pkbrokers/kite/examples/
         mkdir -p results/Data
@@ -443,12 +446,11 @@ jobs:
                         echo "✅ Database size: $DB_SIZE bytes - Valid"
                         mv "$EXTRACTED_DB_FILE" "results/Data/instrument_history.db"
                         echo "✅ Successfully placed instrument_history.db in results/Data/"
+                        # Set flag to indicate we used the cached DB and should not commit it again
+                        echo "DB_USED_FROM_CACHE=true" >> $GITHUB_OUTPUT
                     fi
                 else
                     echo "⚠️ Could not find .db file inside the downloaded zip."
-                    # Fallback: remove potentially incomplete extraction
-                    # rm -rf temp_instrument_dir
-                    # We will fall through to the pkkite logic below
                 fi
                 
                 # Clean up
@@ -568,6 +570,8 @@ jobs:
       # This file is critical for token-to-symbol mapping in subsequent steps
       # Renames to instrument_history_YYYYMMDD.db, zips it, and removes older instrument_history_*.db.zip files
       # Validates both DB file size (>=50MB) and zip file size (>=10MB, <=100MB)
+      # Only run if we did NOT use a cached DB (i.e., we actually generated a new one)
+      if: steps.run_historical.outputs.DB_USED_FROM_CACHE != 'true'
       env:
         CI_PAT: ${{ secrets.CI_PAT }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -757,11 +761,6 @@ jobs:
         echo "MERGE_TICKS=$SHOULD_MERGE_TICKS" >> $GITHUB_OUTPUT
 
     - name: Export database to pkl files using unified generator
-      # Step: Convert SQLite database to PKL format for efficient storage
-      # For day period only
-      # If market is open and not holiday, merges ticks.json data with database
-      # If market is closed or holiday, uses DB-ONLY mode (ignores GitHub PKL and ticks.json)
-    #   if: inputs.period == 'day'
       run: |
         cd pkbrokers/kite/examples/
         mkdir -p results/Data
@@ -797,9 +796,6 @@ jobs:
         ls -la results/Data/*.pkl 2>/dev/null || echo "No pkl files found"
 
     - name: Commit updated pkl file to PKScreener actions-data-download with size validation
-      # UPDATED STEP: Commit pkl files with size validation
-      # Daily files: >= 25MB
-      # Intraday files: >= 1MB
       env:
         CI_PAT: ${{ secrets.CI_PAT }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1042,17 +1038,6 @@ jobs:
           echo "No changes to commit"
         fi
 
-    # - name: Send notification about the completion
-    #   # Step: Send Telegram notification about successful completion
-    #   shell: bash
-    #   env:
-    #       THIS_KITE_PERIOD : ${{ inputs.period }}
-    #       THIS_KITE_TOKEN: ${{ github.event.inputs.kiteToken || secrets.KTOKEN }}
-    #   run: |
-    #     cp .env.dev pkbrokers/kite/examples/.env.dev
-    #     cd pkbrokers/kite/examples/
-    #     python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('✅ Successfully finished child job with valid Kite token:(' + os.environ['THIS_KITE_TOKEN'] + ') for period: '+os.environ['THIS_KITE_PERIOD']+'\n');"
-
   trigger-next-child-job:
     # Job: Chain to the next time period (day -> minute)
     needs: [historical-data]
@@ -1164,10 +1149,6 @@ jobs:
       if: steps.next-period.outputs.should_exit == 'true'
       run: |
         echo "✅ All periods have been processed. Workflow completed."
-        # cp .env.dev pkbrokers/kite/examples/.env.dev
-        # cd pkbrokers/kite/examples/
-        # pip install pkdevtools
-        # python3 -c "import os; from PKDevTools.classes.Telegram import send_message; send_message('✅ All periods for historical data jobs have been processed. Workflow completed.');"
         exit 0
 
     - name: Trigger next child job
@@ -1188,7 +1169,7 @@ jobs:
           -H "Authorization: token $GITHUB_TOKEN" \
           -H "Accept: application/vnd.github.v3+json" \
           "https://api.github.com/repos/${{ github.repository }}/actions/workflows/w1-workflow-history-data-child.yml/dispatches" \
-          -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$NEXT_PERIOD\",\"logLevel\":\"$LOG_LEVEL\",\"kiteToken\":\"$KITE_TOKEN\",\"pastoffset\":\"375\"}}" # ${{ github.event.inputs.pastoffset || 0 }}
+          -d "{\"ref\":\"main\",\"inputs\":{\"period\":\"$NEXT_PERIOD\",\"logLevel\":\"$LOG_LEVEL\",\"kiteToken\":\"$KITE_TOKEN\",\"pastoffset\":\"375\"}}"
         
         echo "✅ Successfully triggered next child job for period: $NEXT_PERIOD"
 
@@ -1208,3 +1189,206 @@ jobs:
       # Step: Log that next job was triggered
       run: |
         echo "Next period job triggered successfully. Workflow will continue with the next period in the chain."
+
+  # ==============================================================================
+  # NEW JOB: Weekend scan (only on Saturday/Sunday IST) - operating from PKScreener repo
+  # ==============================================================================
+  weekend-scan:
+    needs: [historical-data]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || 20 }}
+      TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
+    steps:
+    - name: Check if today is weekend (Saturday or Sunday in IST)
+      id: check_weekend
+      run: |
+        DAY_OF_WEEK=$(TZ='Asia/Kolkata' date +%u)
+        if [ "$DAY_OF_WEEK" -eq 6 ] || [ "$DAY_OF_WEEK" -eq 7 ]; then
+          echo "is_weekend=true" >> $GITHUB_OUTPUT
+          echo "Today is weekend (day $DAY_OF_WEEK). Proceeding with scan."
+        else
+          echo "is_weekend=false" >> $GITHUB_OUTPUT
+          echo "Today is not weekend (day $DAY_OF_WEEK). Skipping scan."
+        fi
+
+    - name: Skip if not weekend
+      if: steps.check_weekend.outputs.is_weekend != 'true'
+      run: exit 0
+
+    - name: Checkout PKScreener code (not PKBrokers)
+      uses: actions/checkout@v4
+      with:
+        repository: pkjmesra/PKScreener
+        ref: main
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies for download script
+      run: pip install requests
+
+    - name: Create .env.dev file with secrets (required for scan)
+      env:
+        CHAT_ID: ${{ secrets.CHAT_ID }}
+        TOKEN: ${{ secrets.TOKEN }}
+        chat_idADMIN: ${{ secrets.chat_idADMIN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CI_PAT: ${{ secrets.CI_PAT }}
+        TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
+        TDU: ${{ secrets.TDU }}
+        TAT: ${{ secrets.TAT }}
+        MCU: ${{ secrets.MCU }}
+        MCAP: ${{ secrets.MCAP }}
+        MCL: ${{ secrets.MCL }}
+        MS: ${{ secrets.MS }}
+        PKG: ${{ secrets.PKG }}
+        REPO_URL: ${{ secrets.REPO_URL }}
+        KTOKEN: ${{ secrets.KTOKEN }}
+        KUSER: ${{ secrets.KUSER }}
+        KPWD: ${{ secrets.KPWD }}
+        KTOTP: ${{ secrets.KTOTP }}
+        DB_TYPE: local
+        TBTOKEN: ${{ secrets.TBTOKEN }}
+        Tel_API_ID: ${{ secrets.Tel_API_ID }}
+        Tel_API_Hash: ${{ secrets.Tel_API_Hash }}
+        Tel_Phone_Number: ${{ secrets.Tel_Phone_Number }}
+        TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
+        SUBSCRIPTION_ENABLED: ${{ secrets.SUBSCRIPTION_ENABLED }}
+      run: |
+        cat > .env.dev << EOF
+        CHAT_ID='$CHAT_ID'
+        TOKEN='$TOKEN'
+        chat_idADMIN='$chat_idADMIN'
+        GITHUB_TOKEN='$GITHUB_TOKEN'
+        CI_PAT='$CI_PAT'
+        TURSO_TOKEN='$TURSO_TOKEN'
+        TDU='$TDU'
+        TAT='$TAT'
+        MCU='$MCU'
+        MCAP='$MCAP'
+        MCL='$MCL'
+        MS='$MS'
+        PKG='$PKG'
+        REPO_URL='$REPO_URL'
+        KTOKEN='$KTOKEN'
+        KUSER='$KUSER'
+        KPWD='$KPWD'
+        KTOTP='$KTOTP'
+        DB_TYPE='$DB_TYPE'
+        TBTOKEN='$TBTOKEN'
+        Tel_API_ID='$Tel_API_ID'
+        Tel_API_Hash='$Tel_API_Hash'
+        Tel_Phone_Number='$Tel_Phone_Number'
+        TEL_SESSION_DATA='$TEL_SESSION_DATA'
+        SUBSCRIPTION_ENABLED='$SUBSCRIPTION_ENABLED'
+        EOF
+        echo "Created .env.dev file"
+
+    - name: Create Telegram session file
+      run: |
+        echo ${{ secrets.TEL_SESSION_DATA }} | base64 -d > user_session.session
+        chmod 600 user_session.session
+
+    - name: Get latest release download URL (using githubutilities)
+      id: releaseurl
+      run: |
+        python3 .github/workflows/githubutilities.py -d
+        # The script sets outputs; we capture them. If not, we extract manually.
+        # For robustness, we also directly fetch the latest release URL
+        DOWNLOAD_URL=$(curl -s https://api.github.com/repos/pkjmesra/PKScreener/releases/latest | jq -r '.assets[] | select(.name | contains("pkscreenercli_x64.bin")) | .browser_download_url')
+        if [ -z "$DOWNLOAD_URL" ]; then
+          # fallback to first asset
+          DOWNLOAD_URL=$(curl -s https://api.github.com/repos/pkjmesra/PKScreener/releases/latest | jq -r '.assets[0].browser_download_url')
+        fi
+        echo "DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
+
+    - name: Set executable names
+      id: exe-names
+      run: |
+        echo "binary_name=pkscreenercli_x64.bin" >> $GITHUB_OUTPUT
+        echo "compressed_name=pkscreenercli_x64.bin.gz" >> $GITHUB_OUTPUT
+
+    - name: Download and prepare executable
+      run: |
+        BINARY_NAME="${{ steps.exe-names.outputs.binary_name }}"
+        DOWNLOAD_URL="${{ steps.releaseurl.outputs.DOWNLOAD_URL }}"
+        
+        echo "Downloading executable from $DOWNLOAD_URL"
+        curl -L -o "$BINARY_NAME" "$DOWNLOAD_URL"
+        chmod +x "$BINARY_NAME"
+        
+        # Optionally compress for potential caching
+        gzip -c "$BINARY_NAME" > "${{ steps.exe-names.outputs.compressed_name }}"
+        
+        echo "Executable ready: $BINARY_NAME"
+
+    - name: Run weekend scan
+      run: |
+        BINARY_NAME="${{ steps.exe-names.outputs.binary_name }}"
+        echo "Running scan with command: -a Y -e -o X:12:0"
+        ./"$BINARY_NAME" -a Y -e -o X:12:0
+
+    - name: Commit resulting PKL files after scan (to PKScreener actions-data-download)
+      env:
+        CI_PAT: ${{ secrets.CI_PAT }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Determine target date from Archiver (same logic as main workflow)
+        TARGET_INFO=$(python3 -c "
+        from PKDevTools.classes import Archiver
+        cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
+        if cache_file_name:
+            print(f'{cache_file_name}')
+        else:
+            print('stock_data_$(date +%d%m%Y).pkl')
+        ")
+        
+        if [[ $TARGET_INFO =~ stock_data_([0-9]{8})\.pkl ]]; then
+            TARGET_DATE="${BASH_REMATCH[1]}"
+        else
+            TARGET_DATE=$(date +%d%m%Y)
+        fi
+        
+        RESULTS_DATA_DIR="$(pwd)/results/Data"
+        echo "Results directory: $RESULTS_DATA_DIR"
+        
+        # Clone the actions-data-download branch of PKScreener (same repo)
+        git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
+        cd pkscreener-data
+        
+        PERIOD="day"
+        TARGET_FILE="stock_data_${TARGET_DATE}.pkl"
+        GENERIC_FILE="daily_candles.pkl"
+        MIN_SIZE=25000000  # 25 MB
+        
+        mkdir -p actions-data-download
+        
+        # Copy both dated and generic pkl files if they exist and are valid
+        if [ -f "$RESULTS_DATA_DIR/$TARGET_FILE" ]; then
+            FILE_SIZE=$(stat -c%s "$RESULTS_DATA_DIR/$TARGET_FILE" 2>/dev/null || stat -f%z "$RESULTS_DATA_DIR/$TARGET_FILE")
+            if [ "$FILE_SIZE" -gt "$MIN_SIZE" ]; then
+                cp "$RESULTS_DATA_DIR/$TARGET_FILE" "actions-data-download/$TARGET_FILE"
+                cp "$RESULTS_DATA_DIR/$TARGET_FILE" "actions-data-download/$GENERIC_FILE"
+                
+                git config user.name "github-actions[bot]"
+                git config user.email "actions@github.com"
+                git add -f actions-data-download/*.pkl
+                
+                if ! git diff --staged --quiet; then
+                  git commit -m "Weekend scan update: $TARGET_FILE - $TARGET_DATE [skip ci]"
+                  git push
+                  echo "✅ Committed weekend scan PKL files"
+                else
+                  echo "No changes to PKL files after scan"
+                fi
+            else
+                echo "⚠️ PKL file size too small ($FILE_SIZE bytes), skipping commit"
+            fi
+        else
+            echo "⚠️ No PKL file found at $RESULTS_DATA_DIR/$TARGET_FILE"
+        fi
