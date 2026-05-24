@@ -1190,8 +1190,8 @@ jobs:
       run: |
         echo "Next period job triggered successfully. Workflow will continue with the next period in the chain."
 
-  # ==============================================================================
-  # NEW JOB: Weekend scan (only on Saturday/Sunday IST) - operating from PKScreener repo
+    # ==============================================================================
+  # WEEKEND SCAN JOB (runs only on Sat/Sun IST, from PKScreener repo)
   # ==============================================================================
   weekend-scan:
     needs: [historical-data]
@@ -1218,7 +1218,7 @@ jobs:
       if: steps.check_weekend.outputs.is_weekend != 'true'
       run: exit 0
 
-    - name: Checkout PKScreener code (not PKBrokers)
+    - name: Checkout PKScreener code
       uses: actions/checkout@v4
       with:
         repository: pkjmesra/PKScreener
@@ -1227,12 +1227,12 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
+        python-version: '3.12'
 
     - name: Install dependencies for download script
       run: pip install requests PKDevTools
 
-    - name: Create .env.dev file with secrets (required for scan)
+    - name: Create .env.dev file with secrets
       env:
         CHAT_ID: ${{ secrets.CHAT_ID }}
         TOKEN: ${{ secrets.TOKEN }}
@@ -1287,63 +1287,68 @@ jobs:
         TEL_SESSION_DATA='$TEL_SESSION_DATA'
         SUBSCRIPTION_ENABLED='$SUBSCRIPTION_ENABLED'
         EOF
-        echo "Created .env.dev file"
+        echo "Created .env.dev"
 
     - name: Create Telegram session file
       run: |
-        echo ${{ secrets.TEL_SESSION_DATA }} | base64 -d > user_session.session
+        echo "${{ secrets.TEL_SESSION_DATA }}" | base64 -d > user_session.session
         chmod 600 user_session.session
 
-    - name: Get latest release download URL (using githubutilities)
-      id: releaseurl
+    - name: Get Linux binary download URL
+      id: get_binary_url
       run: |
+        # Use githubutilities.py which should output DOWNLOAD_URL for the current OS
         python3 .github/workflows/githubutilities.py -d
-        # The script sets outputs; we capture them. If not, we extract manually.
-        # For robustness, we also directly fetch the latest release URL
-        DOWNLOAD_URL=$(curl -s https://api.github.com/repos/pkjmesra/PKScreener/releases/latest | jq -r '.assets[] | select(.name | contains("pkscreenercli_x64.bin")) | .browser_download_url')
-        if [ -z "$DOWNLOAD_URL" ]; then
-          # fallback to first asset
-          DOWNLOAD_URL=$(curl -s https://api.github.com/repos/pkjmesra/PKScreener/releases/latest | jq -r '.assets[0].browser_download_url')
+        
+        # The script may set an environment variable or output; we also directly query the API for safety
+        LINUX_URL=$(curl -s https://api.github.com/repos/pkjmesra/PKScreener/releases/latest | jq -r '.assets[] | select(.name == "pkscreenercli_x64.bin") | .browser_download_url')
+        if [ -n "$LINUX_URL" ]; then
+          echo "download_url=$LINUX_URL" >> $GITHUB_OUTPUT
+        else
+          # Fallback: try to get any asset that contains 'x64.bin' and is not .gz
+          FALLBACK_URL=$(curl -s https://api.github.com/repos/pkjmesra/PKScreener/releases/latest | jq -r '.assets[] | select(.name | contains("x64.bin") and (contains(".gz") | not)) | .browser_download_url' | head -1)
+          echo "download_url=$FALLBACK_URL" >> $GITHUB_OUTPUT
         fi
-        echo "DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
 
-    - name: Set executable names
-      id: exe-names
+    - name: Download and validate Linux executable
       run: |
-        echo "binary_name=pkscreenercli_x64.bin" >> $GITHUB_OUTPUT
-        echo "compressed_name=pkscreenercli_x64.bin.gz" >> $GITHUB_OUTPUT
-
-    - name: Download and prepare executable
-      run: |
-        BINARY_NAME="${{ steps.exe-names.outputs.binary_name }}"
-        DOWNLOAD_URL="${{ steps.releaseurl.outputs.DOWNLOAD_URL }}"
+        BINARY_NAME="pkscreenercli_x64.bin"
+        DOWNLOAD_URL="${{ steps.get_binary_url.outputs.download_url }}"
         
-        echo "Downloading executable from $DOWNLOAD_URL"
+        if [ -z "$DOWNLOAD_URL" ]; then
+          echo "ERROR: Could not find Linux binary download URL"
+          exit 1
+        fi
+        
+        echo "Downloading from $DOWNLOAD_URL"
         curl -L -o "$BINARY_NAME" "$DOWNLOAD_URL"
+        
+        # Validate binary format
+        if ! file "$BINARY_NAME" | grep -q "ELF 64-bit"; then
+          echo "ERROR: Downloaded file is not a valid Linux ELF binary:"
+          file "$BINARY_NAME"
+          exit 1
+        fi
+        
         chmod +x "$BINARY_NAME"
-        
-        # Optionally compress for potential caching
-        gzip -c "$BINARY_NAME" > "${{ steps.exe-names.outputs.compressed_name }}"
-        
-        echo "Executable ready: $BINARY_NAME"
+        echo "✅ Valid Linux binary ready: $BINARY_NAME"
 
     - name: Run weekend scan
       run: |
-        pwd
-        ls -l
-        BINARY_NAME="${{ steps.exe-names.outputs.binary_name }}"
-        echo "Running scan with command: -a Y -e -o X:12:0"
-        ./"$BINARY_NAME" -a Y -e -o X:12:0 -l
+        echo "Running scan: ./pkscreenercli_x64.bin -a Y -e -o X:12:0 -l"
+        ./pkscreenercli_x64.bin -a Y -e -o X:12:0 -l
       env:
-        PK_DEBUG_ALL: 1
+        CI_PAT: ${{ secrets.CI_PAT }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         RUNNER: 1
+        PK_DEBUG_ALL: 1
 
-    - name: Commit resulting PKL files after scan (to PKScreener actions-data-download)
+    - name: Commit resulting PKL files after scan
       env:
         CI_PAT: ${{ secrets.CI_PAT }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # Determine target date from Archiver (same logic as main workflow)
+        # Determine target date using Archiver
         TARGET_INFO=$(python3 -c "
         from PKDevTools.classes import Archiver
         cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
@@ -1362,7 +1367,7 @@ jobs:
         RESULTS_DATA_DIR="$(pwd)/results/Data"
         echo "Results directory: $RESULTS_DATA_DIR"
         
-        # Clone the actions-data-download branch of PKScreener (same repo)
+        # Clone the actions-data-download branch
         git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
         cd pkscreener-data
         
@@ -1392,7 +1397,7 @@ jobs:
                   echo "No changes to PKL files after scan"
                 fi
             else
-                echo "⚠️ PKL file size too small ($FILE_SIZE bytes), skipping commit"
+                echo "⚠️ PKL file too small ($FILE_SIZE bytes), skipping commit"
             fi
         else
             echo "⚠️ No PKL file found at $RESULTS_DATA_DIR/$TARGET_FILE"
