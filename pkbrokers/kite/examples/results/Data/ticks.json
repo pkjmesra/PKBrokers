@@ -37666,7 +37666,7 @@
   },
   "6171393": {
     "instrument_token": 6171393,
-    "trading_symbol": "NA",
+    "trading_symbol": "SKIL-BZ",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T12:10:15+05:30",
@@ -37696,7 +37696,7 @@
   },
   "2910977": {
     "instrument_token": 2910977,
-    "trading_symbol": "NA",
+    "trading_symbol": "BGLOBAL-BZ",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T12:03:16+05:30",
@@ -37711,7 +37711,7 @@
   },
   "1226497": {
     "instrument_token": 1226497,
-    "trading_symbol": "NA",
+    "trading_symbol": "RELINFRA-BE",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T12:15:26+05:30",
@@ -37741,7 +37741,7 @@
   },
   "3487233": {
     "instrument_token": 3487233,
-    "trading_symbol": "NA",
+    "trading_symbol": "BILVYAPAR-BE",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T12:11:09+05:30",
@@ -37756,7 +37756,7 @@
   },
   "5037057": {
     "instrument_token": 5037057,
-    "trading_symbol": "NA",
+    "trading_symbol": "CMICABLES-BZ",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T12:06:43+05:30",
@@ -37771,7 +37771,7 @@
   },
   "194688001": {
     "instrument_token": 194688001,
-    "trading_symbol": "NA",
+    "trading_symbol": "FCONSUMER-BZ",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T12:16:09+05:30",
@@ -37786,7 +37786,7 @@
   },
   "194678273": {
     "instrument_token": 194678273,
-    "trading_symbol": "NA",
+    "trading_symbol": "DIL-BZ",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T12:13:37+05:30",
@@ -37801,7 +37801,7 @@
   },
   "4736257": {
     "instrument_token": 4736257,
-    "trading_symbol": "NA",
+    "trading_symbol": "SABEVENTS-BE",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T11:05:21+05:30",
@@ -37816,7 +37816,7 @@
   },
   "4614145": {
     "instrument_token": 4614145,
-    "trading_symbol": "NA",
+    "trading_symbol": "SETUINFRA-BZ",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T12:09:30+05:30",
@@ -37831,7 +37831,7 @@
   },
   "194355969": {
     "instrument_token": 194355969,
-    "trading_symbol": "NA",
+    "trading_symbol": "DHARAN-BZ",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T12:16:04+05:30",
@@ -37846,7 +37846,7 @@
   },
   "7821825": {
     "instrument_token": 7821825,
-    "trading_symbol": "NA",
+    "trading_symbol": "NEUEON-BE",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T11:13:36+05:30",
@@ -37876,7 +37876,7 @@
   },
   "1986305": {
     "instrument_token": 1986305,
-    "trading_symbol": "NA",
+    "trading_symbol": "ABAN-BE",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T12:06:23+05:30",
@@ -37891,7 +37891,7 @@
   },
   "2653697": {
     "instrument_token": 2653697,
-    "trading_symbol": "NA",
+    "trading_symbol": "UNIVAFOODS-BE",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T11:44:25+05:30",
@@ -37906,7 +37906,7 @@
   },
   "3544577": {
     "instrument_token": 3544577,
-    "trading_symbol": "NA",
+    "trading_symbol": "CLCIND-BE",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T11:42:30+05:30",
@@ -37936,7 +37936,7 @@
   },
   "1602305": {
     "instrument_token": 1602305,
-    "trading_symbol": "NA",
+    "trading_symbol": "RAJVIR-BZ",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-18T15:15:03+05:30",
@@ -37951,7 +37951,7 @@
   },
   "194263553": {
     "instrument_token": 194263553,
-    "trading_symbol": "NA",
+    "trading_symbol": "GENSOL-BZ",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T12:13:59+05:30",
@@ -37981,7 +37981,7 @@
   },
   "2400257": {
     "instrument_token": 2400257,
-    "trading_symbol": "NA",
+    "trading_symbol": "QUINTEGRA-BE",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T11:44:37+05:30",
@@ -37996,7 +37996,7 @@
   },
   "194262017": {
     "instrument_token": 194262017,
-    "trading_symbol": "NA",
+    "trading_symbol": "SIMBHALS-BZ",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T11:43:35+05:30",
@@ -38011,7 +38011,7 @@
   },
   "7330561": {
     "instrument_token": 7330561,
-    "trading_symbol": "NA",
+    "trading_symbol": "SRPL-BZ",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T12:13:39+05:30",
@@ -38026,7 +38026,7 @@
   },
   "5567233": {
     "instrument_token": 5567233,
-    "trading_symbol": "NA",
+    "trading_symbol": "EDUCOMP-BZ",
     "tick_count": 1,
     "ohlcv": {
       "timestamp": "2026-05-25T12:10:35+05:30",
