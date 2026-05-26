@@ -50,7 +50,7 @@
 
 name: 1. History Data Child
 on:
-  workflow_dispatch:  # Allow manual triggering
+  workflow_dispatch:
     inputs:
       logLevel:
         description: 'Log level for PKDevTools (default 20)'
@@ -71,6 +71,11 @@ on:
         required: false
         default: 251
         type: number
+      retry_count:
+        description: 'Retry attempt counter (internal use)'
+        required: false
+        default: 0
+        type: number
 
 jobs:
   historical-data:
@@ -80,6 +85,7 @@ jobs:
     env:
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || 20 }}
       TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
+      RETRY_COUNT: ${{ inputs.retry_count || 0 }}
     steps:
 
     - name: Mask sensitive outputs
@@ -798,7 +804,7 @@ jobs:
     - name: Merge extra columns from previous day's PKL
       # Only for day period, and only if we have a valid PKL file to work with
       if: inputs.period == 'day'
-      continue-on-error: True
+      continue-on-error: true
       run: |
         cd pkbrokers/kite/examples/
         
@@ -911,7 +917,192 @@ jobs:
         else:
             print('No extra columns found to merge.')
         "
+# ============================================================================
+    # NEW STEP: Validate PKL freshness, trigger retry if stale
+    # ============================================================================
+    - name: Validate PKL data freshness
+      id: freshness_check
+      if: inputs.period == 'day'
+      run: |
+        cd pkbrokers/kite/examples/
+        
+        # Get target date
+        TARGET_INFO=$(python3 -c "
+        from PKDevTools.classes import Archiver
+        cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
+        if cache_file_name:
+            print(f'{cache_file_name}')
+        else:
+            print('stock_data_$(date +%d%m%Y).pkl')
+        ")
+        if [[ $TARGET_INFO =~ stock_data_([0-9]{8})\.pkl ]]; then
+            TARGET_DATE="${BASH_REMATCH[1]}"
+        else
+            TARGET_DATE=$(date +%d%m%Y)
+        fi
+        
+        PKL_PATH="results/Data/stock_data_${TARGET_DATE}.pkl"
+        if [ ! -f "$PKL_PATH" ]; then
+            echo "No PKL file found, skipping freshness check."
+            exit 0
+        fi
+        
+        # Check freshness using Python
+        python3 << 'EOF'
+        import pickle
+        import pandas as pd
+        from datetime import datetime, timedelta
+        import pytz
+        import sys
+        import os
+        
+        PKL_PATH = os.environ['PKL_PATH']
+        RETRY_COUNT = int(os.environ.get('RETRY_COUNT', 0))
+        
+        # Load PKL
+        with open(PKL_PATH, 'rb') as f:
+            data = pickle.load(f)
+        
+        # Find a sample stock (RELIANCE, TCS, etc.)
+        sample_symbols = ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK']
+        sample_df = None
+        for sym in sample_symbols:
+            if sym in data:
+                sample_df = data[sym]
+                break
+        if sample_df is None:
+            # Take any symbol
+            sample_df = next(iter(data.values()))
+        
+        # Get latest timestamp (index)
+        latest_idx = sample_df.index.max()
+        # Convert to IST if not already
+        ist = pytz.timezone('Asia/Kolkata')
+        if latest_idx.tz is None:
+            latest_idx = latest_idx.tz_localize('UTC').tz_convert(ist)
+        else:
+            latest_idx = latest_idx.tz_convert(ist)
+        
+        # Get current IST time
+        now_ist = datetime.now(ist)
+        
+        # Determine allowed staleness
+        # After market close (15:30), we allow data up to 15:29 of the last trading day
+        # Otherwise, require within 2 minutes of now
+        market_close = now_ist.replace(hour=15, minute=30, second=0, microsecond=0)
+        if now_ist >= market_close:
+            # After market: data should be from today's close (15:29:59 or earlier)
+            # Allow if latest_idx date is today and time <= 15:30:00
+            if latest_idx.date() == now_ist.date() and latest_idx.time() <= market_close.time():
+                max_lag_minutes = 5  # Allow small lag after close
+            else:
+                # Data is from a previous day -> stale
+                max_lag_minutes = 1
+        else:
+            # During market hours: require data within 5 minutes of current time
+            max_lag_minutes = 5
+        
+        # Calculate difference
+        diff = now_ist - latest_idx
+        if diff.total_seconds() > max_lag_minutes * 60:
+            print(f"STALE: latest data timestamp {latest_idx} is {diff.total_seconds()/60:.1f} minutes old (limit {max_lag_minutes} min).")
+            sys.exit(1)   # Signal stale
+        else:
+            print(f"FRESH: latest data timestamp {latest_idx} is {diff.total_seconds()/60:.1f} minutes old.")
+            sys.exit(0)
+        EOF
+        
+        # Capture exit code
+        if [ $? -ne 0 ]; then
+            echo "Data is stale. Will trigger retry."
+            echo "is_stale=true" >> $GITHUB_OUTPUT
+        else
+            echo "is_stale=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Clean stale data and trigger retry
+      if: steps.freshness_check.outputs.is_stale == 'true' && env.RETRY_COUNT < 3
+      env:
+        CI_PAT: ${{ secrets.CI_PAT }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        RETRY_COUNT: ${{ inputs.retry_count || 0 }}
+      run: |
+        echo "⚠️ Data stale (attempt $((RETRY_COUNT+1))/3). Cleaning and retriggering..."
+        
+        cd pkbrokers/kite/examples/
+        
+        # Get target date again
+        TARGET_INFO=$(python3 -c "
+        from PKDevTools.classes import Archiver
+        cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
+        if cache_file_name:
+            print(f'{cache_file_name}')
+        else:
+            print('stock_data_$(date +%d%m%Y).pkl')
+        ")
+        if [[ $TARGET_INFO =~ stock_data_([0-9]{8})\.pkl ]]; then
+            TARGET_DATE="${BASH_REMATCH[1]}"
+        else
+            TARGET_DATE=$(date +%d%m%Y)
+        fi
+        
+        # Delete local PKL and DB
+        rm -f results/Data/stock_data_${TARGET_DATE}.pkl
+        rm -f results/Data/daily_candles.pkl
+        rm -f results/Data/instrument_history.db
+        echo "Removed local stale files."
+        
+        # Remove remote DB zip from actions-data-download branch
+        git clone --single-branch --branch actions-data-download https://x-access-token:$CI_PAT@github.com/pkjmesra/PKScreener.git pkscreener-data
+        cd pkscreener-data
+        DATED_ZIP="instrument_history_day_${TARGET_DATE}.db.zip"
+        if [ -f "actions-data-download/$DATED_ZIP" ]; then
+            git rm "actions-data-download/$DATED_ZIP"
+            git config user.name "github-actions[bot]"
+            git config user.email "actions@github.com"
+            git commit -m "Remove stale DB zip for $TARGET_DATE [skip ci]"
+            git push
+            echo "Removed remote stale DB zip."
+        fi
+        cd ../..
+        
+        # Trigger a new run with incremented retry count
+        NEW_RETRY=$((RETRY_COUNT+1))
+        echo "Triggering new workflow run (retry $NEW_RETRY)..."
+        
+        curl -X POST \
+          -H "Authorization: token $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/${{ github.repository }}/actions/workflows/w1-workflow-history-data-child.yml/dispatches" \
+          -d '{
+            "ref":"main",
+            "inputs":{
+              "period":"${{ inputs.period }}",
+              "logLevel":"${{ inputs.logLevel || 20 }}",
+              "kiteToken":"${{ inputs.kiteToken || secrets.KTOKEN }}",
+              "pastoffset":"${{ inputs.pastoffset || 251 }}",
+              "retry_count":"'"$NEW_RETRY"'"
+            }
+          }'
+        
+        echo "Retry triggered. Exiting this run."
+        exit 0
+
+    - name: Notify stale data failure (max retries)
+      if: steps.freshness_check.outputs.is_stale == 'true' && env.RETRY_COUNT >= 3
+      run: |
+        echo "❌ Data remains stale after 3 retries. Sending Telegram notification and aborting commit."
+        cd pkbrokers/kite/examples/
+        python3 -c "
+        import os
+        from PKDevTools.classes.Telegram import send_message
+        send_message('⚠️ *DATA STALE ALERT* ⚠️\n\nHistorical data for period ${{ inputs.period }} remains stale after 3 retries.\nPlease investigate the data pipeline.\nTime: $(date)')
+        "
+        # Exit without committing
+        exit 1
+
     - name: Commit updated pkl file to PKScreener actions-data-download with size validation
+      if: steps.freshness_check.outputs.is_stale != 'true'
       env:
         CI_PAT: ${{ secrets.CI_PAT }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
