@@ -947,6 +947,10 @@ jobs:
             exit 0
         fi
         
+        # ✅ Export the variable so Python can see it
+        export PKL_PATH
+        export RETRY_COUNT=${{ inputs.retry_count || 0 }}
+        
         # Check freshness using Python
         python3 << 'EOF'
         import pickle
