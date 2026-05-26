@@ -751,7 +751,7 @@ jobs:
         market_start = time(9, 15)
         market_end = time(15, 30)
         
-        if market_start <= now <= market_end:
+        if market_start <= now < market_end:
             print('true')
         else:
             print('false')
