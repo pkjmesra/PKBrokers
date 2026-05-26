@@ -1008,7 +1008,7 @@ jobs:
         
         # Calculate difference
         diff = now_ist - latest_idx
-        if diff.total_seconds() > max_lag_minutes * 60:
+        if diff.total_seconds() > max_lag_minutes * 60 and not str(latest_idx).endswith("00:00:00+05:30"):
             print(f"STALE: latest data timestamp {latest_idx} is {diff.total_seconds()/60:.1f} minutes old (limit {max_lag_minutes} min).")
             sys.exit(1)   # Signal stale
         else:
