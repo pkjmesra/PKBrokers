@@ -49,7 +49,8 @@ import time
 import pytz
 import fcntl
 import pickle
-
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 
 # Define IST timezone once
@@ -217,7 +218,16 @@ class TickHealthMonitor:
         # Track per-batch health
         self.batch_last_tick_time = {}  # batch_index -> last tick timestamp
         self._batch_lock = threading.Lock()  # Thread-safe updates
+        self._last_queue_warning_time = 0
+        self._queue_warning_interval = 30
     
+    def signal_queue_backlog(self, queue_size):
+        """Called when main queue backlog is critical."""
+        if time.time() - self._last_queue_warning_time > self._queue_warning_interval:
+            self.logger.error(f"🚨 Queue backlog {queue_size} – triggering recovery")
+            self._last_queue_warning_time = time.time()
+            self._trigger_recovery()
+
     def start(self):
         """Start the health monitor thread."""
         if self._monitor_thread is not None and self._monitor_thread.is_alive():
@@ -443,9 +453,18 @@ class TickHealthMonitor:
             if dead_processes:
                 self.logger.warning(f"⚠️ Dead WebSocket processes: {dead_processes}")
             
+            # Also restart the consumer thread if it appears dead
+            if hasattr(self.watcher, '_processing_thread') and self.watcher._processing_thread:
+                if not self.watcher._processing_thread.is_alive():
+                    self.logger.warning("Consumer thread dead – restarting")
+                    self.watcher._processing_thread = threading.Thread(
+                        target=self.watcher._process_ticks, daemon=True, name="TickProcessor"
+                    )
+                    self.watcher._processing_thread.start()
+                    
             # Step 3: Force restart of WebSocket client
             if hasattr(self.watcher, 'client') and self.watcher.client:
-                self.logger.info("Stopping WebSocket client...")
+                self.logger.warning("Stopping WebSocket client...")
                 self.watcher.client.stop_event.set()
                 
                 # Wait for processes to terminate
@@ -1110,7 +1129,13 @@ class JSONFileWriter:
             valid_count = 0
             for tick_data in tick_data_list:
                 if isinstance(tick_data, dict) and 'instrument_token' in tick_data:
-                    self.data_queue.put(tick_data, timeout=0.1)
+                    for attempt in range(3):
+                        try:
+                            self.data_queue.put(tick_data, timeout=0.1)
+                            break
+                        except Exception:
+                            if attempt == 2:
+                                self.logger.warning("JSON writer queue full, dropping tick")
                     valid_count += 1
                 else:
                     self.logger.warning(f"⚠️ Skipping invalid tick in batch: {type(tick_data)}")
@@ -1229,7 +1254,7 @@ class KiteTokenWatcher:
         self._db_queue = Queue(maxsize=OPTIMAL_MAX_QUEUE_SIZE)
         self._processing_thread = None
         self._client_watchdog_thread = None
-        self._db_thread = None
+        # self._db_thread = None
         self._shutdown_event = threading.Event()
         self._stop_queue = None
         self._stop_listener_thread = None
@@ -1297,7 +1322,40 @@ class KiteTokenWatcher:
         # Add health monitor
         self.health_monitor = None
         self.user_id = None  # Store for recovery
+        self.executor = ThreadPoolExecutor(max_workers=2)  # one for DB, one for JSON
+        self._tick_buffer = []  # local batch buffer
+        # self._last_flush_time = time.time()
+        # self._buffer_lock = threading.Lock()
 
+    def _process_tick_batch_async(self, tick_list):
+        """
+        Process a batch of Tick objects in a background thread.
+        - Converts ticks to dicts.
+        - Updates the in‑memory candle store.
+        - Sends data to JSON writer and database.
+        """
+        if not tick_list:
+            return
+
+        try:
+            # Convert each tick to dictionary format expected by JSON writer & DB
+            processed = [self._tick_to_dict(tick) for tick in tick_list]
+
+            # Update candle store with each tick
+            for tick in tick_list:
+                self._update_candle_store(tick)   # you need to extract this logic
+
+            # Send entire batch to JSON writer (efficient)
+            self.json_writer.add_batch(processed)
+
+            # Insert into database if enabled
+            db = self._get_database()
+            if db:
+                db.insert_ticks(processed)
+
+        except Exception as e:
+            self.logger.error(f"Async processing error: {e}")
+            
     def set_ws_stop_event(self, event):
         """Set the stop event for WebSocket processes"""
         self.ws_stop_event = event
@@ -1369,6 +1427,63 @@ class KiteTokenWatcher:
                 self.watch()
                 return
 
+    def _update_candle_store(self, tick):
+        """
+        Update the in‑memory candle store with a single tick.
+
+        Args:
+            tick: A Tick object (namedtuple) from the WebSocket.
+
+        Returns:
+            bool: True if the candle store was updated successfully, False otherwise.
+        """
+        try:
+            # Get trading symbol from kite_instruments if available
+            trading_symbol = ""
+            if tick.instrument_token in self._kite_instruments:
+                trading_symbol = getattr(
+                    self._kite_instruments[tick.instrument_token], 'tradingsymbol', ''
+                )
+
+            # Prepare dictionary in the format expected by CandleStore.process_tick()
+            tick_for_candle = {
+                'instrument_token': tick.instrument_token,
+                'last_price': tick.last_price or 0,
+                'day_volume': tick.day_volume or 0,
+                'oi': tick.oi or 0,
+                'exchange_timestamp': tick.exchange_timestamp or time.time(),
+                'trading_symbol': trading_symbol,
+                'type': 'tick',
+                # Additional fields that process_tick might use
+                'last_quantity': tick.last_quantity or 0,
+                'avg_price': tick.avg_price or 0,
+                'open_price': tick.open_price or 0,
+                'high_price': tick.high_price or 0,
+                'low_price': tick.low_price or 0,
+                'prev_day_close': tick.prev_day_close or 0,
+                'last_trade_timestamp': tick.last_trade_timestamp or 0,
+                'oi_day_high': tick.oi_day_high or 0,
+                'oi_day_low': tick.oi_day_low or 0,
+            }
+
+            # Process the tick in candle store
+            result = self._candle_store.process_tick(tick_for_candle)
+
+            # Update shared_stats if present
+            if result and hasattr(self, 'shared_stats') and self.shared_stats is not None:
+                self.shared_stats['ticks_processed'] = self._candle_store.stats.get('ticks_processed', 0)
+                self.shared_stats['instruments_with_ticks'] = self._candle_store.stats.get('instruments_with_ticks', 0)
+                self.shared_stats['instrument_count'] = len(self._candle_store.instruments)
+
+            if not result:
+                self.logger.debug(f"Failed to update candle store for {trading_symbol or tick.instrument_token}")
+
+            return result
+
+        except Exception as e:
+            self.logger.debug(f"Error updating candle store for token {tick.instrument_token}: {e}")
+            return False
+        
     def watch(self, test_mode=False):
         """
         Start watching market data for configured tokens.
@@ -1437,12 +1552,12 @@ class KiteTokenWatcher:
         self.health_monitor.start()
         
         try:
-            # Start database thread
-            self._db_thread = threading.Thread(
-                target=self._process_db_operations, daemon=True, name="DBProcessor"
-            )
-            self._db_thread.start()
-            time.sleep(DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC)
+            # # Start database thread
+            # self._db_thread = threading.Thread(
+            #     target=self._process_db_operations, daemon=True, name="DBProcessor"
+            # )
+            # self._db_thread.start()
+            # time.sleep(DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC)
             
             # Start processing threads
             self._processing_thread = threading.Thread(
@@ -1740,76 +1855,57 @@ class KiteTokenWatcher:
             self.logger.debug(f"Flushed {len(candles)} candles to DB")
             
     def _process_ticks(self):
-        """Process ticks from queue with adaptive batching to prevent buildup."""
-        from pkbrokers.kite.ticks import Tick
-
-        self._next_process_time = datetime.now() + timedelta(seconds=OPTIMAL_BATCH_TICK_WAIT_TIME_SEC)
-        self._next_process_log_time = datetime.now() + timedelta(seconds=12*OPTIMAL_BATCH_TICK_WAIT_TIME_SEC)
+        """
+        Non‑blocking consumer with batching and thread‑pool offload.
         
-        last_json_flush = time.time()
-        json_flush_interval = 2
-        adaptive_batch_size = 100
+        - Collects ticks until BATCH_SIZE or BATCH_INTERVAL is reached.
+        - Offloads the heavy processing (DB, JSON, candles) to a background thread pool.
+        - Monitors queue depth and signals health monitor if backlog becomes critical.
+        """
+        from pkbrokers.kite.ticks import Tick
+        from queue import Empty
+
+        BATCH_SIZE = 500          # process 500 ticks before flushing
+        BATCH_INTERVAL = 1.0      # or every second
+        _tick_buffer = []         # local buffer for ticks (list of Tick objects)
 
         while not self._shutdown_event.is_set():
             try:
-                # Check queue size to adjust batch size
-                queue_size = self._watcher_queue.qsize() if hasattr(self._watcher_queue, 'qsize') else 0
-                
-                if queue_size > 5000:
-                    adaptive_batch_size = 1000
-                    self.logger.warning(f"⚠️ Queue backlog: {queue_size}, increasing batch size to {adaptive_batch_size}")
-                elif queue_size > 1000:
-                    adaptive_batch_size = 200
-                else:
-                    adaptive_batch_size = 50
-
-                # Process multiple ticks per iteration
-                ticks_processed = 0
-                while ticks_processed < adaptive_batch_size:
+                start_time = time.time()
+                # Collect ticks until buffer is full or interval elapsed
+                while len(_tick_buffer) < BATCH_SIZE and \
+                    (time.time() - start_time) < BATCH_INTERVAL:
                     try:
-                        tick = self._watcher_queue.get(timeout=0.1)
+                        tick = self._watcher_queue.get(timeout=0.05)
                     except Empty:
                         break
-                    except Exception as e:
-                        self.logger.error(f"🛑 🛑 🛑 🛑 Tick retrieval error: {e}")
-                        break
-
-                    current_time = datetime.now()
 
                     if tick and isinstance(tick, Tick):
-                        ws_index = getattr(tick, 'websocket_index', None)
-                        batch_idx = getattr(tick, 'batch_index', ws_index)
-                        if batch_idx is None:
-                            batch_idx = ws_index  # Fallback to websocket_index
+                        _tick_buffer.append(tick)
+                        # Record tick for health monitor immediately
                         if self.health_monitor:
-                            self.health_monitor.record_tick(tick.instrument_token, ws_index, batch_idx)
-                        
-                        self._tick_batch[tick.instrument_token] = tick
+                            self.health_monitor.record_tick(
+                                tick.instrument_token,
+                                getattr(tick, 'websocket_index', None),
+                                getattr(tick, 'batch_index', None)
+                            )
                         self._watcher_queue.task_done()
-                        ticks_processed += 1
 
-                # Process batch at intervals
-                current_time = datetime.now()
-                if current_time >= self._next_process_time:
-                    if self._tick_batch:
-                        batch_to_process = {token: [tick] for token, tick in self._tick_batch.items()}
-                        # self._db_queue.put(batch_to_process)
-                        self.logger.info(f"Queued {len(self._tick_batch)} instruments for processing")
-                        self._flush_to_json_writer()
-                        self._flush_candles_to_db()
-                        self._tick_batch.clear()
-                    
-                    self._next_process_time = datetime.now() + timedelta(seconds=OPTIMAL_BATCH_TICK_WAIT_TIME_SEC)
-                
-                # Periodic JSON flush
-                elif time.time() - last_json_flush >= json_flush_interval:
-                    if self._tick_batch:
-                        self._flush_to_json_writer()
-                    last_json_flush = time.time()
-                
+                # If buffer has data, flush asynchronously
+                if _tick_buffer:
+                    batch_to_process = _tick_buffer.copy()
+                    _tick_buffer.clear()
+                    # Offload to thread pool – does not block the main loop
+                    self.executor.submit(self._process_tick_batch_async, batch_to_process)
+
+                # Optional: monitor queue depth for health
+                qsize = self._watcher_queue.qsize()
+                if qsize > 20000 and self.health_monitor:
+                    self.health_monitor.signal_queue_backlog(qsize)
+
                 # Small sleep to prevent CPU spinning
                 time.sleep(0.001)
-                
+
             except KeyboardInterrupt:
                 self.logger.warning("⚠️ Keyboard interrupt received in processing thread")
                 break
@@ -1817,9 +1913,12 @@ class KiteTokenWatcher:
                 self.logger.error(f"🛑 🛑 🛑 🛑 Unexpected error in tick processing: {e}")
                 continue
 
-        self._flush_to_json_writer()
-        self._cleanup_processing()
-
+        # Final flush of any remaining ticks before shutdown
+        if _tick_buffer:
+            self.executor.submit(self._process_tick_batch_async, _tick_buffer)
+        self.executor.shutdown(wait=True)
+        # self._cleanup_processing()
+        
     def _cleanup_processing(self):
         """Handle graceful shutdown with proper cleanup of remaining data."""
         if self._tick_batch:
@@ -2233,6 +2332,8 @@ class KiteTokenWatcher:
         except Exception:
             pass  # Queue might be full
 
+        self.executor.shutdown(wait=False)
+
         # Wait for threads with reasonable timeouts
         thread_timeout = THREAD_JOIN_TIMEOUT
 
@@ -2241,10 +2342,10 @@ class KiteTokenWatcher:
             if self._processing_thread.is_alive():
                 self.logger.warning("⚠️ Processing thread did not terminate gracefully")
 
-        if self._db_thread and self._db_thread.is_alive():
-            self._db_thread.join(timeout=thread_timeout)
-            if self._db_thread.is_alive():
-                self.logger.warning("⚠️ Database thread did not terminate gracefully")
+        # if self._db_thread and self._db_thread.is_alive():
+        #     self._db_thread.join(timeout=thread_timeout)
+        #     if self._db_thread.is_alive():
+        #         self.logger.warning("⚠️ Database thread did not terminate gracefully")
 
         if self._client_watchdog_thread and self._client_watchdog_thread.is_alive():
             self._client_watchdog_thread.join(timeout=thread_timeout)

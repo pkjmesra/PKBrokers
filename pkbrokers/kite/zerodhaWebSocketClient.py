@@ -380,10 +380,17 @@ class WebSocketProcess:
                                     }
                                     
                                     # Safely put in queue (non-blocking)
-                                    try:
-                                        self.data_queue.put(tick_data, timeout=1)
-                                    except Exception:
-                                        self.logger.warning(f"⚠️ Queue full, dropping tick")
+                                    max_retries = 3
+                                    for attempt in range(max_retries):
+                                        try:
+                                            self.data_queue.put(tick_data, timeout=1)
+                                            break
+                                        except Exception:
+                                            if attempt == max_retries - 1:
+                                                self.logger.warning(f"⚠️ Queue full, dropping tick after {max_retries} attempts")
+                                                # Optionally increment a shared counter
+                                            else:
+                                                await asyncio.sleep(0.05 * (2 ** attempt))
 
                             elif isinstance(message, str):
                                 try:
