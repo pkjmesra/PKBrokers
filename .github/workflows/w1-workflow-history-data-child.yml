@@ -845,6 +845,7 @@ jobs:
         import requests
         import pandas as pd
         import sys
+        import os
 
         # Standard OHLCV columns (case‑sensitive)
         STD_COLS = {'open', 'high', 'low', 'close', 'volume'}
