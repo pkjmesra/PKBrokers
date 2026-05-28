@@ -801,123 +801,124 @@ jobs:
         echo "Generated pkl files:"
         ls -la results/Data/*.pkl 2>/dev/null || echo "No pkl files found"
 
-    - name: Merge extra columns from previous day's PKL
-      # Only for day period, and only if we have a valid PKL file to work with
-      if: inputs.period == 'day'
-      continue-on-error: true
-      run: |
-        cd pkbrokers/kite/examples/
+    # - name: Merge extra columns from previous day's PKL
+    #   # Only for day period, and only if we have a valid PKL file to work with
+    #   if: inputs.period == 'day'
+    #   continue-on-error: true
+    #   run: |
+    #     cd pkbrokers/kite/examples/
         
-        # Get today's target date from Archiver (used for filename)
-        TARGET_INFO=$(python3 -c "
-        from PKDevTools.classes import Archiver
-        cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
-        if cache_file_name:
-            print(f'{cache_file_name}')
-        else:
-            print('stock_data_$(date +%d%m%Y).pkl')
-        ")
-        if [[ $TARGET_INFO =~ stock_data_([0-9]{8})\.pkl ]]; then
-            TARGET_DATE="${BASH_REMATCH[1]}"
-        else
-            TARGET_DATE=$(date +%d%m%Y)
-        fi
+    #     # Get today's target date from Archiver (used for filename)
+    #     TARGET_INFO=$(python3 -c "
+    #     from PKDevTools.classes import Archiver
+    #     cache_exists, cache_file_name = Archiver.afterMarketStockDataExists()
+    #     if cache_file_name:
+    #         print(f'{cache_file_name}')
+    #     else:
+    #         print('stock_data_$(date +%d%m%Y).pkl')
+    #     ")
+    #     if [[ $TARGET_INFO =~ stock_data_([0-9]{8})\.pkl ]]; then
+    #         TARGET_DATE="${BASH_REMATCH[1]}"
+    #     else
+    #         TARGET_DATE=$(date +%d%m%Y)
+    #     fi
         
-        NEW_PKL="results/Data/stock_data_${TARGET_DATE}.pkl"
-        if [ ! -f "$NEW_PKL" ]; then
-            echo "No new PKL file found, skipping extra column merge."
-            exit 0
-        fi
+    #     NEW_PKL="results/Data/stock_data_${TARGET_DATE}.pkl"
+    #     if [ ! -f "$NEW_PKL" ]; then
+    #         echo "No new PKL file found, skipping extra column merge."
+    #         exit 0
+    #     fi
         
-        # Get previous trading date
-        PREV_DATE=$(python3 -c "
-        from PKDevTools.classes.PKDateUtilities import PKDateUtilities
-        prev = PKDateUtilities.previousTradingDate()
-        print(prev.strftime('%d%m%Y'))
-        ")
-        PREV_PKL_URL="https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/stock_data_${PREV_DATE}.pkl"
+    #     # Get previous trading date
+    #     PREV_DATE=$(python3 -c "
+    #     from PKDevTools.classes.PKDateUtilities import PKDateUtilities
+    #     prev = PKDateUtilities.previousTradingDate()
+    #     print(prev.strftime('%d%m%Y'))
+    #     ")
+    #     PREV_PKL_URL="https://raw.githubusercontent.com/pkjmesra/PKScreener/actions-data-download/actions-data-download/stock_data_${PREV_DATE}.pkl"
         
-        echo "Attempting to download previous PKL from: $PREV_PKL_URL"
+    #     echo "Attempting to download previous PKL from: $PREV_PKL_URL"
         
-        # Use python to download and merge extra columns
-        python3 -c "
-        import pickle
-        import requests
-        import pandas as pd
-        import sys
-        import os
+    #     # Use python to download and merge extra columns
+    #     python3 -c "
+    #     import pickle
+    #     import requests
+    #     import pandas as pd
+    #     import sys
+    #     import os
 
-        # Standard OHLCV columns (case‑sensitive)
-        STD_COLS = {'open', 'high', 'low', 'close', 'volume'}
+    #     # Standard OHLCV columns (case‑sensitive)
+    #     STD_COLS = {'open', 'high', 'low', 'close', 'volume'}
 
-        def load_pkl_from_url(url):
-            try:
-                r = requests.get(url, timeout=30)
-                if r.status_code == 200:
-                    data = pickle.loads(r.content)
-                    if isinstance(data, dict) and len(data) > 0:
-                        return data
-            except Exception as e:
-                print(f'Error loading {url}: {e}')
-            return None
+    #     def load_pkl_from_url(url):
+    #         try:
+    #             r = requests.get(url, timeout=30)
+    #             if r.status_code == 200:
+    #                 data = pickle.loads(r.content)
+    #                 if isinstance(data, dict) and len(data) > 0:
+    #                     return data
+    #         except Exception as e:
+    #             print(f'Error loading {url}: {e}')
+    #         return None
 
-        # Load new PKL
-        new_pkl_path = '$NEW_PKL'
-        with open(new_pkl_path, 'rb') as f:
-            new_data = pickle.load(f)
+    #     # Load new PKL
+    #     new_pkl_path = '$NEW_PKL'
+    #     with open(new_pkl_path, 'rb') as f:
+    #         new_data = pickle.load(f)
 
-        # Load previous PKL (if available)
-        prev_data = load_pkl_from_url('$PREV_PKL_URL')
-        if prev_data is None:
-            print('No previous PKL found, skipping merge.')
-            sys.exit(0)
+    #     # Load previous PKL (if available)
+    #     prev_data = load_pkl_from_url('$PREV_PKL_URL')
+    #     if prev_data is None:
+    #         print('No previous PKL found, skipping merge.')
+    #         sys.exit(0)
 
-        # Merge extra columns
-        merged_count = 0
-        for symbol, new_df in new_data.items():
-            if symbol not in prev_data:
-                continue
-            prev_df = prev_data[symbol]
+    #     # Merge extra columns
+    #     merged_count = 0
+    #     for symbol, new_df in new_data.items():
+    #         if symbol not in prev_data:
+    #             continue
+    #         prev_df = prev_data[symbol]
             
-            # Find columns in prev_df that are NOT in STD_COLS
-            extra_cols = [col for col in prev_df.columns if col not in STD_COLS]
-            if not extra_cols:
-                continue
+    #         # Find columns in prev_df that are NOT in STD_COLS
+    #         extra_cols = [col for col in prev_df.columns if col not in STD_COLS]
+    #         if not extra_cols:
+    #             continue
             
-            # Ensure indices are timezone‑aware (convert if needed)
-            if prev_df.index.tz is None:
-                prev_df.index = prev_df.index.tz_localize('Asia/Kolkata')
-            if new_df.index.tz is None:
-                new_df.index = new_df.index.tz_localize('Asia/Kolkata')
+    #         # Ensure indices are timezone‑aware (convert if needed)
+    #         if prev_df.index.tz is None:
+    #             prev_df.index = prev_df.index.tz_localize('Asia/Kolkata')
+    #         if new_df.index.tz is None:
+    #             new_df.index = new_df.index.tz_localize('Asia/Kolkata')
             
-            # For each extra column, take the last known value from prev_df (most recent date)
-            # and assign it to all rows in new_df (since metadata is scalar per stock).
-            # If the extra column is time‑series, you could merge by date, but given the
-            # intended columns (MF, FII, FV, etc.) they are per‑stock constants.
-            for col in extra_cols:
-                # Get the most recent non‑NaN value
-                last_val = prev_df[col].dropna().iloc[-1] if len(prev_df[col].dropna()) > 0 else None
-                if last_val is not None:
-                    new_df[col] = last_val
-                    merged_count += 1
+    #         # For each extra column, take the last known value from prev_df (most recent date)
+    #         # and assign it to all rows in new_df (since metadata is scalar per stock).
+    #         # If the extra column is time‑series, you could merge by date, but given the
+    #         # intended columns (MF, FII, FV, etc.) they are per‑stock constants.
+    #         for col in extra_cols:
+    #             # Get the most recent non‑NaN value
+    #             last_val = prev_df[col].dropna().iloc[-1] if len(prev_df[col].dropna()) > 0 else None
+    #             if last_val is not None:
+    #                 new_df[col] = last_val
+    #                 merged_count += 1
             
-            new_data[symbol] = new_df
+    #         new_data[symbol] = new_df
 
-        if merged_count > 0:
-            print(f'Preserved extra columns for {merged_count} symbols.')
-            # Save back the updated PKL (atomic write)
-            import tempfile
-            import shutil
-            fd, temp_path = tempfile.mkstemp(suffix='.pkl.tmp', dir='results/Data')
-            with os.fdopen(fd, 'wb') as f:
-                pickle.dump(new_data, f, protocol=pickle.HIGHEST_PROTOCOL)
-                f.flush()
-                os.fsync(f.fileno())
-            shutil.move(temp_path, new_pkl_path)
-            print(f'Updated {new_pkl_path} with extra columns.')
-        else:
-            print('No extra columns found to merge.')
-        "
+    #     if merged_count > 0:
+    #         print(f'Preserved extra columns for {merged_count} symbols.')
+    #         # Save back the updated PKL (atomic write)
+    #         import tempfile
+    #         import shutil
+    #         fd, temp_path = tempfile.mkstemp(suffix='.pkl.tmp', dir='results/Data')
+    #         with os.fdopen(fd, 'wb') as f:
+    #             pickle.dump(new_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+    #             f.flush()
+    #             os.fsync(f.fileno())
+    #         shutil.move(temp_path, new_pkl_path)
+    #         print(f'Updated {new_pkl_path} with extra columns.')
+    #     else:
+    #         print('No extra columns found to merge.')
+    #     "
+
 # ============================================================================
     # NEW STEP: Validate PKL freshness, trigger retry if stale
     # ============================================================================
