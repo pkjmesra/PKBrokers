@@ -278,14 +278,37 @@ class PKTickOrchestrator:
             logger.debug(f"Error checking trading holidays: {e}")
             return False  # Assume not holiday if we can't check
 
+    def is_market_hours(self):
+        try:
+            now_ist = PKDateUtilities.currentDateTime()
+            market_open = now_ist.replace(hour=9, minute=15, second=0, microsecond=0)
+            market_close = now_ist.replace(hour=15, minute=30, second=0, microsecond=0)
+            return market_open <= now_ist < market_close
+        except Exception as e:
+            logger.error(f"is_market_hours error: {e}")
+            return False
+
     def should_run_kite_process(self):
         """Determine if kite process should run based on market hours and holidays"""
+        logger = default_logger()
+        # Log current IST time
+        now_ist = PKDateUtilities.currentDateTime()
+        logger.info(f"should_run_kite_process called – IST: {now_ist}")
+        
+        is_holiday = self.is_trading_holiday()
+        logger.info(f"is_trading_holiday = {is_holiday}")
+        
+        is_market = self.is_market_hours()
+        logger.info(f"is_market_hours = {is_market}")
+        
+        result = (is_market and not is_holiday)
+        logger.info(f"should_run_kite_process result = {result}")
         # Check if it's a trading holiday
-        if self.is_trading_holiday():
+        if is_holiday:
             return False
 
         # Check if it's market hours
-        if not self.is_market_hours():
+        if not is_market:
             return False
 
         return True
@@ -303,6 +326,10 @@ class PKTickOrchestrator:
         env = PKEnvironment()
         bot_token = bot_token or env.TBTOKEN # this is not used here but for consistency
         chat_id = chat_id or env.CHAT_ID # this is not used here but for consistency
+        token = PKEnvironment().KTOKEN
+        logger.info(f"KTOKEN length: {len(token) if token else 0}")
+        if not token or len(token) < 80:
+            logger.error(f"Invalid or missing KTOKEN: {token} – kite process will fail")
         ticks_file_path = ticks_file_path or os.path.join(
             Archiver.get_user_data_dir(), "ticks.json"
         )
@@ -402,6 +429,8 @@ class PKTickOrchestrator:
             logger.info("kite_ticks process interrupted")
         except Exception as e:
             logger.error(f"🛑 🛑 🛑 🛑 kite_ticks error: {e}")
+            logger.error(f"🛑 🛑 🛑 🛑 kite_ticks crashed: {e}", exc_info=True)
+            raise   # re-raise so the process exits with non‑zero code
 
     @staticmethod
     def run_telegram_bot(bot_token: Optional[str], ticks_file_path: Optional[str], chat_id: Optional[str], shared_stats: dict):
@@ -567,8 +596,7 @@ class PKTickOrchestrator:
         logger = default_logger()
         if self.test_mode:
             logger.warning("⚠️ Running in TEST mode! Skipping test to re-run/stop Kite process!")
-            return
-        current_should_run = self.should_run_kite_process()
+        current_should_run = self.should_run_kite_process() or self.test_mode
         kite_running = self.kite_process and self.kite_process.is_alive()
 
         # If kite should run but isn't running, start it
@@ -642,11 +670,12 @@ class PKTickOrchestrator:
                         if not is_fresh and (stale_seconds > max_stale_seconds or missing_days > 0):
                             logger.info(f"Periodic refresh: Daily pkl stale by {stale_seconds}s or missing {missing_days} days")
                             
-                            # CRITICAL FIX: If kite process is not running, we need to get fresh data
+                            # If kite process is not running, we need to get fresh data
                             if not self.kite_process or not self.kite_process.is_alive():
-                                logger.warning("⚠️ Kite process not running - attempting to refresh from GitHub")
+                                logger.warning("⚠️ Kite process not running – attempting to start it now")
+                                self.restart_kite_process_if_needed()
                                 # Download fresh ticks.json from GitHub
-                                
+                                logger.warning("⚠️ Kite process not running - attempting to refresh from GitHub")
                                 try:
                                     # Try to download fresh ticks.json
                                     urls = [

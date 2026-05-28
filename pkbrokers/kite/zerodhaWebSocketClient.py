@@ -73,7 +73,8 @@ PING_TIMEOUT = 5
 OPTIMAL_MAX_QUEUE_SIZE = 10000
 RECOVERY_COOLDOWN_SECONDS = 120
 HTTP_400_429_WAIT_TIME = 120
-STALE_THRESHOLD_SECONDS = 300
+STALE_THRESHOLD_SECONDS = 120
+FULL_RESTART_STALE_THRESHOLD = 600
 NETWORK_WAIT_TIME = 5
 GENERAL_WAIT_TIME = 1
 DB_BATCH_SIZE = 1000
@@ -798,6 +799,27 @@ class ZerodhaWebSocketClient:
 
             traceback.print_exc()
 
+    def _restart_all_processes(self, process_args):
+        """Stop all WebSocket processes and restart them after refreshing token."""
+        self.logger.warning("🛑 Restarting all WebSocket processes due to persistent staleness")
+        # Stop all processes
+        for i, p in enumerate(self.ws_processes):
+            if p and p.is_alive():
+                self.logger.info(f"Terminating process {i} (PID {p.pid})")
+                p.terminate()
+                p.join(timeout=5)
+        # Refresh token
+        self._refresh_token()
+        # Restart all processes
+        for i, base_args in enumerate(process_args):
+            full_args = base_args + (self.ws_stop_event,)
+            p = self.mp_context.Process(target=websocket_process_worker, args=(full_args,))
+            p.daemon = True
+            p.start()
+            self.ws_processes[i] = p
+            self.update_batch_tick_time(i)
+            self.logger.info(f"Started new process for batch {i} (PID {p.pid})")
+            
     def _monitor_processes(self, process_args):
         """Monitor and restart failed processes."""
         try:
@@ -828,13 +850,35 @@ class ZerodhaWebSocketClient:
                         new_p.start()
                         self.ws_processes[i] = new_p
                         self.update_batch_tick_time(i)
-                # --- Check stale batches and restart ---
+
                 current_time = time.time()
+                # --- Check stale batches and restart ---
                 for i, batch_tokens in enumerate(self.token_batches):
                     last_tick = self.batch_last_tick_time.get(i, 0)
-                    if current_time - last_tick > STALE_THRESHOLD_SECONDS:   # 5 minutes without a tick
-                        self.logger.warning(f"⚠️ Batch {i} is stale and has no ticks for {current_time-last_tick:.0f}s → restarting process")
+                    stale_duration = current_time - last_tick
+                    if stale_duration > STALE_THRESHOLD_SECONDS:
+                        self.logger.warning(
+                            f"⚠️ Batch {i} is stale (no ticks for {stale_duration:.0f}s, "
+                            f"threshold {STALE_THRESHOLD_SECONDS}s) → restarting process"
+                        )
+                        # Track how long this batch has been continuously stale
+                        if not hasattr(self, '_batch_stale_start'):
+                            self._batch_stale_start = {}
+                        if i not in self._batch_stale_start:
+                            self._batch_stale_start[i] = current_time
+                        else:
+                            total_stale = current_time - self._batch_stale_start[i]
+                            if total_stale > FULL_RESTART_STALE_THRESHOLD:
+                                self.logger.error(
+                                    f"🛑 Batch {i} has been stale for {total_stale:.0f}s "
+                                    f"(>{FULL_RESTART_STALE_THRESHOLD}s) → triggering full restart"
+                                )
+                                self._restart_all_processes(process_args)
+                                return  # restart_all will re-enter monitor
+
+                        # Restart individual process
                         if i < len(self.ws_processes) and self.ws_processes[i] and self.ws_processes[i].is_alive():
+                            self.logger.info(f"Terminating stale batch process {i} (PID {self.ws_processes[i].pid})")
                             self.ws_processes[i].terminate()
                             self.ws_processes[i].join(timeout=5)
                         # Restart the process
@@ -845,6 +889,11 @@ class ZerodhaWebSocketClient:
                         new_p.start()
                         self.ws_processes[i] = new_p
                         self.update_batch_tick_time(i)   # reset after restart
+                        self.logger.info(f"✅ Restarted batch {i} process (new PID {new_p.pid})")
+                    else:
+                        # Batch is healthy, clear stale start marker if any
+                        if hasattr(self, '_batch_stale_start') and i in self._batch_stale_start:
+                            del self._batch_stale_start[i]
                 # --- Full restart if all batches dead (optional) ---
                 # Every RECOVERY_COOLDOWN_SECONDS seconds, check total ticks across all processes
                 if int(time.time()) % RECOVERY_COOLDOWN_SECONDS == 0:
