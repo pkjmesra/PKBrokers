@@ -523,7 +523,10 @@ class PKTickBot:
                 status_msg += f"  • Total ticks processed: {stats.get('ticks_processed', 0)}\n"
                 status_msg += f"  • Uptime: {stats.get('uptime_seconds', candle_store.get_stats().get('uptime_seconds', 0)):.0f}s\n"
                 timestamp = stats.get('last_tick_time', candle_store.get_stats().get('last_tick_time', None))
-                status_msg += f"  • Last Tick: {datetime.fromtimestamp(timestamp, tz=ist) if (timestamp and timestamp > 0) else timestamp}\n\n"
+                dt_timestamp = datetime.fromtimestamp(timestamp, tz=ist) if (timestamp and timestamp > 0) else timestamp
+                if dt_timestamp > PKDateUtilities.currentDateTime():
+                    dt_timestamp = dt_timestamp - timedelta(hours=5, minutes=30)
+                status_msg += f"  • Last Tick: {dt_timestamp}\n\n"
                 
             except Exception as e:
                 status_msg += f"📊 Candle Store: Error - {e}\n\n"
