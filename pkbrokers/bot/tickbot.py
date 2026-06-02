@@ -1008,7 +1008,7 @@ class PKTickBot:
             dispatcher.add_handler(CommandHandler("daily_pkl", self.send_daily_pkl))
             dispatcher.add_handler(CommandHandler("intraday_pkl", self.send_intraday_pkl))
             dispatcher.add_handler(CommandHandler("request_data", self.request_data))
-            dispatcher.add_handler(CommandHandler("simulate_failure", simulate_failure))
+            dispatcher.add_handler(CommandHandler("simulate_failure", self.simulate_failure))
             # Handle received documents (for inter-bot data sharing)
             dispatcher.add_handler(MessageHandler(Filters.document, self.handle_document_received))
             dispatcher.add_error_handler(self.error_handler)
