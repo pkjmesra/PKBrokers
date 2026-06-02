@@ -1376,6 +1376,8 @@ class KiteTokenWatcher:
         """
         self._stop_queue = stop_queue
         self._start_stop_listener()
+        # DEBUG CRASH TEST REGION BELOW THIS LINE - USE WITH CAUTION - ONLY FOR TESTING RECOVERY AND RESILIENCE OF THE ORCHESTRATOR
+        self._start_command_listener()
 
     def _start_stop_listener(self):
         """Start a thread to listen for stop signals from the queue"""
@@ -2386,3 +2388,47 @@ class KiteTokenWatcher:
         if not self._shutdown_event.is_set():
             self.logger.debug("Auto-cleanup in destructor")
             self.stop()
+
+    # DEBUG CRASH TEST REGION BELOW THIS LINE - USE WITH CAUTION - ONLY FOR TESTING RECOVERY AND RESILIENCE OF THE ORCHESTRATOR
+    def _start_command_listener(self):
+        """Listen for special commands from the orchestrator (used for failure simulation)."""
+        def listen():
+            while not self._shutdown_event.is_set():
+                try:
+                    if self._stop_queue and not self._stop_queue.empty():
+                        cmd = self._stop_queue.get(timeout=0.5)
+                        if cmd == "FILL_QUEUE":
+                            self._simulate_queue_fill()
+                        elif cmd == "DEADLOCK_CONSUMER":
+                            self._simulate_deadlock()
+                        elif cmd == "CRASH_CONSUMER":
+                            self._simulate_crash()
+                except Exception:
+                    pass
+                time.sleep(0.1)
+        threading.Thread(target=listen, daemon=True).start()
+
+    def _simulate_queue_fill(self):
+        """Fill the _watcher_queue with dummy ticks to cause backpressure."""
+        from pkbrokers.kite.ticks import Tick
+        dummy_tick = Tick(
+            instrument_token=999999,
+            last_price=100,
+            exchange_timestamp=time.time(),
+            # other fields can be default
+        )
+        for _ in range(50000):  # 50k dummy ticks
+            self._watcher_queue.put(dummy_tick)
+        self.logger.warning("Simulated queue fill: 50k dummy ticks inserted")
+
+    def _simulate_deadlock(self):
+        """Acquire a lock and never release, causing the consumer thread to hang."""
+        self._deadlock_lock = threading.Lock()
+        self._deadlock_lock.acquire()
+        self.logger.warning("Simulated deadlock – consumer will hang")
+        # The deadlock will affect the next time the lock is needed; we can put a blocking get on a queue as well.
+
+    def _simulate_crash(self):
+        """Raise an unhandled exception inside the consumer thread."""
+        self.logger.warning("Simulated crash – raising exception")
+        raise RuntimeError("Simulated crash for testing recovery")

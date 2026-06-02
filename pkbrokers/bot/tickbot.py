@@ -27,6 +27,7 @@ import html
 import json
 import logging
 import os
+import re
 import signal
 import sys
 import zipfile
@@ -784,6 +785,76 @@ class PKTickBot:
             self.logger.error(f"🛑 🛑 🛑 🛑 Error sending intraday pkl: {e}")
             update.message.reply_text(f"❌ Error: {e}")
 
+    # DEBUG CRASH TEST REGION BELOW THIS LINE - USE WITH CAUTION - ONLY FOR TESTING RECOVERY AND RESILIENCE OF THE ORCHESTRATOR
+    def simulate_failure(self, update: Update, context: CallbackContext) -> None:
+        """Inject a simulated failure into the running orchestrator for testing recovery."""
+        if self._shouldAvoidResponse(update):
+            return
+        user = update.effective_user
+        # Only the bot owner can use this command
+        if user.username != OWNER_USER:
+            update.message.reply_text("❌ You are not authorised to use this command.")
+            return
+
+        # Parse the failure type from the command arguments
+        msg = update.effective_message
+        try:
+            m = re.match(r"\s*/([0-9a-zA-Z_-]+)\s*(.*)", msg.text)
+            args = [arg for arg in re.split(r"\s+", m.group(2)) if len(arg)]
+        except:
+            args = []
+
+        if not args:
+            # How to test
+                # Deploy the modified code.
+                # As the bot owner, send /simulate_failure kill_ws during market hours.
+                # Watch the logs – you should see the monitor restart the dead processes.
+                # Try fill_queue, then observe the drop counter and eventual full restart.
+                # deadlock_consumer and crash_consumer should trigger the consumer thread restart.
+                # corrupt_token should cause a 403 and token refresh.
+                # All recoveries should happen automatically within the configured thresholds 
+                # (e.g., 60–120 seconds).
+                # ⚠️ Important notes
+                # These commands are only for testing and should be disabled in production or 
+                # guarded by a strict check (e.g., only run when PKDevTools_Default_Log_Level 
+                # is set to a debug value).
+                # The queue‑filling test may temporarily starve the system; ensure your test 
+                # environment can handle the load.
+                # The deadlock simulation will permanently hang the consumer thread – recovery 
+                # must restart the thread (which the watchdog already does if the thread dies). 
+                # For deadlock, we need an additional health check on the consumer thread’s 
+                # progress (e.g., a timestamp of last processed tick). That can be added if 
+                # required.
+                # With these additions, you can systematically validate each recovery path.
+            update.message.reply_text(
+                "❌ Please specify a failure type:\n"
+                "`/simulate_failure kill_ws` – kill all WebSocket processes\n"
+                "`/simulate_failure fill_queue` – fill the data queue (drop ticks)\n"
+                "`/simulate_failure deadlock_consumer` – deadlock the consumer thread\n"
+                "`/simulate_failure crash_consumer` – crash the consumer thread\n"
+                "`/simulate_failure corrupt_token` – set an invalid KTOKEN\n"
+                "`/simulate_failure stop_kite` – stop the kite process (if running)\n"
+                "`/simulate_failure full_panic` – trigger all failures sequentially",
+                parse_mode="Markdown"
+            )
+            return
+
+        failure_type = args[0].lower()
+        
+        # Send the request to the orchestrator via a queue
+        # We need a reference to the orchestrator’s failure queue.
+        # To keep this simple, we use a global variable or a file‑based signal.
+        # Here we assume the orchestrator has a `multiprocessing.Queue` named `failure_queue`
+        # that is passed to the bot when starting. For this example, we use a file.
+        
+        # Use a temporary file to signal the failure (simpler than cross‑process queues)
+        import tempfile
+        signal_file = os.path.join(tempfile.gettempdir(), "pkbrokers_failure_signal")
+        with open(signal_file, "w") as f:
+            f.write(failure_type)
+        
+        update.message.reply_text(f"⚠️ Simulated failure `{failure_type}` requested. Check logs for recovery actions.", parse_mode="Markdown")
+        
     def request_data(self, update: Update, context: CallbackContext) -> None:
         """Request all available data (pkl files, db) from this instance.
         
@@ -937,6 +1008,7 @@ class PKTickBot:
             dispatcher.add_handler(CommandHandler("daily_pkl", self.send_daily_pkl))
             dispatcher.add_handler(CommandHandler("intraday_pkl", self.send_intraday_pkl))
             dispatcher.add_handler(CommandHandler("request_data", self.request_data))
+            dispatcher.add_handler(CommandHandler("simulate_failure", simulate_failure))
             # Handle received documents (for inter-bot data sharing)
             dispatcher.add_handler(MessageHandler(Filters.document, self.handle_document_received))
             dispatcher.add_error_handler(self.error_handler)

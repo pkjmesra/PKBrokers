@@ -756,6 +756,28 @@ class PKTickOrchestrator:
             
             threading.Thread(target=data_refresher, daemon=True).start()
             
+            # Start a thread to listen for simulated failure commands
+            def failure_listener():
+                import tempfile
+                signal_file = os.path.join(tempfile.gettempdir(), "pkbrokers_failure_signal")
+                last_content = ""
+                while not self.shutdown_requested:
+                    try:
+                        if os.path.exists(signal_file):
+                            with open(signal_file, "r") as f:
+                                content = f.read().strip()
+                            if content and content != last_content:
+                                last_content = content
+                                logger.warning(f"⚠️ SIMULATED FAILURE COMMAND RECEIVED: {content}")
+                                self._inject_failure(content)
+                                # Remove the file after processing to avoid re‑triggering
+                                os.remove(signal_file)
+                    except Exception as e:
+                        logger.error(f"Failure listener error: {e}")
+                    time.sleep(1)
+
+            threading.Thread(target=failure_listener, daemon=True).start()
+
             if __name__ == "__main__":
                 signal.signal(signal.SIGINT, self.signal_handler)
                 signal.signal(signal.SIGTERM, self.signal_handler)
@@ -943,7 +965,83 @@ class PKTickOrchestrator:
             raise ValueError("chat_id is required for consumer functionality")
         return PKTickBotConsumer(bot_token, bridge_bot_token, chat_id)
 
+    # DEBUG CRASH TEST REGION BELOW THIS LINE - USE WITH CAUTION - ONLY FOR TESTING RECOVERY AND RESILIENCE OF THE ORCHESTRATOR
+    def _inject_failure(self, failure_type: str):
+        """Inject a simulated failure into the running system."""
+        logger = default_logger()
+        logger.warning(f"🚨 INJECTING SIMULATED FAILURE: {failure_type}")
+        
+        if failure_type == "kill_ws":
+            self._kill_websocket_processes()
+        elif failure_type == "fill_queue":
+            self._fill_data_queue()
+        elif failure_type == "deadlock_consumer":
+            self._deadlock_consumer()
+        elif failure_type == "crash_consumer":
+            self._crash_consumer()
+        elif failure_type == "corrupt_token":
+            self._corrupt_token()
+        elif failure_type == "stop_kite":
+            self._stop_kite_process()
+        elif failure_type == "full_panic":
+            # Trigger all failures sequentially (with small delay between)
+            for ft in ["kill_ws", "fill_queue", "deadlock_consumer", "corrupt_token"]:
+                self._inject_failure(ft)
+                time.sleep(2)
+        else:
+            logger.warning(f"Unknown failure type: {failure_type}")
 
+    def _kill_websocket_processes(self):
+        """Kill all WebSocket child processes (ZerodhaWebSocketClient)."""
+        if hasattr(self, 'kite_process') and self.kite_process and self.kite_process.is_alive():
+            # Send a signal to the kite_ticks process to kill its WebSocket processes
+            # We need a reference to the KiteTokenWatcher inside the child process.
+            # Simpler: kill the entire kite_ticks process – the watchdog will restart it.
+            logger.warning("Killing entire kite_ticks process to simulate WebSocket death")
+            self.kite_process.terminate()
+            self.kite_process.join(timeout=5)
+        else:
+            logger.warning("kite_ticks process not running, cannot kill WebSockets")
+
+    def _fill_data_queue(self):
+        """Fill the multiprocessing queue in ZerodhaWebSocketClient to cause drops."""
+        # This requires access to the data_queue inside the WebSocket client.
+        # We can send a message to the kite_ticks process to simulate queue overload.
+        # For simplicity, we can use a shared queue and push many dummy ticks.
+        if hasattr(self, 'stop_queue'):
+            # Send a special command to the kite_ticks process
+            self.stop_queue.put("FILL_QUEUE")
+            logger.warning("Requested queue fill simulation")
+
+    def _deadlock_consumer(self):
+        """Cause the consumer thread (_process_ticks) to deadlock."""
+        # Send command to kite_ticks process to acquire a lock and never release.
+        self.stop_queue.put("DEADLOCK_CONSUMER")
+        logger.warning("Requested consumer deadlock simulation")
+
+    def _crash_consumer(self):
+        """Cause the consumer thread to crash (unhandled exception)."""
+        self.stop_queue.put("CRASH_CONSUMER")
+        logger.warning("Requested consumer crash simulation")
+
+    def _corrupt_token(self):
+        """Set an invalid KTOKEN to force token refresh failure."""
+        os.environ["KTOKEN"] = "INVALID_TOKEN_FOR_TESTING"
+        # Also update PKEnvironment cache
+        try:
+            from PKDevTools.classes.Environment import PKEnvironment
+            PKEnvironment().KTOKEN = "INVALID_TOKEN_FOR_TESTING"
+        except:
+            pass
+        logger.warning("KTOKEN corrupted – next WebSocket reconnection will fail")
+
+    def _stop_kite_process(self):
+        """Stop the kite_ticks process if it's running (simulate crash)."""
+        if self.kite_process and self.kite_process.is_alive():
+            self.kite_process.terminate()
+            self.kite_process.join(timeout=5)
+            logger.warning("kite_ticks process terminated (simulated crash)")
+            
 def orchestrate():
     # Initialize with None values, they will be set from environment when needed
     orchestrator = PKTickOrchestrator(None, None, None, None)
