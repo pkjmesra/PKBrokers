@@ -265,7 +265,7 @@ class TickHealthMonitor:
         # Reset recovery attempts on successful tick reception
         if self._recovery_attempts > 0:
             self._recovery_attempts = 0
-            self._max_recovery_attempts = 0
+            self._max_recovery_attempts = MAX_RECOVERY_ATTEMPT
             self.logger.debug("✅ Tick received - Recovery attempts reset")
         
         # Reset recovering flag if it was set
@@ -440,8 +440,10 @@ class TickHealthMonitor:
         self.stats['recovery_count'] += 1
         self._recovery_attempts += 1
         self._recovering = True
-        if self._recovery_attempts > self._max_recovery_attempts:
+        if self._recovery_attempts < self._max_recovery_attempts:
             self.logger.error(f"🛑 🛑 🛑 🛑 ❌ {self._recovery_attempts} recovery attempt failures! Manual intervention may be needed.")
+        else:
+            sys.exit(1)  # Exit after max recovery attempts to avoid infinite loop
         try:
             # Step 1: Check if token needs refresh
             if self._is_token_expired():
@@ -679,7 +681,11 @@ class TickHealthMonitor:
                         self._trigger_recovery()
                         
                 time.sleep(1)
-                
+
+            except SystemExit:
+                self.stop()
+                self.logger.error(f"🛑 🛑 🛑 🛑 🛑 🛑 🛑 🛑 Health monitor stopped. Forced Exit: {e} 🛑 🛑 🛑 🛑")
+                raise  # Allow sys.exit() to propagate and stop the monitor
             except Exception as e:
                 self.logger.error(f"🛑 🛑 🛑 🛑 Health monitor error: {e}")
                 import traceback
@@ -1896,7 +1902,13 @@ class KiteTokenWatcher:
                     batch_to_process = _tick_buffer.copy()
                     _tick_buffer.clear()
                     # Offload to thread pool – does not block the main loop
-                    self.executor.submit(self._process_tick_batch_async, batch_to_process)
+                    try:
+                        self.executor.submit(self._process_tick_batch_async, batch_to_process)
+                    except RuntimeError as e:
+                        if "cannot schedule new futures" in str(e):
+                            self.logger.debug("Executor already shut down – ignoring submit")
+                        else:
+                            raise
 
                 # Optional: monitor queue depth for health
                 qsize = self._watcher_queue.qsize()
@@ -1915,7 +1927,13 @@ class KiteTokenWatcher:
 
         # Final flush of any remaining ticks before shutdown
         if _tick_buffer:
-            self.executor.submit(self._process_tick_batch_async, _tick_buffer)
+            try:
+                self.executor.submit(self._process_tick_batch_async, _tick_buffer)
+            except RuntimeError as e:
+                if "cannot schedule new futures" in str(e):
+                    self.logger.debug("Executor already shut down – ignoring final flush")
+                else:
+                    raise
         self.executor.shutdown(wait=True)
         # self._cleanup_processing()
         
@@ -2332,8 +2350,6 @@ class KiteTokenWatcher:
         except Exception:
             pass  # Queue might be full
 
-        self.executor.shutdown(wait=False)
-
         # Wait for threads with reasonable timeouts
         thread_timeout = THREAD_JOIN_TIMEOUT
 
@@ -2347,6 +2363,8 @@ class KiteTokenWatcher:
         #     if self._db_thread.is_alive():
         #         self.logger.warning("⚠️ Database thread did not terminate gracefully")
 
+        # Now shut down the executor (no new tasks will be submitted)
+        self.executor.shutdown(wait=False)
         if self._client_watchdog_thread and self._client_watchdog_thread.is_alive():
             self._client_watchdog_thread.join(timeout=thread_timeout)
             if self._client_watchdog_thread.is_alive():
