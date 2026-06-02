@@ -75,6 +75,8 @@ RECOVERY_COOLDOWN_SECONDS = 120
 HTTP_400_429_WAIT_TIME = 120
 STALE_THRESHOLD_SECONDS = 120
 FULL_RESTART_STALE_THRESHOLD = 600
+DROP_MONITOR_INTERVAL = 30          # seconds between checking drops
+MAX_DROPS_PER_MINUTE = 50           # threshold for recovery
 NETWORK_WAIT_TIME = 5
 GENERAL_WAIT_TIME = 1
 DB_BATCH_SIZE = 1000
@@ -130,7 +132,7 @@ class WebSocketProcess:
 
     def __init__(self, enctoken, user_id, api_key, token_batch, websocket_index,
                  data_queue, stop_event, log_level=None, watcher_queue=None, 
-                 token_refresh_callback=None, ws_stop_event=None):
+                 token_refresh_callback=None, drop_counter=None, ws_stop_event=None):
         self.enctoken = enctoken
         self.token_refresh_callback = token_refresh_callback
         self.user_id = user_id
@@ -145,6 +147,7 @@ class WebSocketProcess:
         self.websocket = None
         self.encToken_invalidated = False
         self.ws_stop_event = ws_stop_event
+        self.drop_counter = drop_counter
         self._shutdown_requested = False
         self.multiprocessingForWindows()
 
@@ -390,6 +393,9 @@ class WebSocketProcess:
                                             if attempt == max_retries - 1:
                                                 self.logger.warning(f"⚠️ Queue full, dropping tick after {max_retries} attempts")
                                                 # Optionally increment a shared counter
+                                                if self.drop_counter is not None:
+                                                    with self.drop_counter.get_lock():
+                                                        self.drop_counter.value += 1
                                             else:
                                                 await asyncio.sleep(0.05 * (2 ** attempt))
 
@@ -558,6 +564,7 @@ def websocket_process_worker(args):
         stop_event,
         log_level,
         token_refresh_callback,
+        drop_counter,
         ws_stop_event,
     ) = args
 
@@ -571,6 +578,7 @@ def websocket_process_worker(args):
         stop_event=stop_event,
         log_level=log_level,
         token_refresh_callback=token_refresh_callback,
+        drop_counter = drop_counter,
         ws_stop_event=ws_stop_event,
     )
     try:
@@ -613,6 +621,7 @@ class ZerodhaWebSocketClient:
         # Track last tick time for each batch
         self.batch_last_tick_time = {}  # batch_index -> last tick timestamp
         self.batch_lock = threading.Lock()  # Thread-safe updates
+        self.drop_counter = self.mp_context.Value('i', 0)   # shared integer, initial 0
 
     def _refresh_token(self):
         """Callback function to refresh token - runs in parent context"""
@@ -700,6 +709,7 @@ class ZerodhaWebSocketClient:
         batch = []
         last_flush = time.time()
         tick_data = None
+        self.last_consume_time = time.time()
         while not self.stop_event.is_set() or not self.data_queue.empty():
             try:
                 try:
@@ -810,6 +820,9 @@ class ZerodhaWebSocketClient:
                 p.join(timeout=5)
         # Refresh token
         self._refresh_token()
+        # Reset drop counter
+        with self.drop_counter.get_lock():
+            self.drop_counter.value = 0
         # Restart all processes
         for i, base_args in enumerate(process_args):
             full_args = base_args + (self.ws_stop_event,)
@@ -823,6 +836,8 @@ class ZerodhaWebSocketClient:
     def _monitor_processes(self, process_args):
         """Monitor and restart failed processes."""
         try:
+            last_drop_check = time.time()
+            last_drop_count = 0
             while not self.stop_event.is_set():
                 # --- Check external stop event safely ---
                 try:
@@ -874,7 +889,10 @@ class ZerodhaWebSocketClient:
                                     f"(>{FULL_RESTART_STALE_THRESHOLD}s) → triggering full restart"
                                 )
                                 self._restart_all_processes(process_args)
-                                return  # restart_all will re-enter monitor
+                                # Reset local drop monitoring variables to avoid false trigger
+                                last_drop_check = time.time()
+                                last_drop_count = self.drop_counter.value
+                                continue  # skip remaining checks this iteration
 
                         # Restart individual process
                         if i < len(self.ws_processes) and self.ws_processes[i] and self.ws_processes[i].is_alive():
@@ -897,23 +915,54 @@ class ZerodhaWebSocketClient:
                 # --- Full restart if all batches dead (optional) ---
                 # Every RECOVERY_COOLDOWN_SECONDS seconds, check total ticks across all processes
                 if int(time.time()) % RECOVERY_COOLDOWN_SECONDS == 0:
-                    total_ticks = sum(self.batch_last_tick_time.values())
-                    if total_ticks < 100 and not self._stop_requested:
-                        self.logger.error("🛑 🛑 🛑 🛑 All batches nearly dead → forcing full token refresh/restart")
-                        self._refresh_token()
-                        # Restart all processes
-                        for p in self.ws_processes:
-                            if p.is_alive():
-                                p.terminate()
-                        self.start()   # restart everything
-                        break
+                    active_batches = sum(1 for t in self.batch_last_tick_time.values()
+                                        if time.time() - t < STALE_THRESHOLD_SECONDS)
+                    if active_batches == 0 and not self._stop_requested:
+                        self.logger.error("🛑 All batches dead – forcing full restart")
+                        self._restart_all_processes(process_args)
+                        # reset local timers and continue
+                        last_drop_check = time.time()
+                        last_drop_count = self.drop_counter.value
+                        continue
                 
                 # Check that the processor thread is still alive
                 if hasattr(self, 'processor_thread') and not self.processor_thread.is_alive():
                     self.logger.error("🛑 🛑 🛑 🛑 Processor thread died! Restarting client...")
-                    self.stop()
-                    self.start()
+                    self._restart_all_processes(process_args)
+                    # reset local timers and continue
+                    last_drop_check = time.time()
+                    last_drop_count = self.drop_counter.value
                     break
+
+                # Monitor drop counter
+                if time.time() - last_drop_check >= DROP_MONITOR_INTERVAL:
+                    current_drops = self.drop_counter.value
+                    drops_since_last = current_drops - last_drop_count
+                    minutes = DROP_MONITOR_INTERVAL / 60.0
+                    drops_per_minute = drops_since_last / minutes if minutes > 0 else 0
+
+                    if drops_per_minute > MAX_DROPS_PER_MINUTE:
+                        self.logger.error(
+                            f"🚨 Excessive tick drops detected: {drops_since_last} drops in {DROP_MONITOR_INTERVAL}s "
+                            f"({drops_per_minute:.1f}/min). Triggering full restart."
+                        )
+                        self._restart_all_processes(process_args)
+                        # Reset local monitoring variables
+                        last_drop_check = time.time()
+                        last_drop_count = self.drop_counter.value
+                        continue
+
+                    # Reset for next interval
+                    last_drop_count = current_drops
+                    last_drop_check = time.time()
+
+                # If the thread is alive but stuck (e.g., deadlock on a lock), no recovery occurs.
+                # Add a watchdog that checks the last time a tick was successfully retrieved from data_queue
+                if time.time() - self.last_consume_time > STALE_THRESHOLD_SECONDS:
+                    self.logger.error("🛑 No ticks received for a long time – triggering restart")
+                    self._restart_all_processes(process_args)
+                    last_drop_check = time.time()
+                    last_drop_count = self.drop_counter.value
 
                 time.sleep(NETWORK_WAIT_TIME)
 
@@ -991,6 +1040,7 @@ class ZerodhaWebSocketClient:
                 0 if "PKDevTools_Default_Log_Level" not in os.environ.keys()
                 else int(os.environ["PKDevTools_Default_Log_Level"]),
                 self.token_refresh_callback,
+                self.drop_counter,
             )
             process_args.append(base_args)
 

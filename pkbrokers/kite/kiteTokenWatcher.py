@@ -1432,6 +1432,11 @@ class KiteTokenWatcher:
                 self.stop()
                 self.watch()
                 return
+            
+            if self.json_writer and not self.json_writer.process.is_alive():
+                self.logger.error("JSON writer process died – restarting")
+                self.json_writer.stop()
+                self.json_writer.start(kite_instruments=self._kite_instruments)
 
     def _update_candle_store(self, tick):
         """
