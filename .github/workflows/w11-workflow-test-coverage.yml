@@ -64,6 +64,8 @@ jobs:
   Build:
     name: Build and test/update coverage
     runs-on: ${{ matrix.os }}
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions:
       contents: write  # This grants write access to repository contents
     strategy:
@@ -231,6 +233,8 @@ jobs:
   Delete_Workflow_Run:
     runs-on: ubuntu-latest
     needs: [Build]
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     name: Delete workflow run
     steps:
       - uses: actions/checkout@v4

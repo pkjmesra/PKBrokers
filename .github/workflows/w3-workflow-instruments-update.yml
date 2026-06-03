@@ -47,6 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 358
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || 10 }}
       TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
     steps:

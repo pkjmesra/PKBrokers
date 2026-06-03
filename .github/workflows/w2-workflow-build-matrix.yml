@@ -68,6 +68,8 @@ jobs:
   check_should_run:
     runs-on: windows-latest
     name: Check latest commit
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     outputs:
       should_run: ${{ steps.should_run.outputs.should_run }}
     steps:
@@ -95,6 +97,8 @@ jobs:
     name: Prepare Version for PyPI
     needs: [check_should_run]
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions: write-all
     outputs:
       version: ${{ steps.vars.outputs.THIS_VERSION }}
@@ -141,6 +145,8 @@ jobs:
     name: Build Packages
     needs: [check_should_run, Prepare-Version, Call-python-publish-workflow]
     runs-on: ${{ matrix.os }}
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions: write-all
     outputs:
         version: ${{ needs.Prepare-Version.outputs.version }}
@@ -357,6 +363,8 @@ jobs:
   README_Update:
     runs-on: ubuntu-latest
     permissions: write-all
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       # actions: write
     needs: [Build]
     name: Updates latest README file
@@ -400,6 +408,8 @@ jobs:
   Cleanup:
     name: Clean up and delete old release
     runs-on: ${{ 'ubuntu-latest'}} #ubuntu-latest #windows-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions: write-all
     needs: [Build, README_Update]
     steps:

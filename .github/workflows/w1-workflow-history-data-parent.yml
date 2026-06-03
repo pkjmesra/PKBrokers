@@ -52,6 +52,8 @@ permissions:
 jobs:
   holiday-check:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     outputs:
       is_holiday: ${{ steps.check_holiday.outputs.is_holiday }}
     steps:
@@ -79,6 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 358
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '20' }}
       TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
     outputs:
@@ -246,6 +249,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 358
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || 20 }}
     steps:
     - name: Checkout code
@@ -366,6 +370,8 @@ jobs:
     needs: [holiday-check, get-kite-token]
     if: (needs.holiday-check.outputs.is_holiday == 'false' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && needs.get-kite-token.outputs.token_valid == 'false'
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
     - name: Token validation failed
       run: |

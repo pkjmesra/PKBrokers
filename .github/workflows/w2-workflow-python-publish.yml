@@ -75,6 +75,8 @@ jobs:
     if: github.repository == 'pkjmesra/PKBrokers'
     outputs:
       build: ${{ steps.check_build_trigger.outputs.build }}
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout PKBrokers
@@ -90,6 +92,8 @@ jobs:
   check_should_run:
       runs-on: windows-latest
       name: Check latest commit
+      env:
+        FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       permissions:
         contents: write  # This grants write access to repository contents
       outputs:
@@ -111,6 +115,8 @@ jobs:
   build_wheels:
     name: Build wheel for cp${{ matrix.python }}-${{ matrix.platform_id }}-${{ matrix.manylinux_image }}
     runs-on: ${{ matrix.os }}
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions:
       contents: write  # This grants write access to repository contents
 

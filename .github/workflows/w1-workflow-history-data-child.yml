@@ -83,6 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 358
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || 20 }}
       TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
       RETRY_COUNT: ${{ inputs.retry_count || 0 }}
@@ -1358,6 +1359,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 358
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || 20 }}
     steps:
     - name: Checkout code
@@ -1512,6 +1514,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || 20 }}
       TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
     steps:

@@ -50,6 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 300 # Set a timeout to prevent hanging runs
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PKDevTools_Default_Log_Level: ${{ github.event.inputs.logLevel || '30' }}
       TEL_SESSION_DATA: ${{ secrets.TEL_SESSION_DATA }}
       TRIGGERED_BY: ${{ github.event.inputs.triggered_by || 'schedule' }}
