@@ -830,7 +830,7 @@ class ZerodhaWebSocketClient:
         # Restart all processes
         for i, base_args in enumerate(new_process_args):
             full_args = base_args + (self.ws_stop_event,)
-            p = self.mp_context.Process(target=websocket_process_worker, args=full_args)
+            p = self.mp_context.Process(target=websocket_process_worker, args=(full_args,))
             p.daemon = True
             p.start()
             self.ws_processes[i] = p
@@ -879,7 +879,7 @@ class ZerodhaWebSocketClient:
                         self.logger.warning(f"⚠️ Websocket_index:{i} died (exitcode: {exitcode}), restarting...")
                         base_args = process_args[i]
                         full_args = base_args + (self.ws_stop_event,)
-                        new_p = self.mp_context.Process(target=websocket_process_worker, args=full_args)
+                        new_p = self.mp_context.Process(target=websocket_process_worker, args=(full_args,))
                         new_p.daemon = True
                         new_p.start()
                         self.ws_processes[i] = new_p

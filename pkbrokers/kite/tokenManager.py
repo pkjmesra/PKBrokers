@@ -30,6 +30,7 @@ import pickle
 import threading
 from PKDevTools.classes import Archiver
 from PKDevTools.classes.log import default_logger
+from pkbrokers.kite.examples.externals import kite_auth
 
 class TokenManager:
     _instance = None
@@ -128,6 +129,11 @@ class TokenManager:
                 return token
             else:
                 self.logger.error("🛑 🛑 🛑 🛑 Failed to obtain a valid token from bot")
+                token = kite_auth()  # Fallback to direct auth if bot fails
+                if token and len(token) >= 90:
+                    self._write_cache(token)
+                    self.logger.info("Token obtained via direct auth and cached")
+                    return token
                 return None
         finally:
             self._release_file_lock(lock_fd)
