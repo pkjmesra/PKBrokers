@@ -708,9 +708,9 @@ class ZerodhaWebSocketClient:
     def _process_ticks(self):
         """Process ticks from queue and store in database."""
         batch = []
+        self.last_consume_time = time.time()
         last_flush = time.time()
         tick_data = None
-        self.last_consume_time = time.time()
         while not self.stop_event.is_set() or not self.data_queue.empty():
             try:
                 try:
@@ -886,6 +886,10 @@ class ZerodhaWebSocketClient:
                         self.update_batch_tick_time(i)
 
                 current_time = time.time()
+                if current_time < self._initial_grace_period:
+                    # Skip stale checks during initial grace period
+                    time.sleep(NETWORK_WAIT_TIME)
+                    continue
                 # --- Check stale batches and restart ---
                 for i, batch_tokens in enumerate(self.token_batches):
                     last_tick = self.batch_last_tick_time.get(i, 0)
@@ -977,7 +981,7 @@ class ZerodhaWebSocketClient:
 
                 # If the thread is alive but stuck (e.g., deadlock on a lock), no recovery occurs.
                 # Add a watchdog that checks the last time a tick was successfully retrieved from data_queue
-                if time.time() - self.last_consume_time > STALE_THRESHOLD_SECONDS:
+                if self.last_consume_time and (time.time() - self.last_consume_time) > STALE_THRESHOLD_SECONDS:
                     self.logger.error("🛑 No ticks received for a long time – triggering restart")
                     self._restart_all_processes(process_args)
                     last_drop_check = time.time()
@@ -1013,7 +1017,7 @@ class ZerodhaWebSocketClient:
     def start(self):
         """Start WebSocket client with multiprocessing."""
         self.logger.debug("Starting Zerodha WebSocket client")
-
+        self._initial_grace_period = time.time() + STALE_THRESHOLD_SECONDS
         # Validate token before starting any processes
         from PKDevTools.classes.Environment import PKEnvironment
         token = PKEnvironment().KTOKEN
@@ -1078,6 +1082,9 @@ class ZerodhaWebSocketClient:
             p.start()
             self.ws_processes.append(p)
 
+        # Initialize batch_last_tick_time for all batches to current time
+        for i in range(num_batches):
+            self.update_batch_tick_time(i)
         self._monitor_processes(process_args)
 
     def stop(self):
