@@ -1510,6 +1510,21 @@ class KiteTokenWatcher:
         Raises:
             Exception: If WebSocket connection fails or token fetch fails
         """
+        max_token_retries = 5
+        for attempt in range(max_token_retries):
+            token = PKEnvironment().KTOKEN
+            if token and len(token) > 10:
+                break
+            self.logger.warning(f"⚠️ Token missing (attempt {attempt+1}/{max_token_retries}), refreshing...")
+            try:
+                from pkbrokers.kite.examples.externals import kite_auth
+                kite_auth()
+            except Exception as e:
+                self.logger.error(f"🛑 🛑 🛑 🛑 Token refresh failed: {e}")
+                time.sleep(30)
+        else:
+            self.logger.critical("🛑 🛑 🛑 🛑 Cannot obtain KTOKEN after retries. Exiting.")
+            return
         local_secrets = PKEnvironment().allSecrets
         self._db_instance = self._get_database()
 

@@ -810,28 +810,31 @@ class ZerodhaWebSocketClient:
             traceback.print_exc()
 
     def _restart_all_processes(self, process_args):
-        """Stop all WebSocket processes and restart them after refreshing token."""
-        self.logger.warning("🛑 Restarting all WebSocket processes due to persistent staleness")
-        # Stop all processes
+        self.logger.warning("⚠️ Full restart – recreating shared drop counter")
+        # Close old processes
         for i, p in enumerate(self.ws_processes):
             if p and p.is_alive():
-                self.logger.info(f"Terminating process {i} (PID {p.pid})")
                 p.terminate()
                 p.join(timeout=5)
+        # Create a new drop counter (old one may be corrupted)
+        self.drop_counter = self.mp_context.Value('i', 0)
         # Refresh token
         self._refresh_token()
-        # Reset drop counter
-        with self.drop_counter.get_lock():
-            self.drop_counter.value = 0
-        # Restart all processes
-        for i, base_args in enumerate(process_args):
+        # Rebuild process_args with the new drop_counter
+        new_process_args = []
+        for base in process_args:
+            # base is a tuple; we need to replace the drop_counter element (index 9)
+            base_list = list(base)
+            base_list[9] = self.drop_counter
+            new_process_args.append(tuple(base_list))
+        # Restart all processes using new_process_args
+        for i, base_args in enumerate(new_process_args):
             full_args = base_args + (self.ws_stop_event,)
-            p = self.mp_context.Process(target=websocket_process_worker, args=(full_args,))
+            p = self.mp_context.Process(target=websocket_process_worker, args=full_args)
             p.daemon = True
             p.start()
             self.ws_processes[i] = p
             self.update_batch_tick_time(i)
-            self.logger.info(f"Started new process for batch {i} (PID {p.pid})")
             
     def _monitor_processes(self, process_args):
         """Monitor and restart failed processes."""
@@ -964,6 +967,23 @@ class ZerodhaWebSocketClient:
                     last_drop_check = time.time()
                     last_drop_count = self.drop_counter.value
 
+                if not hasattr(self, '_restart_counter'):
+                    self._restart_counter = {}
+                proc = self.ws_processes[i]
+                if proc and not proc.is_alive():
+                    now = time.time()
+                    last = self._restart_counter.get(i, 0)
+                    if now - last < 60:
+                        count = self._restart_counter.get(f'{i}_count', 0) + 1
+                        if count > 3:
+                            self.logger.error(f"Process {i} restarting too often – triggering full restart")
+                            self._restart_all_processes(process_args)
+                            return
+                        self._restart_counter[f'{i}_count'] = count
+                    else:
+                        self._restart_counter[f'{i}_count'] = 1
+                    self._restart_counter[i] = now
+                    
                 time.sleep(NETWORK_WAIT_TIME)
 
         except Exception as e:
@@ -1004,6 +1024,9 @@ class ZerodhaWebSocketClient:
                 from pkbrokers.kite.examples.externals import kite_auth
                 kite_auth()
                 token = PKEnvironment().KTOKEN
+                if not token or len(token) < 10:
+                    self.logger.error("🛑 🛑 🛑 🛑 No valid KTOKENeven after kite_auth – cannot start WebSocket client")
+                    raise ValueError("STILL Missing KTOKEN")
             except Exception as e:
                 self.logger.error(f"🛑 🛑 🛑 🛑 Failed to refresh token: {e}")
                 return
