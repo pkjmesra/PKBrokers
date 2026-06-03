@@ -80,6 +80,10 @@ MAX_STALE_SECONDS = 120  # 2 minutes
 MAX_NETWORK_TIMEOUT = 20 # 20 seconds for network operations
 SECONDS_IN_1_MINUTE = 60  # 60 seconds
 
+# Define minimum file sizes (in bytes)
+DAILY_PKL_MIN_SIZE = 20 * 1024 * 1024  # 20 MB
+INTRADAY_PKL_MIN_SIZE = 0.2 * 1024 * 1024  # 0.2 MB
+
 # Holiday cache
 _holiday_cache: Optional[Dict[str, List[str]]] = None
 _holiday_cache_date: Optional[str] = None
@@ -1756,10 +1760,6 @@ class DataSharingManager:
             from PKDevTools.classes import Archiver
             _ , cache_file_name = Archiver.afterMarketStockDataExists()
             today_suffix = cache_file_name.replace(".pkl", "").replace("stock_data_", "")
-            
-            # Define minimum file sizes (in bytes)
-            DAILY_PKL_MIN_SIZE = 20 * 1024 * 1024  # 20 MB
-            INTRADAY_PKL_MIN_SIZE = 0.5 * 1024 * 1024  # 0.5 MB
             
             # Check for daily pkl with size validation
             daily_pkl = self.get_daily_pkl_path()
