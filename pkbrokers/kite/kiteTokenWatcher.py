@@ -83,7 +83,7 @@ JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 1
  # Large queues increase latency and memory pressure. They mask 
  # backpressure instead of solving the root cause. So, let's
  # keep it to 10k
-OPTIMAL_MAX_QUEUE_SIZE = 10000
+OPTIMAL_MAX_QUEUE_SIZE = 32767 if sys.platform.startswith("darwin") else 100000
 JSON_SAVE_INTERVAL = 120
 DATA_QUEUE_LOG_INTERVAL = 60
 STALE_THRESHOLD_SECONDS = 120

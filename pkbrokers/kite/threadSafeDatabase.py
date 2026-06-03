@@ -48,7 +48,7 @@ OPTIMAL_BATCH_SIZE = 500  # Adjust based on testing
  # Large queues increase latency and memory pressure. They mask 
  # backpressure instead of solving the root cause. So, let's
  # keep it to 10k or 50k
-OPTIMAL_MAX_QUEUE_SIZE = 50000  # Adjust based on testing
+OPTIMAL_MAX_QUEUE_SIZE = 32767 if sys.platform.startswith("darwin") else 100000
 MAX_CONNECTION_ATTEMPTS = 5
 MAX_TURSO_WRITERS = 8
 FLUSH_INTERVAL_SEC = 0.5

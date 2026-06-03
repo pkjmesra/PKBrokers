@@ -70,7 +70,7 @@ PING_TIMEOUT = 5
  # Large queues increase latency and memory pressure. They mask 
  # backpressure instead of solving the root cause. So, let's
  # keep it to 10k
-OPTIMAL_MAX_QUEUE_SIZE = 10000
+OPTIMAL_MAX_QUEUE_SIZE = 32767 if sys.platform.startswith("darwin") else 100000
 RECOVERY_COOLDOWN_SECONDS = 120
 HTTP_400_429_WAIT_TIME = 120
 STALE_THRESHOLD_SECONDS = 120
