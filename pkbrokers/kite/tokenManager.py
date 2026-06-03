@@ -128,12 +128,15 @@ class TokenManager:
                 self._save_update_environment(access_token=token)
                 return token
             else:
-                self.logger.error("🛑 🛑 🛑 🛑 Failed to obtain a valid token from bot")
-                token = kite_auth()  # Fallback to direct auth if bot fails
-                if token and len(token) >= 90:
-                    self._write_cache(token)
-                    self.logger.info("Token obtained via direct auth and cached")
-                    return token
+                self.logger.error("🛑 Failed to obtain a valid token from bot")
+                try:
+                    token = kite_auth()
+                    if token and len(token) >= 90:
+                        self._write_cache(token)
+                        self.logger.info("Token obtained via direct auth and cached")
+                        return token
+                except Exception as e:
+                    self.logger.error(f"Direct auth failed: {e}")
                 return None
         finally:
             self._release_file_lock(lock_fd)
