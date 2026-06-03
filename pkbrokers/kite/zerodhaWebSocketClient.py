@@ -606,6 +606,7 @@ class ZerodhaWebSocketClient:
         self.logger = default_logger()
         self.ws_stop_event = ws_stop_event
         self.logger.debug(f"ZerodhaWebSocketClient initialized")
+        self._restart_counter = {}
 
         self.mp_context = multiprocessing.get_context("spawn")
         # self.manager = self.mp_context.Manager()
@@ -810,24 +811,23 @@ class ZerodhaWebSocketClient:
             traceback.print_exc()
 
     def _restart_all_processes(self, process_args):
-        self.logger.warning("⚠️ Full restart – recreating shared drop counter")
-        # Close old processes
+        self.logger.warning("🛑 Full restart – recreating shared drop counter")
+        # Stop old processes
         for i, p in enumerate(self.ws_processes):
             if p and p.is_alive():
                 p.terminate()
                 p.join(timeout=5)
-        # Create a new drop counter (old one may be corrupted)
+        # Create a new drop counter
         self.drop_counter = self.mp_context.Value('i', 0)
         # Refresh token
         self._refresh_token()
-        # Rebuild process_args with the new drop_counter
+        # Rebuild process_args with new drop_counter
         new_process_args = []
         for base in process_args:
-            # base is a tuple; we need to replace the drop_counter element (index 9)
             base_list = list(base)
             base_list[9] = self.drop_counter
             new_process_args.append(tuple(base_list))
-        # Restart all processes using new_process_args
+        # Restart all processes
         for i, base_args in enumerate(new_process_args):
             full_args = base_args + (self.ws_stop_event,)
             p = self.mp_context.Process(target=websocket_process_worker, args=full_args)
@@ -835,6 +835,7 @@ class ZerodhaWebSocketClient:
             p.start()
             self.ws_processes[i] = p
             self.update_batch_tick_time(i)
+        return new_process_args
             
     def _monitor_processes(self, process_args):
         """Monitor and restart failed processes."""
@@ -856,14 +857,29 @@ class ZerodhaWebSocketClient:
                 # --- Restart dead processes ---
                 for i, p in enumerate(self.ws_processes):
                     if p and not p.is_alive():
-                        exitcode = p.exitcode if p else "Unknown"
+                        # Restart counter logic
+                        now = time.time()
+                        last = getattr(self, '_restart_counter', {}).get(i, 0)
+                        if now - last < 60:
+                            count = getattr(self, '_restart_counter', {}).get(f'{i}_count', 0) + 1
+                            if count > 3:
+                                self.logger.error(f"Process {i} restarting too often – triggering full restart")
+                                self._restart_all_processes(process_args)
+                                # Reset local monitoring variables
+                                last_drop_check = time.time()
+                                last_drop_count = self.drop_counter.value
+                                return   # exit monitor; restart_all will restart everything
+                            self._restart_counter[f'{i}_count'] = count
+                        else:
+                            self._restart_counter[f'{i}_count'] = 1
+                        self._restart_counter[i] = now
+
+                        # Now restart the process
+                        exitcode = p.exitcode
                         self.logger.warning(f"⚠️ Websocket_index:{i} died (exitcode: {exitcode}), restarting...")
                         base_args = process_args[i]
                         full_args = base_args + (self.ws_stop_event,)
-                        new_p = self.mp_context.Process(
-                            target=websocket_process_worker, 
-                            args=(full_args,)
-                        )
+                        new_p = self.mp_context.Process(target=websocket_process_worker, args=full_args)
                         new_p.daemon = True
                         new_p.start()
                         self.ws_processes[i] = new_p
@@ -966,24 +982,8 @@ class ZerodhaWebSocketClient:
                     self._restart_all_processes(process_args)
                     last_drop_check = time.time()
                     last_drop_count = self.drop_counter.value
-
-                if not hasattr(self, '_restart_counter'):
-                    self._restart_counter = {}
-                proc = self.ws_processes[i]
-                if proc and not proc.is_alive():
-                    now = time.time()
-                    last = self._restart_counter.get(i, 0)
-                    if now - last < 60:
-                        count = self._restart_counter.get(f'{i}_count', 0) + 1
-                        if count > 3:
-                            self.logger.error(f"Process {i} restarting too often – triggering full restart")
-                            self._restart_all_processes(process_args)
-                            return
-                        self._restart_counter[f'{i}_count'] = count
-                    else:
-                        self._restart_counter[f'{i}_count'] = 1
-                    self._restart_counter[i] = now
-                    
+                    continue
+                
                 time.sleep(NETWORK_WAIT_TIME)
 
         except Exception as e:
