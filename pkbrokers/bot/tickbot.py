@@ -525,7 +525,11 @@ class PKTickBot:
                 status_msg += f"  • Uptime: {stats.get('uptime_seconds', candle_store.get_stats().get('uptime_seconds', 0)):.0f}s\n"
                 timestamp = stats.get('last_tick_time', candle_store.get_stats().get('last_tick_time', None))
                 dt_timestamp = datetime.fromtimestamp(timestamp, tz=ist) if (timestamp and timestamp > 0) else timestamp
-                if dt_timestamp > PKDateUtilities.currentDateTime():
+                if isinstance(dt_timestamp, datetime) and dt_timestamp > PKDateUtilities.currentDateTime():
+                    # For some reason, at times, the timestamp can be in the future 
+                    # (possibly due to incorrect timestamps from source). In such cases, 
+                    # we will log a warning and use the current time instead to avoid 
+                    # future timestamps in the output.
                     dt_timestamp = dt_timestamp - timedelta(hours=5, minutes=30)
                 status_msg += f"  • Last Tick: {dt_timestamp}\n\n"
                 
@@ -706,7 +710,11 @@ class PKTickBot:
                     if isinstance(latest_time, time):
                         # Create a temporary datetime for calculation
                         temp_datetime = datetime.combine(datetime.today(), latest_time, tzinfo=KOLKATA_TZ)
-                        if temp_datetime > PKDateUtilities.currentDateTime():
+                        if isinstance(temp_datetime, datetime) and temp_datetime > PKDateUtilities.currentDateTime():
+                            # For some reason, at times, the latest_time can be in the future 
+                            # (possibly due to incorrect timestamps from source). In such cases, 
+                            # we will log a warning and use the current time instead to avoid 
+                            # future timestamps in the output.
                             adjusted_datetime = temp_datetime - timedelta(hours=5, minutes=30)
                             latest_time = adjusted_datetime.time()
                             self.logger.debug(f"Adjusted latest_time from original to {latest_time} (subtracted 5h30m)")

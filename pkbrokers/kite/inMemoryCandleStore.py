@@ -78,6 +78,7 @@ import pytz
 
 from PKDevTools.classes import Archiver
 from PKDevTools.classes.log import default_logger
+from PKDevTools.classes.PKDateUtilities import PKDateUtilities
 
 # Constants
 KOLKATA_TZ = pytz.timezone("Asia/Kolkata")
@@ -818,6 +819,12 @@ class InMemoryCandleStore:
                     
                     # Convert to ISO format string with timezone
                     dt = datetime.fromtimestamp(tick_time, tz=KOLKATA_TZ)
+                    if isinstance(dt, datetime) and dt > PKDateUtilities.currentDateTime():
+                        # For some reason, at times, the tick_time can be in the future 
+                        # (possibly due to incorrect timestamps from source). In such cases, 
+                        # we will log a warning and use the current time instead to avoid 
+                        # future timestamps in the output.
+                        dt = dt - timedelta(hours=5, minutes=30)
                     timestamp_iso = dt.isoformat()
                     
                     # Convert last_update to ISO format
