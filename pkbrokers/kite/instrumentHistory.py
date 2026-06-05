@@ -535,7 +535,7 @@ class KiteTickerHistory:
         interval: str = "day",
         oi: bool = True,
         continuous: bool = False,
-        max_retries: int = 10,
+        max_retries: int = 2,
         forceFetch=False,
         insertOnly=False,
     ) -> Dict:
@@ -552,7 +552,7 @@ class KiteTickerHistory:
             interval: Time interval (default: "day", see Historical_Interval enum)
             oi: Include open interest data (default: True)
             continuous: For continuous contracts (default: False)
-            max_retries: Maximum API retry attempts (default: 3)
+            max_retries: Maximum API retry attempts (default: 2)
             forceFetch: Bypass cache and force API fetch (default: False)
             insertOnly: Only insert new data without returning (default: False)
 
@@ -708,9 +708,11 @@ class KiteTickerHistory:
             except (requests.exceptions.RequestException, requests.exceptions.HTTPError) as e:
                 self.logger.error(f"🛑 🛑 🛑 🛑 {e}")
                 last_error = e
+                err_str = str(e).lower()
+                is_forbidden = "403 client error" in err_str or "forbidden" in err_str or "401" in err_str
                 if attempt < max_retries - 1:
-                    if response and response.status_code not in [400, 500]:
-                        if response.status_code in [401, 403]:
+                    if (response and response.status_code not in [400, 500]) or is_forbidden:
+                        if (response.status_code in [401, 403]) or is_forbidden:
                             self.logger.warning(f"Token expired (HTTP {response.status_code}), refreshing...")
                             # Invalidate cache so next get_valid_token() forces a fresh token
                             self._token_manager.invalidate_token()
