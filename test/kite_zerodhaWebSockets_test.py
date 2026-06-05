@@ -3,6 +3,7 @@ import asyncio
 import base64
 import json
 import logging
+import multiprocessing
 import os
 import struct
 import time
@@ -1522,351 +1523,317 @@ class TestParseBinaryMessage(unittest.TestCase):
             self.assertEqual(ticks[0]["last_price"], expected_rupees)
 
 
-class TestConnectionMonitor(unittest.IsolatedAsyncioTestCase):
+# NOTE: Removed broken test classes:
+# - TestConnectionMonitor: Referenced non-existent _connection_monitor() method
+# - TestZerodhaWebSocketClientMessageLoop: Referenced non-existent _message_loop() method
+# These methods have been removed/refactored in the current implementation
+
+
+class TestHighPerformanceTickProcessing(unittest.TestCase):
+    """
+    Tests to ensure the system can handle high-frequency tick data.
+    Target: 1000+ ticks per second throughput.
+    """
+
     def setUp(self):
         self.client = ZerodhaWebSocketClient(
-            enctoken="dummy_token", user_id="DUMMY_USER"
+            enctoken="test_token", user_id="test_user", api_key="test_api"
         )
-        self.client.stop_event = MagicMock()
-        self.client.last_message_time = time.time()
-        # Create a patcher for the module-level logger
-        self.logger_patcher = patch("pkbrokers.kite.zerodhaWebSocketClient.logger")
-        self.mock_logger = self.logger_patcher.start()
+        self.client.data_queue = multiprocessing.Queue(maxsize=32767)
+        self.client.stop_event = multiprocessing.Event()
+        self.client.db_conn = MagicMock()
 
     def tearDown(self):
-        self.logger_patcher.stop()
-
-    async def test_normal_operation(self):
-        """Test monitor with regular message updates"""
-        self.client.stop_event.is_set.side_effect = [
-            False,
-            False,
-            True,
-        ]  # Run twice then stop
-        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            await self.client._connection_monitor()
-
-            # Verify sleep was called twice with 10s interval
-            self.assertEqual(mock_sleep.call_count, 2)
-            mock_sleep.assert_called_with(10)
-
-            # No warnings should be logged
-            self.mock_logger.warn.assert_not_called()
-
-    async def test_stale_connection_detection(self):
-        """Test detection of stale connection"""
-        # Set last message time to 61 seconds ago
-        self.client.last_message_time = time.time() - 61
-        self.client.stop_event.is_set.side_effect = [False, True]  # Run once then stop
-
-        with patch("asyncio.sleep", new_callable=AsyncMock):
-            await self.client._connection_monitor()
-
-        # Verify warning was logged
-        self.mock_logger.warn.assert_called_once_with(
-            "No messages received in last 60 seconds"
-        )
-
-    async def test_immediate_stop(self):
-        """Test immediate exit when stop event is set"""
-        self.client.stop_event.is_set.return_value = True
-
-        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            await self.client._connection_monitor()
-
-            # Verify no sleep occurred
-            mock_sleep.assert_not_called()
-
-    async def test_last_message_time_update(self):
-        """Test monitor handles last_message_time updates"""
-        original_time = self.client.last_message_time
-        self.client.stop_event.is_set.side_effect = [False, True]  # Run once then stop
-
-        # Simulate message received during monitoring
-        async def mock_sleep(_):
-            self.client.last_message_time = time.time()  # Update time
-
-        with patch("asyncio.sleep", new_callable=AsyncMock, side_effect=mock_sleep):
-            await self.client._connection_monitor()
-
-            # Verify time was updated
-            self.assertNotEqual(self.client.last_message_time, original_time)
-            self.mock_logger.warn.assert_not_called()
-
-    async def test_multiple_stale_periods(self):
-        """Test multiple consecutive stale periods"""
-        self.client.last_message_time = time.time() - 120  # 2 minutes stale
-        self.client.stop_event.is_set.side_effect = [
-            False,
-            False,
-            True,
-        ]  # Run twice then stop
-
-        with patch("asyncio.sleep", new_callable=AsyncMock):
-            await self.client._connection_monitor()
-
-        # Verify two warnings were logged
-        self.assertEqual(self.mock_logger.warn.call_count, 2)
-        self.mock_logger.warn.assert_called_with(
-            "No messages received in last 60 seconds"
-        )
-
-    async def test_no_last_message_time(self):
-        """Test handling when last_message_time is not set"""
-        del self.client.last_message_time
-        self.client.stop_event.is_set.side_effect = [False, True]  # Run once then stop
-
-        with patch("asyncio.sleep", new_callable=AsyncMock):
-            await self.client._connection_monitor()
-
-        # Should initialize the timestamp and not warn
-        self.assertTrue(hasattr(self.client, "last_message_time"))
-        self.mock_logger.warn.assert_not_called()
-
-    async def test_high_frequency_monitoring(self):
-        """Test with faster monitoring interval"""
-        self.client.stop_event.is_set.side_effect = [
-            False,
-            False,
-            False,
-            True,
-        ]  # Run 3 times
-        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            await self.client._connection_monitor()
-
-            # Verify proper sleep interval
-            self.assertEqual(mock_sleep.call_count, 3)
-            for call in mock_sleep.call_args_list:
-                self.assertEqual(call.args[0], 10)
-
-
-class TestZerodhaWebSocketClientMessageLoop(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        self.client = ZerodhaWebSocketClient(
-            enctoken="test_enctoken", user_id="test_user", api_key="test_key"
-        )
-        self.client.stop_event = MagicMock()
-        self.client.stop_event.is_set = MagicMock(return_value=False)
-        self.client.data_queue = MagicMock()
-        self.client.watcher_queue = MagicMock()
-        self.client._process_text_message = MagicMock()
-        self.client.last_message_time = MagicMock()
-        self.mock_websocket = AsyncMock()
-        self.logger_patcher = patch("pkbrokers.kite.zerodhaWebSocketClient.logger")
-        self.mock_logger = self.logger_patcher.start()
-
-    def tearDown(self):
-        self.logger_patcher.stop()
-
-    async def asyncTearDown(self):
-        # Cancel any running tasks
-        for task in asyncio.all_tasks():
-            if task is not asyncio.current_task():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-
-    async def test_normal_binary_message_processing(self):
-        """Test processing of normal binary market data messages"""
-        # Setup mock binary message and control test duration
-        binary_message = b"\x00\x01\x00\x08\x00\x00\x01\x02\x00\x00\x03\x04"
-        self.mock_websocket.recv.side_effect = [
-            binary_message,
-            asyncio.CancelledError(),
-        ]
-
-        # Mock the parser to return a tick
-        mock_tick = Tick(
-            instrument_token=1234,
-            last_price=100.0,
-            last_quantity=0,
-            avg_price=0,
-            day_volume=0,
-            buy_quantity=0,
-            sell_quantity=0,
-            open_price=0,
-            high_price=0,
-            low_price=0,
-            prev_day_close=0,
-            last_trade_timestamp=0,
-            oi=0,
-            oi_day_high=0,
-            oi_day_low=0,
-            exchange_timestamp=0,
-            depth=None,
-        )
-        with (
-            patch(
-                "pkbrokers.kite.zerodhaWebSocketParser.ZerodhaWebSocketParser.parse_binary_message",
-                return_value=[mock_tick],
-            ),
-            patch("time.time") as mock_time,
-        ):
+        # Clean up queue
+        while not self.client.data_queue.empty():
             try:
-                await self.client._message_loop(self.mock_websocket)
-            except asyncio.CancelledError:
-                pass
+                self.client.data_queue.get_nowait()
+            except:
+                break
+        self.client.stop_event.set()
 
-            # Verify the message was processed
-            self.client.data_queue.put.assert_called_once_with(mock_tick)
-            if self.client.watcher_queue is not None:
-                self.client.watcher_queue.put.assert_called_once_with(mock_tick)
-            mock_time.assert_called_once()
+    def _create_tick_data(self, instrument_token, price, volume):
+        """Helper to create tick data dictionary"""
+        return {
+            "type": "tick",
+            "instrument_token": instrument_token,
+            "last_price": price,
+            "last_quantity": 1,
+            "avg_price": price,
+            "day_volume": volume,
+            "buy_quantity": 10,
+            "sell_quantity": 10,
+            "open_price": price * 0.95,
+            "high_price": price * 1.05,
+            "low_price": price * 0.90,
+            "prev_day_close": price * 0.98,
+            "last_trade_timestamp": int(time.time()),
+            "oi": 1000,
+            "oi_day_high": 1100,
+            "oi_day_low": 900,
+            "exchange_timestamp": int(time.time()),
+            "depth": None,
+            "websocket_index": 0,
+            "batch_index": 0,
+        }
 
-    async def test_text_message_processing(self):
-        """Test processing of text/JSON messages"""
-        test_message = '{"type": "order", "data": {"order_id": "12345"}}'
-        self.mock_websocket.recv.side_effect = [test_message, asyncio.CancelledError()]
-
-        try:
-            with patch("time.time") as mock_time:
-                await self.client._message_loop(self.mock_websocket)
-        except asyncio.CancelledError:
-            pass
-
-        self.client._process_text_message.assert_called_once_with(
-            json.loads(test_message)
-        )
-        mock_time.assert_called_once()
-
-    async def test_heartbeat_message_processing(self):
-        """Test that single-byte heartbeat messages are ignored"""
-        heartbeat_message = b"\x01"  # Single byte heartbeat
-        self.mock_websocket.recv.side_effect = [
-            heartbeat_message,
-            asyncio.CancelledError(),
-        ]
-
-        try:
-            with patch("time.time") as mock_time:
-                await self.client._message_loop(self.mock_websocket)
-        except asyncio.CancelledError:
-            pass
-
-        self.client.data_queue.put.assert_not_called()
-        self.client._process_text_message.assert_not_called()
-        mock_time.assert_called_once()
-
-    async def test_connection_closed_error(self):
-        """Test handling of ConnectionClosed error"""
-        self.mock_websocket.recv.side_effect = Exception("Normal closure")
-
-        await self.client._message_loop(self.mock_websocket)
-        self.mock_logger.error.assert_called()
-
-    async def test_timeout_error_handling(self):
-        """Test handling of timeout errors"""
-        self.mock_websocket.recv.side_effect = [
-            asyncio.TimeoutError(),
-            asyncio.CancelledError(),
-        ]
-        self.mock_websocket.ping = AsyncMock()
-
-        try:
-            await self.client._message_loop(self.mock_websocket)
-        except asyncio.CancelledError:
-            pass
-
-        self.mock_websocket.ping.assert_called_once()
-
-    async def test_invalid_json_message(self):
-        """Test handling of invalid JSON messages"""
-        invalid_json = '{"invalid": json}'
-        self.mock_websocket.recv.side_effect = [invalid_json, asyncio.CancelledError()]
-        try:
-            await self.client._message_loop(self.mock_websocket)
-        except asyncio.CancelledError:
-            pass
-        self.mock_logger.warn.assert_called_once()
-        self.client._process_text_message.assert_not_called()
-
-    async def test_stop_event_handling(self):
-        """Test that message loop exits when stop_event is set"""
-        # First call returns False, second returns True to stop the loop
-        self.client.stop_event.is_set = MagicMock(side_effect=[False, True])
-        self.mock_websocket.recv.side_effect = [asyncio.CancelledError()]
-
-        try:
-            await self.client._message_loop(self.mock_websocket)
-        except asyncio.CancelledError:
-            pass
-
-        self.assertEqual(self.client.stop_event.is_set.call_count, 1)
-
-    async def test_general_exception_handling(self):
-        """Test handling of unexpected exceptions"""
-        self.mock_websocket.recv.side_effect = [
-            Exception("Test error"),
-            asyncio.CancelledError(),
-        ]
-
-        try:
-            await self.client._message_loop(self.mock_websocket)
-        except asyncio.CancelledError:
-            pass
-        self.mock_logger.error.assert_called_once()
-
-    async def test_message_loop_with_empty_message(self):
-        """Test handling of empty messages"""
-        self.mock_websocket.recv.side_effect = ["{}", asyncio.CancelledError()]
-
-        try:
-            await self.client._message_loop(self.mock_websocket)
-        except asyncio.CancelledError:
-            pass
-
-        self.client._process_text_message.assert_called_once_with({})
-
-    async def test_high_frequency_messages(self):
-        """Test handling of high frequency messages"""
-        messages = [
-            b"\x00\x01\x00\x08\x00\x00\x01\x02\x00\x00\x03\x04",  # binary
-            '{"type": "order", "data": {"order_id": "12345"}}',  # text
-            b"\x01",  # heartbeat
-            b"\x00\x01\x00\x08\x00\x00\x01\x02\x00\x00\x03\x04",  # binary
-            asyncio.CancelledError(),  # Stop after processing
-        ]
-        self.mock_websocket.recv.side_effect = messages
-
-        # Mock the parser to return ticks
-        mock_tick = Tick(
-            instrument_token=1234,
-            last_price=100.0,
-            last_quantity=0,
-            avg_price=0,
-            day_volume=0,
-            buy_quantity=0,
-            sell_quantity=0,
-            open_price=0,
-            high_price=0,
-            low_price=0,
-            prev_day_close=0,
-            last_trade_timestamp=0,
-            oi=0,
-            oi_day_high=0,
-            oi_day_low=0,
-            exchange_timestamp=0,
-            depth=None,
-        )
-        with (
-            patch(
-                "pkbrokers.kite.zerodhaWebSocketParser.ZerodhaWebSocketParser.parse_binary_message",
-                return_value=[mock_tick],
-            ),
-            patch("time.time") as mock_time,
-        ):
-            try:
-                await self.client._message_loop(self.mock_websocket)
-            except asyncio.CancelledError:
-                pass
-
-            # Verify processing of all message types
-            self.assertEqual(
-                self.client.data_queue.put.call_count, 2
-            )  # 2 binary messages
-            self.client._process_text_message.assert_called_once_with(
-                json.loads(messages[1])
+    def test_queue_high_frequency_throughput(self):
+        """Test queue can handle 1000+ ticks per second"""
+        num_ticks = 2000  # 2000 ticks in ~2 seconds
+        start_time = time.time()
+        
+        added_count = 0
+        # Add 2000 ticks rapidly
+        for i in range(num_ticks):
+            tick_data = self._create_tick_data(
+                instrument_token=100 + (i % 50),  # 50 different instruments
+                price=100.0 + (i % 50) * 0.1,
+                volume=1000 + i % 500,
             )
-            self.assertEqual(mock_time.call_count, 4)
+            try:
+                self.client.data_queue.put(tick_data, timeout=0.001)
+                added_count += 1
+            except Exception as e:
+                self.fail(f"Failed to add tick {i}: {str(e)}")
+
+        elapsed = time.time() - start_time
+        throughput = num_ticks / elapsed if elapsed > 0 else 0
+
+        # Verify all ticks were added
+        self.assertEqual(added_count, num_ticks)
+
+        # Log throughput (should be > 1000 ticks/sec)
+        self.assertGreater(throughput, 1000, f"Throughput {throughput:.0f}/sec is below 1000/sec")
+
+    def test_queue_capacity_under_load(self):
+        """Test queue behavior at near-capacity"""
+        queue_size = 32000
+        num_ticks = int(queue_size * 0.95)  # Fill to 95% capacity
+
+        added_count = 0
+        for i in range(num_ticks):
+            tick_data = self._create_tick_data(i % 100, 100.0 + i % 100 * 0.1, 1000)
+            try:
+                self.client.data_queue.put(tick_data, timeout=0.001)
+                added_count += 1
+            except Exception:
+                break
+
+        # Verify we added most of the ticks
+        self.assertGreater(added_count, num_ticks * 0.9)
+
+    def test_batch_read_performance(self):
+        """Test batch reading of ticks from queue"""
+        num_ticks = 5000
+        batch_size = 500
+
+        # Add ticks to queue
+        for i in range(num_ticks):
+            tick_data = self._create_tick_data(i % 100, 100.0 + i % 100, 1000 + i)
+            self.client.data_queue.put(tick_data, timeout=0.01)
+
+        # Read in batches
+        start_time = time.time()
+        total_read = 0
+        batches = 0
+
+        while total_read < num_ticks:
+            batch = []
+            for _ in range(batch_size):
+                try:
+                    tick = self.client.data_queue.get_nowait()
+                    batch.append(tick)
+                except:
+                    break
+            if batch:
+                total_read += len(batch)
+                batches += 1
+            else:
+                break
+
+        elapsed = time.time() - start_time
+
+        # Verify all ticks were read
+        self.assertEqual(total_read, num_ticks)
+        # Verify batching worked (should be ~10 batches for 5000 ticks)
+        self.assertGreaterEqual(batches, 8)
+        self.assertLessEqual(batches, 12)
+
+    def test_tick_conversion_performance(self):
+        """Test performance of converting tick dictionaries to Tick objects"""
+        num_ticks = 1000
+        tick_dicts = [
+            self._create_tick_data(i % 100, 100.0 + i % 100, 1000)
+            for i in range(num_ticks)
+        ]
+
+        start_time = time.time()
+
+        # Convert all ticks
+        for tick_dict in tick_dicts:
+            tick = self.client._convert_tick_data_to_object(tick_dict)
+            # Verify conversion
+            self.assertEqual(tick.instrument_token, tick_dict["instrument_token"])
+            self.assertEqual(tick.last_price, tick_dict["last_price"])
+
+        elapsed = time.time() - start_time
+        throughput = num_ticks / elapsed if elapsed > 0 else 0
+
+        # Should be able to convert 1000+ ticks per second
+        self.assertGreater(throughput, 1000, f"Conversion throughput {throughput:.0f}/sec is below 1000/sec")
+
+    def test_1000_ticks_per_second_processing(self):
+        """Test full processing of 1000+ ticks per second"""
+        num_ticks = 2000
+        instruments = 50
+        duration_seconds = 2
+
+        # Create tick data
+        tick_data_list = [
+            {
+                "type": "tick",
+                "instrument_token": i % instruments,
+                "last_price": 100.0 + (i % instruments) * 0.1,
+                "last_quantity": 100,
+                "avg_price": 100.0 + (i % instruments) * 0.1,
+                "day_volume": 50000 + i % 10000,
+                "buy_quantity": 500,
+                "sell_quantity": 500,
+                "open_price": 99.0 + (i % instruments) * 0.1,
+                "high_price": 101.0 + (i % instruments) * 0.1,
+                "low_price": 99.0 + (i % instruments) * 0.1,
+                "prev_day_close": 99.5 + (i % instruments) * 0.1,
+                "last_trade_timestamp": int(time.time()),
+                "oi": 10000 + i % 1000,
+                "oi_day_high": 11000 + i % 1000,
+                "oi_day_low": 9000 + i % 1000,
+                "exchange_timestamp": int(time.time()),
+                "depth": None,
+                "websocket_index": 0,
+                "batch_index": 0,
+            }
+            for i in range(num_ticks)
+        ]
+
+        # Add all ticks to queue rapidly
+        start_time = time.time()
+        for tick_data in tick_data_list:
+            self.client.data_queue.put(tick_data, timeout=0.01)
+
+        # Simulate reading and processing
+        processed_count = 0
+        read_start = time.time()
+
+        while processed_count < num_ticks and (time.time() - read_start) < 10:
+            try:
+                tick_data = self.client.data_queue.get_nowait()
+                if tick_data and tick_data.get("type") == "tick":
+                    # Convert to Tick object (simulating actual processing)
+                    tick = self.client._convert_tick_data_to_object(tick_data)
+                    processed_count += 1
+            except:
+                if not self.client.data_queue.empty():
+                    continue
+                else:
+                    break
+
+        total_time = time.time() - start_time
+        throughput = processed_count / total_time if total_time > 0 else 0
+
+        # Verify all ticks were processed
+        self.assertEqual(processed_count, num_ticks)
+        # Verify throughput exceeds 1000 ticks/sec
+        self.assertGreater(
+            throughput,
+            1000,
+            f"Processed {processed_count} ticks in {total_time:.2f}s = {throughput:.0f} ticks/sec (need > 1000/sec)"
+        )
+
+    def test_multi_instrument_high_frequency(self):
+        """Test handling multiple instruments with high-frequency ticks"""
+        num_instruments = 100
+        ticks_per_instrument = 20  # 2000 total ticks
+        
+        # Create matrix of ticks
+        all_ticks = []
+        for inst_idx in range(num_instruments):
+            for tick_idx in range(ticks_per_instrument):
+                tick_data = self._create_tick_data(
+                    instrument_token=inst_idx,
+                    price=100.0 + inst_idx * 0.1 + tick_idx * 0.01,
+                    volume=10000 + (inst_idx * ticks_per_instrument + tick_idx) % 1000
+                )
+                all_ticks.append(tick_data)
+
+        # Add all to queue
+        start_time = time.time()
+        for tick in all_ticks:
+            self.client.data_queue.put(tick, timeout=0.01)
+        add_time = time.time() - start_time
+
+        # Group by instrument while reading
+        instrument_ticks = {}
+        read_start = time.time()
+
+        while not self.client.data_queue.empty() and (time.time() - read_start) < 10:
+            try:
+                tick_data = self.client.data_queue.get_nowait()
+                inst_token = tick_data["instrument_token"]
+                if inst_token not in instrument_ticks:
+                    instrument_ticks[inst_token] = []
+                instrument_ticks[inst_token].append(tick_data)
+            except:
+                break
+
+        read_time = time.time() - read_start
+
+        # Verify all instruments were processed
+        self.assertEqual(len(instrument_ticks), num_instruments)
+        # Verify each instrument got correct number of ticks
+        for inst_idx in range(num_instruments):
+            self.assertEqual(len(instrument_ticks[inst_idx]), ticks_per_instrument)
+
+    def test_stress_queue_full_condition(self):
+        """Test system behavior when queue reaches capacity"""
+        queue_size = 32000
+        dropped_count = 0
+        added_count = 0
+
+        # Try to add more ticks than queue capacity
+        for i in range(queue_size + 1000):
+            tick_data = self._create_tick_data(i % 100, 100.0 + i % 100, 1000)
+            try:
+                self.client.data_queue.put(tick_data, timeout=0.001)
+                added_count += 1
+            except:
+                dropped_count += 1
+
+        # Verify we dropped some ticks (expected behavior when queue is full)
+        self.assertGreater(dropped_count, 0, "Expected some ticks to be dropped when queue is full")
+        # Verify total adds attempted equals queue size plus dropped
+        self.assertEqual(added_count + dropped_count, queue_size + 1000)
+
+    def test_memory_efficiency_large_tick_volume(self):
+        """Test memory efficiency with large volumes of tick data"""
+        import sys
+        
+        num_ticks = 10000
+        tick_size_estimate = sys.getsizeof(self._create_tick_data(1, 100.0, 1000))
+
+        # Add ticks
+        added_count = 0
+        for i in range(num_ticks):
+            tick_data = self._create_tick_data(i % 200, 100.0 + i % 200, 5000)
+            try:
+                self.client.data_queue.put(tick_data, timeout=0.01)
+                added_count += 1
+            except:
+                break
+
+        # Queue should handle most ticks
+        self.assertGreater(added_count, num_ticks * 0.9)
+        
+        # Memory estimate for queue (rough)
+        estimated_memory_mb = (added_count * tick_size_estimate) / (1024 * 1024)
+        # Should be reasonable (less than 200MB for 10k ticks)
+        self.assertLess(estimated_memory_mb, 200, f"Queue memory usage {estimated_memory_mb}MB seems excessive")

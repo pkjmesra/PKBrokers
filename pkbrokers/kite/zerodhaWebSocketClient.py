@@ -708,6 +708,80 @@ class ZerodhaWebSocketClient:
             batch_index=tick_data.get("batch_index", -1),
         )
 
+    def _parse_binary_message(self, message: bytes) -> list:
+        """Parse binary WebSocket message - wrapper around ZerodhaWebSocketParser."""
+        return ZerodhaWebSocketParser.parse_binary_message(message)
+
+    def _parse_single_packet(self, packet: bytes):
+        """Parse single binary packet and return as Tick object."""
+        return ZerodhaWebSocketParser._parse_single_packet(packet)
+
+    def _parse_binary_packet(self, packet: bytes) -> dict:
+        """Parse single binary packet and return as dictionary (for backward compatibility)."""
+        tick = ZerodhaWebSocketParser._parse_single_packet(packet)
+        if tick is None:
+            return None
+        # Convert Tick object to dictionary
+        return {
+            "instrument_token": tick.instrument_token,
+            "last_price": tick.last_price,
+            "last_quantity": tick.last_quantity,
+            "avg_price": tick.avg_price,
+            "day_volume": tick.day_volume,
+            "buy_quantity": tick.buy_quantity,
+            "sell_quantity": tick.sell_quantity,
+            "open_price": tick.open_price,
+            "high_price": tick.high_price,
+            "low_price": tick.low_price,
+            "prev_day_close": tick.prev_day_close,
+            "last_trade_timestamp": tick.last_trade_timestamp,
+            "oi": tick.oi,
+            "oi_day_high": tick.oi_day_high,
+            "oi_day_low": tick.oi_day_low,
+            "exchange_timestamp": tick.exchange_timestamp,
+            "depth": tick.depth,
+            "websocket_index": tick.websocket_index,
+            "batch_index": tick.batch_index,
+        }
+
+    def _build_websocket_url(self):
+        """Build WebSocket URL - delegates to WebSocketProcess for testing."""
+        if self.api_key is None or len(self.api_key) == 0:
+            raise ValueError("API Key must not be blank")
+        if self.user_id is None or len(self.user_id) == 0:
+            raise ValueError("user_id must not be blank")
+        if self.enctoken is None or len(self.enctoken) == 0:
+            raise ValueError("enctoken must not be blank")
+
+        base_params = {
+            "api_key": self.api_key,
+            "user_id": self.user_id,
+            "enctoken": quote(self.enctoken),
+            "uid": str(int(time.time() * 1000)),
+            "user-agent": "kite3-web",
+            "version": "3.0.0",
+        }
+        query_string = "&".join([f"{k}={v}" for k, v in base_params.items()])
+        return f"wss://ws.zerodha.com/?{query_string}"
+
+    def _build_headers(self):
+        """Generate WebSocket headers."""
+        ws_key = base64.b64encode(os.urandom(16)).decode("utf-8")
+        return {
+            "Host": "ws.zerodha.com",
+            "Connection": "Upgrade",
+            "Pragma": "no-cache",
+            "Cache-Control": "no-cache",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+            "Upgrade": "websocket",
+            "Origin": "https://kite.zerodha.com",
+            "Sec-WebSocket-Version": "13",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Sec-WebSocket-Key": ws_key,
+            "Sec-WebSocket-Extensions": "permessage-deflate; client_max_window_bits",
+        }
+
     def _process_ticks(self):
         """Process ticks from queue in batches to reduce overhead."""
         batch = []
