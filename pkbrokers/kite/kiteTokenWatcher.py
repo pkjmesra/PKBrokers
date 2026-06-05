@@ -75,6 +75,8 @@ from pkbrokers.kite.inMemoryCandleStore import get_candle_store
 # Optimal batch size depends on your tick frequency
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
 JSON_WRITER_BATCH_SIZE = 1000  # batch size for processing ticks
+BATCH_SIZE = 500          # process 500 ticks before flushing
+BATCH_INTERVAL = 1.0      # or every second
 OPTIMAL_BATCH_TICK_WAIT_TIME_SEC = 30
 DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 0.5
 JSON_PROCESS_SPIN_OFF_WAIT_TIME_SEC = 1
@@ -1328,7 +1330,7 @@ class KiteTokenWatcher:
         # Add health monitor
         self.health_monitor = None
         self.user_id = None  # Store for recovery
-        self.executor = ThreadPoolExecutor(max_workers=2)  # one for DB, one for JSON
+        self.executor = ThreadPoolExecutor(max_workers=4 if sys.platform.startswith("darwin") else 8)
         self._tick_buffer = []  # local batch buffer
         # self._last_flush_time = time.time()
         # self._buffer_lock = threading.Lock()
@@ -1592,6 +1594,15 @@ class KiteTokenWatcher:
                 target=self._process_ticks, daemon=True, name="TickProcessor"
             )
             self._processing_thread.start()
+
+            self._processing_thread2 = threading.Thread(
+                target=self._process_ticks, daemon=True, name="TickProcessor2"
+            )
+            self._processing_thread2.start()
+            self._processing_thread3 = threading.Thread(
+                target=self._process_ticks, daemon=True, name="TickProcessor3"
+            )
+            self._processing_thread3.start()
 
             self.logger.debug("Started tick processing and database threads")
             self.client.start()
@@ -1893,8 +1904,6 @@ class KiteTokenWatcher:
         from pkbrokers.kite.ticks import Tick
         from queue import Empty
 
-        BATCH_SIZE = 500          # process 500 ticks before flushing
-        BATCH_INTERVAL = 1.0      # or every second
         _tick_buffer = []         # local buffer for ticks (list of Tick objects)
 
         while not self._shutdown_event.is_set():
@@ -2379,6 +2388,14 @@ class KiteTokenWatcher:
             self._processing_thread.join(timeout=thread_timeout)
             if self._processing_thread.is_alive():
                 self.logger.warning("⚠️ Processing thread did not terminate gracefully")
+        if self._processing_thread2 and self._processing_thread2.is_alive():
+            self._processing_thread2.join(timeout=thread_timeout)
+            if self._processing_thread2.is_alive():
+                self.logger.warning("⚠️ Processing thread2 did not terminate gracefully")
+        if self._processing_thread3 and self._processing_thread3.is_alive():
+            self._processing_thread3.join(timeout=thread_timeout)
+            if self._processing_thread3.is_alive():
+                self.logger.warning("⚠️ Processing thread3 did not terminate gracefully")
 
         # if self._db_thread and self._db_thread.is_alive():
         #     self._db_thread.join(timeout=thread_timeout)

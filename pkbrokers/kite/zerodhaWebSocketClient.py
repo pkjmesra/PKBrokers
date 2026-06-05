@@ -73,13 +73,14 @@ PING_TIMEOUT = 5
 OPTIMAL_MAX_QUEUE_SIZE = 32767 if sys.platform.startswith("darwin") else 100000
 RECOVERY_COOLDOWN_SECONDS = 120
 HTTP_400_429_WAIT_TIME = 120
-STALE_THRESHOLD_SECONDS = 120
+STALE_THRESHOLD_SECONDS = 300
 FULL_RESTART_STALE_THRESHOLD = 600
 DROP_MONITOR_INTERVAL = 30          # seconds between checking drops
 MAX_DROPS_PER_MINUTE = 50           # threshold for recovery
 NETWORK_WAIT_TIME = 5
 GENERAL_WAIT_TIME = 1
-DB_BATCH_SIZE = 1000
+DB_BATCH_SIZE = 5000
+BATCH_READ_SIZE = 500               # read up to 500 ticks per iteration
 OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
@@ -391,7 +392,9 @@ class WebSocketProcess:
                                             break
                                         except Exception:
                                             if attempt == max_retries - 1:
-                                                self.logger.warning(f"⚠️ Queue full, dropping tick after {max_retries} attempts")
+                                                if not hasattr(self, '_last_queue_full_log') or time.time() - self._last_queue_full_log > 60:
+                                                    self.logger.warning(f"⚠️ Queue full, dropping tick after {max_retries} attempts")
+                                                    self._last_queue_full_log = time.time()
                                                 # Optionally increment a shared counter
                                                 if self.drop_counter is not None:
                                                     with self.drop_counter.get_lock():
@@ -706,88 +709,113 @@ class ZerodhaWebSocketClient:
         )
 
     def _process_ticks(self):
-        """Process ticks from queue and store in database."""
+        """Process ticks from queue in batches to reduce overhead."""
         batch = []
         self.last_consume_time = time.time()
         last_flush = time.time()
         tick_data = None
+
         while not self.stop_event.is_set() or not self.data_queue.empty():
             try:
-                try:
-                    tick_data = self.data_queue.get(timeout=1)
-                except queue.Empty:
-                    if batch and (time.time() - last_flush > 5):
+                # --- Read multiple ticks at once ---
+                ticks_batch = []
+                for _ in range(BATCH_READ_SIZE):
+                    try:
+                        tick_data = self.data_queue.get(timeout=0.01)
+                    except queue.Empty:
+                        if batch and (time.time() - last_flush > 5):
+                            self._flush_to_db(batch)
+                            batch = []
+                            last_flush = time.time()
+                            break
+                    except ValueError as e:
+                        if "multiprocessing.queues.Queue object" in str(e) and "is closed" in str(e):
+                            self.stop_event.set()
+                            self.stop()
+                            break
+                        continue
+                    if tick_data and tick_data.get("type") == "tick":
+                        ticks_batch.append(tick_data)
+                    else:
+                        # skip non‑tick data
+                        pass
+
+                if not ticks_batch:
+                    # No ticks, small sleep to avoid busy loop
+                    time.sleep(0.001)
+                    continue
+
+                # --- Process each tick in the batch ---
+                for tick_data in ticks_batch:
+                    # Update batch timestamp
+                    batch_index = tick_data.get("websocket_index", -1)
+                    if batch_index >= 0:
+                        self.update_batch_tick_time(batch_index)
+
+                    if tick_data["exchange_timestamp"] is None:
+                        tick_data["exchange_timestamp"] = PKDateUtilities.currentDateTimestamp()
+
+                    # Convert back to Tick object
+                    tick = self._convert_tick_data_to_object(tick_data)
+                    if tick.exchange_timestamp is None:
+                        tick.exchange_timestamp = PKDateUtilities.currentDateTimestamp()
+
+                    processed = {
+                        "instrument_token": tick.instrument_token,
+                        "timestamp": datetime.fromtimestamp(
+                            tick.exchange_timestamp, tz=pytz.timezone("Asia/Kolkata")
+                        ),
+                        "last_price": tick.last_price or 0,
+                        "day_volume": tick.day_volume or 0,
+                        "oi": tick.oi or 0,
+                        "buy_quantity": tick.buy_quantity or 0,
+                        "sell_quantity": tick.sell_quantity or 0,
+                        "high_price": tick.high_price or 0,
+                        "low_price": tick.low_price or 0,
+                        "open_price": tick.open_price or 0,
+                        "prev_day_close": tick.prev_day_close or 0,
+                        "websocket_index": tick.websocket_index,
+                        "batch_index": tick.batch_index,
+                    }
+
+                    if tick.depth:
+                        processed["depth"] = {
+                            "bid": [
+                                {
+                                    "price": b.get("price", 0) if isinstance(b, dict) else (b.price or 0),
+                                    "quantity": b.get("quantity", 0) if isinstance(b, dict) else (b.quantity or 0),
+                                    "orders": b.get("orders", 0) if isinstance(b, dict) else (b.orders or 0),
+                                }
+                                for b in tick.depth.get("bid", [])[:5]
+                            ],
+                            "ask": [
+                                {
+                                    "price": a.get("price", 0) if isinstance(a, dict) else (a.price or 0),
+                                    "quantity": a.get("quantity", 0) if isinstance(a, dict) else (a.quantity or 0),
+                                    "orders": a.get("orders", 0) if isinstance(a, dict) else (a.orders or 0),
+                                }
+                                for a in tick.depth.get("ask", [])[:5]
+                            ],
+                        }
+
+                    # Add to local batch for database flush
+                    batch.append(processed)
+
+                    # Send to watcher queue (KiteTokenWatcher)
+                    if self.watcher_queue is not None:
+                        self.watcher_queue.put(tick)
+
+                    # Flush to database if batch size reached
+                    if len(batch) >= DB_BATCH_SIZE:
                         self._flush_to_db(batch)
                         batch = []
                         last_flush = time.time()
-                except ValueError as e:
-                    if "multiprocessing.queues.Queue object" in str(e) and "is closed" in str(e):
-                        self.stop_event.set()
-                        self.stop()
-                        break
-                    continue
 
-                if tick_data is None or tick_data.get("type") != "tick":
-                    continue
-                
-                # Get batch index from tick data
-                batch_index = tick_data.get("websocket_index", -1)
-                if batch_index >= 0:
-                    self.update_batch_tick_time(batch_index)
-                
-                if tick_data["exchange_timestamp"] is None:
-                    tick_data["exchange_timestamp"] = (
-                        PKDateUtilities.currentDateTimestamp()
-                    )
-                # Convert back to Tick object for processing
-                tick = self._convert_tick_data_to_object(tick_data)
+                # Update last consume time after processing the batch
+                self.last_consume_time = time.time()
 
-                if tick.exchange_timestamp is None:
-                    tick.exchange_timestamp = PKDateUtilities.currentDateTimestamp()
-
-                processed = {
-                    "instrument_token": tick.instrument_token,
-                    "timestamp": datetime.fromtimestamp(
-                        tick.exchange_timestamp, tz=pytz.timezone("Asia/Kolkata")
-                    ),
-                    "last_price": tick.last_price or 0,
-                    "day_volume": tick.day_volume or 0,
-                    "oi": tick.oi or 0,
-                    "buy_quantity": tick.buy_quantity or 0,
-                    "sell_quantity": tick.sell_quantity or 0,
-                    "high_price": tick.high_price or 0,
-                    "low_price": tick.low_price or 0,
-                    "open_price": tick.open_price or 0,
-                    "prev_day_close": tick.prev_day_close or 0,
-                    "websocket_index": tick.websocket_index,
-                    "batch_index": tick.batch_index,
-                }
-
-                if tick.depth:
-                    processed["depth"] = {
-                        "bid": [
-                            {
-                                "price": b.get("price", 0) if isinstance(b, dict) else (b.price or 0),
-                                "quantity": b.get("quantity", 0) if isinstance(b, dict) else (b.quantity or 0),
-                                "orders": b.get("orders", 0) if isinstance(b, dict) else (b.orders or 0),
-                            }
-                            for b in tick.depth.get("bid", [])[:5]
-                        ],
-                        "ask": [
-                            {
-                                "price": a.get("price", 0) if isinstance(a, dict) else (a.price or 0),
-                                "quantity": a.get("quantity", 0) if isinstance(a, dict) else (a.quantity or 0),
-                                "orders": a.get("orders", 0) if isinstance(a, dict) else (a.orders or 0),
-                            }
-                            for a in tick.depth.get("ask", [])[:5]
-                        ],
-                    }
-                batch.append(processed)
-
-                if self.watcher_queue is not None:
-                    self.watcher_queue.put(tick)
-
-                if len(batch) >= DB_BATCH_SIZE:
+                # Periodic flush for remaining ticks
+                if batch and (time.time() - last_flush > 5):
                     self._flush_to_db(batch)
                     batch = []
                     last_flush = time.time()
@@ -795,6 +823,7 @@ class ZerodhaWebSocketClient:
             except Exception as e:
                 self.logger.error(f"🛑 🛑 🛑 🛑 Error processing ticks: {str(e)}")
 
+        # Final flush
         if batch:
             self._flush_to_db(batch)
 
