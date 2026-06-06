@@ -1539,7 +1539,7 @@ class TestHighPerformanceTickProcessing(unittest.TestCase):
         self.client = ZerodhaWebSocketClient(
             enctoken="test_token", user_id="test_user", api_key="test_api"
         )
-        self.client.data_queue = multiprocessing.Queue(maxsize=32767)
+        self.client.data_queue = Queue(maxsize=32767)
         self.client.stop_event = multiprocessing.Event()
         self.client.db_conn = MagicMock()
 
@@ -1775,15 +1775,16 @@ class TestHighPerformanceTickProcessing(unittest.TestCase):
         instrument_ticks = {}
         read_start = time.time()
 
-        while not self.client.data_queue.empty() and (time.time() - read_start) < 10:
+        while True:
             try:
                 tick_data = self.client.data_queue.get_nowait()
-                inst_token = tick_data["instrument_token"]
-                if inst_token not in instrument_ticks:
-                    instrument_ticks[inst_token] = []
-                instrument_ticks[inst_token].append(tick_data)
-            except:
+            except Empty:
                 break
+
+            inst_token = tick_data["instrument_token"]
+            if inst_token not in instrument_ticks:
+                instrument_ticks[inst_token] = []
+            instrument_ticks[inst_token].append(tick_data)
 
         read_time = time.time() - read_start
 

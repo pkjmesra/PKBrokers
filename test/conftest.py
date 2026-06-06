@@ -27,9 +27,10 @@ class MockPKEnvironment:
         self.ZH_AUTH_TOKEN = 'test_auth'
     
     def __getattr__(self, name):
-        if hasattr(self, name):
-            return super().__getattribute__(name)
-        return None
+        try:
+            return object.__getattribute__(self, name)
+        except AttributeError:
+            return None
 
 
 # Patch PKEnvironment before modules import it

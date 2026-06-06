@@ -51,3 +51,4 @@ kite/*.txt
 *.sh
 *.cache
 *.log
+*.pid
