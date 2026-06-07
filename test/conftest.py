@@ -20,17 +20,20 @@ class MockPKEnvironment:
     def __init__(self):
         self.DB_TYPE = 'local'
         self.DB_TICKS = 0
-        self.KTOKEN = 'test_token'
+        self.KTOKEN = '_test_token_length_90__test_token_length_90__test_token_length_90__test_token_length_90__test_token_length_90_'
         self.KUSER = 'test_user'
         self.allSecrets = {}
         self.ZH_CLIENT_CODE = 'test_code'
         self.ZH_AUTH_TOKEN = 'test_auth'
     
+    def _load_secrets(self, *args, **kwargs):
+        pass
+
     def __getattr__(self, name):
         try:
             return object.__getattribute__(self, name)
         except AttributeError:
-            return None
+            return '0'
 
 
 # Patch PKEnvironment before modules import it

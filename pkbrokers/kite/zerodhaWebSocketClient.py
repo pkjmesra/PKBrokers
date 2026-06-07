@@ -608,6 +608,7 @@ class ZerodhaWebSocketClient:
         self.api_key = api_key
         self.logger = default_logger()
         self.ws_stop_event = ws_stop_event
+        self.ws_url = self._build_websocket_url()
         self.logger.debug(f"ZerodhaWebSocketClient initialized")
         self._restart_counter = {}
 
@@ -808,7 +809,7 @@ class ZerodhaWebSocketClient:
                             self.stop()
                             break
                         continue
-                    if tick_data and tick_data.get("type") == "tick":
+                    if tick_data and (isinstance(tick_data, dict) and tick_data.get("type") == "tick") or (isinstance(tick_data, Tick)):
                         ticks_batch.append(tick_data)
                     else:
                         # skip non‑tick data

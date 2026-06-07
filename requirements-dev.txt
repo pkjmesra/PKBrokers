@@ -13,6 +13,7 @@ pip
 pip-chill
 pyinstaller
 pytest
+pytest-asyncio
 pytest-cov
 pytest-mock
 pytoml

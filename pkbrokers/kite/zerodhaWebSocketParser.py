@@ -363,8 +363,8 @@ class ZerodhaWebSocketParser:
                     data["exchange_timestamp"] = PKDateUtilities.currentDateTimestamp()
                 offset += 4
 
-            # Parse market depth if available (64-184 bytes)
-            if len(packet) >= 184:
+            # Parse market depth if available (64-164 bytes)
+            if len(packet) >= 65: # 64 - 184 bytes reserved for depth but we can have partial depth data
                 depth = {"bid": [], "ask": []}
 
                 # Parse bids (5 entries)

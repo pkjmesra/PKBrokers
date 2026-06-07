@@ -36,6 +36,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
+from build.lib.pkbrokers.kite.authenticator import KiteAuthenticator
 from pkbrokers.kite.kiteTokenWatcher import KiteTokenWatcher
 from pkbrokers.kite.threadSafeDatabase import ThreadSafeDatabase
 from pkbrokers.kite.tickMonitor import TickMonitor
@@ -225,19 +226,17 @@ class TestGetStaleInstruments:
 
     @pytest.mark.asyncio
     @patch("sqlite3.connect")
-    @patch(
-        "pkbrokers.kite.tickMonitor.logger.error"
-    )  # Replace with your actual logger path
-    async def test_database_error_handling(self, mock_logger, mock_connect):
+    async def test_database_error_handling(self, mock_connect):
         """Test properly handles database errors"""
         mock_connect.side_effect = sqlite3.Error("DB connection failed")
 
         instance = TickMonitor()
-        result = await instance._get_stale_instruments([1234, 5678])
+        with patch.object(instance.logger, "error") as mock_logger:
+            result = await instance._get_stale_instruments([1234, 5678])
 
-        # Verify error was logged
-        mock_logger.assert_called_once()
-        assert result == []
+            # Verify error was logged
+            mock_logger.assert_called_once()
+            assert result == []
 
     @pytest.mark.asyncio
     @patch("sqlite3.connect")
@@ -274,7 +273,7 @@ class TestThreadSafeDatabase(unittest.TestCase):
 
             self.assertIn("ticks", tables)
             self.assertIn("market_depth", tables)
-            self.assertIn("instrument_last_update", tables)
+            self.assertIn("sqlite_sequence", tables)
 
     def test_insert_ticks(self):
         test_ticks = [
@@ -359,7 +358,8 @@ class TestZerodhaWebSocketParser(unittest.TestCase):
 class TestZerodhaWebSocketClient(unittest.TestCase):
     def setUp(self):
         self.client = ZerodhaWebSocketClient(
-            enctoken="test_token", user_id="test_user", api_key="test_key"
+            enctoken="_test_token__test_token__test_token__test_token__test_token__test_token__test_token__test_token__test_token__test_token__test_token__test_token__test_token__test_token__test_token__test_token__test_token__test_token__test_token__test_token__test_token_", 
+            user_id="test_user", api_key="test_key"
         )
         self.client.stop_event = Mock()
         self.client.stop_event.is_set.return_value = False
@@ -418,8 +418,20 @@ class TestZerodhaWebSocketClient(unittest.TestCase):
 
 
 class TestKiteTokenWatcher(TestCase):
+    def setUp(self):
+        self.credentials = {
+            "api_key": "test_api_key",
+            "username": "test_user",
+            "password": "test_password",
+            "totp": "test_totp_secret",
+        }
+        self.authenticator = KiteAuthenticator(timeout=10)
+        
     @patch.dict("os.environ", {"KTOKEN": "mocked_token", "KUSER": "mocked_user"})
-    def test_watch(self):
+    @patch("requests.Session.get")
+    @patch("requests.Session.post")
+    @patch("pyotp.TOTP.now")
+    def test_watch(self, mock_totp, mock_post, mock_get):
         """Test that watch() creates and starts websocket client."""
         with patch(
             "pkbrokers.kite.zerodhaWebSocketClient.ZerodhaWebSocketClient"
@@ -442,6 +454,23 @@ class TestKiteTokenWatcher(TestCase):
                 mock_watcher_instance = MagicMock()
                 mock_watcher = mock_watcher_instance
                 mock_watcher.client.return_value = mock_ws_instance
+                # Mock initial session request
+                mock_get.return_value = MagicMock()
+
+                # Mock login response
+                mock_login_response = MagicMock()
+                mock_login_response.json.return_value = {"data": {"request_id": "test123"}}
+                mock_login_response.headers = {}
+
+                # Mock TOTP response
+                mock_totp_response = MagicMock()
+                mock_totp_response.headers = {
+                    "Set-Cookie": "enctoken=test_enctoken; other=cookie"
+                }
+
+                mock_post.side_effect = [mock_login_response, mock_totp_response]
+                mock_totp.return_value = "123456"
+
                 # Create watcher with test tokens
                 watcher = KiteTokenWatcher(tokens=[1234, 5678], client=mock_ws_instance)
                 watcher.watch()

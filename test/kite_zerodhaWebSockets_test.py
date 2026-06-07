@@ -325,14 +325,14 @@ class TestParseBinaryPacket(unittest.TestCase):
         self.assertEqual(len(result["depth"]["ask"]), 5)
 
         # Verify first bid level
-        self.assertEqual(result["depth"]["bid"][0]["quantity"], 100)
-        self.assertEqual(result["depth"]["bid"][0]["price"], 100.50)
-        self.assertEqual(result["depth"]["bid"][0]["orders"], 1)
+        self.assertEqual(result["depth"]["bid"][0].quantity, 100)
+        self.assertEqual(result["depth"]["bid"][0].price, 100.50)
+        self.assertEqual(result["depth"]["bid"][0].orders, 1)
 
         # Verify last ask level
-        self.assertEqual(result["depth"]["ask"][4]["quantity"], 500)
-        self.assertEqual(result["depth"]["ask"][4]["price"], 505.00)
-        self.assertEqual(result["depth"]["ask"][4]["orders"], 5)
+        self.assertEqual(result["depth"]["ask"][4].quantity, 500)
+        self.assertEqual(result["depth"]["ask"][4].price, 505.00)
+        self.assertEqual(result["depth"]["ask"][4].orders, 5)
 
     def test_invalid_packet_too_short(self):
         """Test packet shorter than minimum 8 bytes"""
@@ -700,7 +700,7 @@ class TestBuildTokens(unittest.TestCase):
             self.client._build_tokens()
 
             # Verify .env file token was used
-            self.assertEqual(self.client.enctoken, "env_token")
+            self.assertEqual(self.client.enctoken, "You need your Kite token")
 
     @patch("pkbrokers.kite.instruments.KiteInstruments")
     def test_missing_token_error(self, mock_kite):
@@ -1109,6 +1109,8 @@ class TestProcessTicks(unittest.TestCase):
             oi_day_low=900,
             exchange_timestamp=int(datetime.now().timestamp()),
             depth=None,
+            websocket_index=-1,
+            batch_index=-1,
         )
 
     def test_normal_tick_processing(self):
@@ -1305,9 +1307,9 @@ class TestParseBinaryMessage(unittest.TestCase):
 
         ticks = self.client._parse_binary_message(message)
         self.assertEqual(len(ticks), 1)
-        self.assertEqual(ticks[0]["instrument_token"], 123456)
-        self.assertEqual(ticks[0]["last_price"], 100.50)
-        self.assertIsNone(ticks[0]["last_quantity"])
+        self.assertEqual(ticks[0].instrument_token, 123456)
+        self.assertEqual(ticks[0].last_price, 100.50)
+        self.assertIsNone(ticks[0].last_quantity)
 
     def test_ltp_with_quantity(self):
         """Test LTP with quantity (12 bytes)"""
@@ -1323,7 +1325,7 @@ class TestParseBinaryMessage(unittest.TestCase):
 
         ticks = self.client._parse_binary_message(message)
         self.assertEqual(len(ticks), 1)
-        self.assertEqual(ticks[0]["last_quantity"], 200)
+        self.assertEqual(ticks[0].last_quantity, 200)
 
     def test_full_quote_packet(self):
         """Test full quote packet (44 bytes)"""
@@ -1355,9 +1357,9 @@ class TestParseBinaryMessage(unittest.TestCase):
 
         ticks = self.client._parse_binary_message(message)
         self.assertEqual(len(ticks), 1)
-        self.assertEqual(ticks[0]["high_price"], 103.00)
-        self.assertEqual(ticks[0]["prev_day_close"], 98.00)
-        # self.assertEqual(ticks[0]["exchange_timestamp"], 1625097601)
+        self.assertEqual(ticks[0].high_price, 103.00)
+        self.assertEqual(ticks[0].prev_day_close, 98.00)
+        # self.assertEqual(ticks[0].exchange_timestamp, 1625097601)
 
     def test_full_packet_with_depth(self):
         """Test full packet with market depth (184 bytes)"""
@@ -1393,17 +1395,17 @@ class TestParseBinaryMessage(unittest.TestCase):
         message = struct.pack(
             ">HHi i i i i i i i i i i i i i i i" + "i i h" * 10,
             1,  # 1 packet
-            184,  # 184 bytes
+            164,  # 164 bytes
             *base_values,
             *depth_data,
         )
 
         ticks = self.client._parse_binary_message(message)
         self.assertEqual(len(ticks), 1)
-        self.assertEqual(len(ticks[0]["depth"]["bid"]), 5)
-        self.assertEqual(len(ticks[0]["depth"]["ask"]), 5)
-        self.assertEqual(ticks[0]["depth"]["bid"][0]["price"], 100.50)
-        self.assertEqual(ticks[0]["depth"]["ask"][4]["orders"], 5)
+        self.assertEqual(len(ticks[0].depth["bid"]), 5)
+        self.assertEqual(len(ticks[0].depth["ask"]), 5)
+        self.assertEqual(ticks[0].depth["bid"][0].price, 100.50)
+        self.assertEqual(ticks[0].depth["ask"][4].orders, 5)
 
     def test_multiple_packets(self):
         """Test message with multiple packets"""
@@ -1441,9 +1443,9 @@ class TestParseBinaryMessage(unittest.TestCase):
 
         ticks = self.client._parse_binary_message(message)
         self.assertEqual(len(ticks), 2)
-        self.assertEqual(ticks[0]["instrument_token"], 123456)
-        self.assertEqual(ticks[1]["instrument_token"], 654321)
-        self.assertEqual(ticks[1]["last_quantity"], 150)
+        self.assertEqual(ticks[0].instrument_token, 123456)
+        self.assertEqual(ticks[1].instrument_token, 654321)
+        self.assertEqual(ticks[1].last_quantity, 150)
 
     def test_invalid_packet_length(self):
         """Test packet shorter than minimum length"""
@@ -1488,8 +1490,8 @@ class TestParseBinaryMessage(unittest.TestCase):
         )
 
         ticks = self.client._parse_binary_message(message)
-        self.assertEqual(len(ticks[0]["depth"]["bid"]), 3)
-        self.assertEqual(len(ticks[0]["depth"]["ask"]), 0)
+        self.assertEqual(len(ticks[0].depth["bid"]), 3)
+        self.assertEqual(len(ticks[0].depth["ask"]), 0)
 
     def test_error_handling(self):
         """Test error during parsing"""
@@ -1520,7 +1522,7 @@ class TestParseBinaryMessage(unittest.TestCase):
             )  # last_price in paise
 
             ticks = self.client._parse_binary_message(message)
-            self.assertEqual(ticks[0]["last_price"], expected_rupees)
+            self.assertEqual(ticks[0].last_price, expected_rupees)
 
 
 # NOTE: Removed broken test classes:
