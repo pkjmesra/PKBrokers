@@ -411,7 +411,8 @@ jobs:
         rm -f .env.dev
 
     - name: Self-trigger for 24x7 continuity
-      if: always() && !cancelled()
+      # && !cancelled()
+      if: always()
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
