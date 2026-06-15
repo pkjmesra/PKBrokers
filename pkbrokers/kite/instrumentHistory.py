@@ -262,7 +262,7 @@ class KiteTickerHistory:
         # Set all required headers and cookies
         self.session.headers.update(
             {
-                "Authorization": f"enctoken {PKEnvironment().KTOKEN}",
+                "Authorization": f"enctoken {token}",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "X-Kite-Version": "3.0.0",
             }
