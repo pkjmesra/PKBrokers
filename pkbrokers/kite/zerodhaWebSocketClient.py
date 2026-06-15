@@ -81,7 +81,7 @@ NETWORK_WAIT_TIME = 5
 GENERAL_WAIT_TIME = 1
 DB_BATCH_SIZE = 5000
 BATCH_READ_SIZE = 500               # read up to 500 ticks per iteration
-OPTIMAL_TOKEN_BATCH_SIZE = 500  # Zerodha allows max 500 instruments in one batch
+OPTIMAL_TOKEN_BATCH_SIZE = 3000     # Zerodha allows max 3000 instruments in one batch: https://kite.trade/docs/connect/v3/websocket/
 NIFTY_50 = [256265]
 BSE_SENSEX = [265]
 OTHER_INDICES = [
@@ -390,10 +390,10 @@ class WebSocketProcess:
                                         try:
                                             self.data_queue.put(tick_data, timeout=1)
                                             break
-                                        except Exception:
+                                        except Exception as e:
                                             if attempt == max_retries - 1:
-                                                if not hasattr(self, '_last_queue_full_log') or time.time() - self._last_queue_full_log > 60:
-                                                    self.logger.warning(f"⚠️ Queue full, dropping tick after {max_retries} attempts")
+                                                if not hasattr(self, '_last_queue_full_log') or time.time() - self._last_queue_full_log > 600:
+                                                    self.logger.warning(f"⚠️ Queue full, dropping tick after {max_retries} attempts. {e}")
                                                     self._last_queue_full_log = time.time()
                                                 # Optionally increment a shared counter
                                                 if self.drop_counter is not None:
@@ -1153,7 +1153,7 @@ class ZerodhaWebSocketClient:
         self.processor_thread.start()
 
         # Prepare arguments for each batch - one process per batch
-        # Each batch is already limited to OPTIMAL_TOKEN_BATCH_SIZE (500) instruments
+        # Each batch is already limited to OPTIMAL_TOKEN_BATCH_SIZE (3000) instruments
         # We need one WebSocket connection per batch (Zerodha limit)
         process_args = []
         for i in range(num_batches):
