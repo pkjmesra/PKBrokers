@@ -2,13 +2,13 @@
   "256265": {
     "instrument_token": 256265,
     "trading_symbol": "NIFTY 50",
-    "tick_count": 29464,
+    "tick_count": 29465,
     "ohlcv": {
       "timestamp": "2026-06-19T10:16:36+05:30",
       "open": 23957.2,
       "high": 24011.1,
       "low": 23938.75,
-      "close": 24002.15,
+      "close": 24002.0,
       "volume": 0,
       "oi": 0
     },
@@ -842,13 +842,13 @@
   "288009": {
     "instrument_token": 288009,
     "trading_symbol": "NIFTY MID SELECT",
-    "tick_count": 16472,
+    "tick_count": 16473,
     "ohlcv": {
       "timestamp": "2026-06-19T10:16:37.052360+05:30",
       "open": 14508.4,
       "high": 14592.3,
       "low": 14499.7,
-      "close": 14580.7,
+      "close": 14579.5,
       "volume": 1452735,
       "oi": 0
     },
@@ -1636,7 +1636,7 @@
   },
   "412937": {
     "instrument_token": 412937,
-    "trading_symbol": "NIFTY TRANS LOGIS",
+    "trading_symbol":: "NIFTY TRANS LOGIS",
     "tick_count": 7303,
     "ohlcv": {
       "timestamp": "2026-06-19T10:16:35.340208+05:30",
@@ -2447,7 +2447,7 @@
   "103425": {
     "instrument_token": 103425,
     "trading_symbol": "BERGEPAINT",
-    "tick_count": 3407,
+    "tick_count": 3408,
     "ohlcv": {
       "timestamp": "2026-06-19T10:16:37+05:30",
       "open": 505.65,
@@ -3016,7 +3016,7 @@
   },
   "258817": {
     "instrument_token": 258817,
-    "trading_symbol": "SCHAEFFLER",
+    "trading_symbol": "SCHAEFFLER,
     "tick_count": 790,
     "ohlcv": {
       "timestamp": "2026-06-19T10:16:35+05:30",
@@ -4423,6 +4423,7 @@
       "oi": 0
     },
     "last_updated": "2026-06-19T10:16:25+05:30"
+
   },
   "589569": {
     "instrument_token": 589569,
@@ -5897,7 +5898,7 @@
   "969473": {
     "instrument_token": 969473,
     "trading_symbol": "WIPRO",
-    "tick_count": 46134,
+    "tick_count": 46135,
     "ohlcv": {
       "timestamp": "2026-06-19T10:16:35+05:30",
       "open": 175.66,
@@ -6977,14 +6978,14 @@
   "1472257": {
     "instrument_token": 1472257,
     "trading_symbol": "SANSERA",
-    "tick_count": 3338,
+    "tick_count": 3339,
     "ohlcv": {
       "timestamp": "2026-06-19T10:16:36+05:30",
       "open": 2867.0,
       "high": 2924.6,
       "low": 2867.0,
       "close": 2922.3,
-      "volume": 47409,
+      "volume": 47389,
       "oi": 0
     },
     "last_updated": "2026-06-19T10:16:36+05:30"
@@ -10937,29 +10938,29 @@
   "3460353": {
     "instrument_token": 3460353,
     "trading_symbol": "EMAMILTD",
-    "tick_count": 1020,
+    "tick_count": 1021,
     "ohlcv": {
-      "timestamp": "2026-06-19T10:16:32+05:30",
+      "timestamp": "2026-06-19T10:16:37+05:30",
       "open": 399.5,
       "high": 409.0,
       "low": 398.0,
       "close": 408.6,
-      "volume": 239611,
+      "volume": 239652,
       "oi": 0
     },
-    "last_updated": "2026-06-19T10:16:32+05:30"
+    "last_updated": "2026-06-19T10:16:37+05:30"
   },
   "3463169": {
     "instrument_token": 3463169,
     "trading_symbol": "GMRAIRPORT",
-    "tick_count": 2162,
+    "tick_count": 2163,
     "ohlcv": {
       "timestamp": "2026-06-19T10:16:35+05:30",
       "open": 109.75,
       "high": 110.28,
       "low": 109.3,
       "close": 110.23,
-      "volume": 2425107,
+      "volume": 2425090,
       "oi": 0
     },
     "last_updated": "2026-06-19T10:16:35+05:30"
@@ -11082,7 +11083,7 @@
       "volume": 153184,
       "oi": 0
     },
-    "last_updated": "2026-06-19T10:16:30+05:30"
+    "last_updated": "2026-06-19T10:16:30+05:30
   },
   "3493889": {
     "instrument_token": 3493889,
@@ -33227,7 +33228,7 @@
   "5842945": {
     "instrument_token": 5842945,
     "trading_symbol": "JUNIPER",
-    "tick_count": 488,
+    "tick_count": 488,,
     "ohlcv": {
       "timestamp": "2026-06-19T10:16:31+05:30",
       "open": 197.51,
