@@ -70,6 +70,7 @@ from PKDevTools.classes.SimplePickler import SimplePickler
 
 from pkbrokers.kite.instruments import KiteInstruments
 from pkbrokers.kite.zerodhaWebSocketClient import ZerodhaWebSocketClient
+from pkbrokers.kite.tickSaver import TickSaver
 from pkbrokers.kite.inMemoryCandleStore import get_candle_store
 
 # Optimal batch size depends on your tick frequency
@@ -1275,11 +1276,12 @@ class KiteTokenWatcher:
         one tick per instrument_token by design (key overwrites on new ticks).
         """
         self._watcher_queue = watcher_queue or Queue(maxsize=OPTIMAL_MAX_QUEUE_SIZE)
-        self._db_queue = Queue(maxsize=OPTIMAL_MAX_QUEUE_SIZE)
+        self._db_queue = multiprocessing.Queue(maxsize=OPTIMAL_MAX_QUEUE_SIZE)
+        self._json_queue = multiprocessing.Queue(maxsize=OPTIMAL_MAX_QUEUE_SIZE)
         self._processing_thread = None
         self._processing_thread2 = None
         self._processing_thread3 = None
-        self._db_thread = None
+        self._tick_saver = None
         self._client_watchdog_thread = None
         self._shutdown_event = threading.Event()
         self._stop_queue = None
@@ -1339,40 +1341,9 @@ class KiteTokenWatcher:
         self.ws_stop_event = None  # Add this for WebSocket stop signal
         # Add health monitor
         self.health_monitor = None
-        self.user_id = None  # Store for recovery
-        self.executor = ThreadPoolExecutor(max_workers=4 if sys.platform.startswith("darwin") else 8)
-        self._tick_buffer = []  # local batch buffer
-        # self._last_flush_time = time.time()
-        # self._buffer_lock = threading.Lock()
+        self.user_id = None
 
-    def _process_tick_batch_async(self, tick_list):
-        """
-        Process a batch of Tick objects in a background thread.
-        - Converts ticks to dicts.
-        - Updates the in‑memory candle store.
-        - Sends data to JSON writer and database.
-        """
-        if not tick_list:
-            return
 
-        try:
-            # Convert each tick to dictionary format expected by JSON writer & DB
-            processed = [self._tick_to_dict(tick) for tick in tick_list]
-
-            # Update candle store with each tick
-            for tick in tick_list:
-                self._update_candle_store(tick)   # you need to extract this logic
-
-            # Send entire batch to JSON writer (efficient)
-            self.json_writer.add_batch(processed)
-
-            # Insert into database if enabled
-            db = self._get_database()
-            if db:
-                db.insert_ticks(processed)
-
-        except Exception as e:
-            self.logger.error(f"Async processing error: {e}")
             
     def set_ws_stop_event(self, event):
         """Set the stop event for WebSocket processes"""
@@ -1441,12 +1412,6 @@ class KiteTokenWatcher:
                         ws_stop_event=self.ws_stop_event,
                     )
                     self.client.start()
-            if self._processing_thread and not self._processing_thread.is_alive():
-                self.logger.error("Tick processing thread died! Restarting watcher...")
-                self.stop()
-                self.watch()
-                return
-            
             if self.json_writer and not self.json_writer.process.is_alive():
                 self.logger.error("JSON writer process died – restarting")
                 self.json_writer.stop()
@@ -1592,12 +1557,11 @@ class KiteTokenWatcher:
         self.health_monitor.start()
         
         try:
-            # # Start database thread
-            # self._db_thread = threading.Thread(
-            #     target=self._process_db_operations, daemon=True, name="DBProcessor"
-            # )
-            # self._db_thread.start()
-            # time.sleep(DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC)
+            # Start tick saver process
+            if self._db_instance:
+                self._tick_saver = TickSaver(self._db_queue, self._db_instance)
+                self._tick_saver.start()
+                time.sleep(DB_PROCESS_SPIN_OFF_WAIT_TIME_SEC)
             
             # Start processing threads
             self._processing_thread = threading.Thread(
@@ -1757,151 +1721,11 @@ class KiteTokenWatcher:
             "batch_index": getattr(tick, 'batch_index', -1),
         }
     
-    def _flush_to_json_writer(self):
-        """Flush pending ticks to JSON writer with monitoring."""
-        if not hasattr(self, '_tick_batch') or not self._tick_batch:
-            return
-        
-        try:
-            start_time = time.time()
+
             
-            # Send entire batch of ticks to JSON writer
-            tick_dicts = [self._tick_to_dict(tick) for tick in self._tick_batch.values()]
-            self.json_writer.add_batch(tick_dicts)   # ensure add_batch puts all at once
-            
-            # Check if JSON writer is falling behind
-            if hasattr(self.json_writer, 'data_queue'):
-                queue_size = self.json_writer.data_queue.qsize()
-                if queue_size > 5000:
-                    self.logger.warning(f"⚠️ ⚠️ JSON writer queue backlog: {queue_size} items - writer may be a bottleneck!")
-            
-            elapsed = time.time() - start_time
-            if elapsed > 0.5:
-                self.logger.warning(f"⚠️ JSON flush took {elapsed:.2f}s for {len(self._tick_batch)} ticks")
-            
-            self._tick_batch.clear()
-            
-        except Exception as e:
-            self.logger.error(f"🛑 🛑 🛑 🛑 Error flushing to JSON writer: {e}")
-            
-    def _process_tick_batch(self, tick_batch):
-        """
-        Process a batch of ticks for all instruments with full OHLCV and depth processing.
 
-        Args:
-            tick_batch (dict): Dictionary mapping instrument tokens to their latest ticks
 
-        CRITICAL: This method expects each instrument_token to have exactly one tick
-        (the latest), ensuring no duplicates in the final database insert.
-        """
-        if not tick_batch:
-            return
 
-        processed_batch = []
-        total_instruments = len(tick_batch)
-        self.logger.debug(
-            f"Processing batch with {total_instruments} unique instruments"
-        )
-        # Batch for JSON writer - collect all ticks first
-        json_batch = []
-
-        for instrument_token, ticks in tick_batch.items():
-            if not ticks:
-                continue
-
-            # CRITICAL: We only have one tick per instrument (the latest)
-            latest_tick = ticks[0]  # Single tick in list format
-            timestamp = datetime.fromtimestamp(latest_tick.last_trade_timestamp) if latest_tick.last_trade_timestamp else latest_tick.exchange_timestamp
-
-            processed = self._tick_to_dict(latest_tick)
-            processed_batch.append(processed)
-            # Add to JSON batch instead of sending individually
-            json_batch.append(processed)
-
-        # NEW: Send ENTIRE BATCH to JSON writer at once
-        if json_batch:
-            try:
-                # Send each tick in batch to JSON writer (still individual but now batched by size)
-                # Option A: Send one by one (original behavior but with batching at this level)
-                # for tick_data in json_batch:
-                #     self.json_writer.add_tick(tick_data)
-                
-                # Option B: Send as a single batch (requires JSON writer modification)
-                self.json_writer.add_batch(json_batch)
-                
-                # Log queue status periodically
-                if hasattr(self.json_writer, 'data_queue'):
-                    queue_size = self.json_writer.data_queue.qsize()
-                    if queue_size > 10000:
-                        self.logger.warning(f"⚠️ ⚠️ JSON writer queue backlog: {queue_size} items")
-                    elif queue_size > 5000:
-                        self.logger.debug(f"JSON writer queue size: {queue_size}")
-            except Exception as e:
-                self.logger.error(f"🛑 🛑 🛑 🛑 Error sending to JSON writer: {e}")
-            
-            # FIX: Update in-memory candle store with properly formatted tick data
-            try:
-                trading_symbol = ""
-                if instrument_token in self._kite_instruments:
-                    trading_symbol = getattr(self._kite_instruments[instrument_token], 'tradingsymbol', '')
-                
-                # IMPORTANT: Create dictionary with EXACT keys expected by process_tick()
-                tick_for_candle = {
-                    'instrument_token': latest_tick.instrument_token,
-                    'last_price': latest_tick.last_price or 0,
-                    # Use day_volume (cumulative) for daily candles
-                    'day_volume': latest_tick.day_volume or 0,
-                    'oi': latest_tick.oi or 0,
-                    # Use exchange_timestamp for candle aggregation
-                    'exchange_timestamp': latest_tick.exchange_timestamp or time.time(),
-                    'trading_symbol': trading_symbol,
-                    'type': 'tick',
-                    # Add these additional fields that process_tick might expect
-                    'last_quantity': latest_tick.last_quantity or 0,
-                    'avg_price': latest_tick.avg_price or 0,
-                    'open_price': latest_tick.open_price or 0,
-                    'high_price': latest_tick.high_price or 0,
-                    'low_price': latest_tick.low_price or 0,
-                    'prev_day_close': latest_tick.prev_day_close or 0,
-                    'last_trade_timestamp': latest_tick.last_trade_timestamp or 0,
-                    'oi_day_high': latest_tick.oi_day_high or 0,
-                    'oi_day_low': latest_tick.oi_day_low or 0,
-                }
-                
-                # Process the tick in candle store
-                if self._candle_store.process_tick(tick_for_candle):
-                    self.logger.debug(f"Updated candle store for {trading_symbol or instrument_token}")
-                else:
-                    self.logger.debug(f"Failed to update candle store for {trading_symbol or instrument_token}")
-                    
-                # Update shared_stats via candle store
-                if hasattr(self, 'shared_stats') and self.shared_stats is not None:
-                    self.shared_stats['ticks_processed'] = self._candle_store.stats.get('ticks_processed', 0)
-                    self.shared_stats['instruments_with_ticks'] = self._candle_store.stats.get('instruments_with_ticks', 0)
-                    self.shared_stats['instrument_count'] = len(self._candle_store.instruments)
-                    
-            except Exception as e:
-                self.logger.debug(f"Error updating candle store: {e}")
-
-        # Insert into database
-        try:
-            db = self._get_database()
-            if db:
-                db.insert_ticks(processed_batch)
-                self.logger.debug(
-                    f"Successfully added {len(processed_batch)} records to database queue"
-                )
-        except Exception as e:
-            self.logger.error(f"🛑 🛑 🛑 🛑 Error inserting to database: {e}")
-
-    def _flush_candles_to_db(self):
-        """Send completed 1‑minute candles from candle store to DB."""
-        if not self._db_instance:
-            return
-        candles = self._candle_store.get_completed_candles('1m')
-        if candles:
-            self._db_instance.insert_candles_batch(candles)
-            self.logger.debug(f"Flushed {len(candles)} candles to DB")
             
     def _process_ticks(self):
         """
@@ -1914,42 +1738,30 @@ class KiteTokenWatcher:
         from pkbrokers.kite.ticks import Tick
         from queue import Empty
 
-        _tick_buffer = []         # local buffer for ticks (list of Tick objects)
-
         while not self._shutdown_event.is_set():
             try:
-                start_time = time.time()
-                # Collect ticks until buffer is full or interval elapsed
-                while len(_tick_buffer) < BATCH_SIZE and \
-                    (time.time() - start_time) < BATCH_INTERVAL:
-                    try:
-                        tick = self._watcher_queue.get(timeout=0.05)
-                    except Empty:
-                        break
+                try:
+                    tick = self._watcher_queue.get(timeout=0.05)
+                except Empty:
+                    tick = None
 
-                    if tick and isinstance(tick, Tick):
-                        _tick_buffer.append(tick)
-                        # Record tick for health monitor immediately
-                        if self.health_monitor:
-                            self.health_monitor.record_tick(
-                                tick.instrument_token,
-                                getattr(tick, 'websocket_index', None),
-                                getattr(tick, 'batch_index', None)
-                            )
-                        self._watcher_queue.task_done()
+                if tick and isinstance(tick, Tick):
+                    # Record tick for health monitor immediately
+                    if self.health_monitor:
+                        self.health_monitor.record_tick(
+                            tick.instrument_token,
+                            getattr(tick, 'websocket_index', None),
+                            getattr(tick, 'batch_index', None)
+                        )
+                    
+                    self._update_candle_store(tick)
+                    
+                    tick_dict = self._tick_to_dict(tick)
+                    self.json_writer.data_queue.put(tick_dict)
+                    if self._db_instance:
+                        self._db_queue.put(tick_dict)
 
-                # If buffer has data, flush asynchronously
-                if _tick_buffer:
-                    batch_to_process = _tick_buffer.copy()
-                    _tick_buffer.clear()
-                    # Offload to thread pool – does not block the main loop
-                    try:
-                        self.executor.submit(self._process_tick_batch_async, batch_to_process)
-                    except RuntimeError as e:
-                        if "cannot schedule new futures" in str(e):
-                            self.logger.debug("Executor already shut down – ignoring submit")
-                        else:
-                            raise
+                    self._watcher_queue.task_done()
 
                 # Optional: monitor queue depth for health
                 qsize = self._watcher_queue.qsize()
@@ -1965,92 +1777,12 @@ class KiteTokenWatcher:
             except Exception as e:
                 self.logger.error(f"🛑 🛑 🛑 🛑 Unexpected error in tick processing: {e}")
                 continue
-
-        # Final flush of any remaining ticks before shutdown
-        if _tick_buffer:
-            try:
-                self.executor.submit(self._process_tick_batch_async, _tick_buffer)
-            except RuntimeError as e:
-                if "cannot schedule new futures" in str(e):
-                    self.logger.debug("Executor already shut down – ignoring final flush")
-                else:
-                    raise
-        self.executor.shutdown(wait=True)
-        # self._cleanup_processing()
         
-    def _cleanup_processing(self):
-        """Handle graceful shutdown with proper cleanup of remaining data."""
-        if self._tick_batch:
-            batch_dict = {token: [tick] for token, tick in self._tick_batch.items()}
-            self._db_queue.put(batch_dict)
-            self.logger.info(
-                f"Processed {len(batch_dict)} final instruments on shutdown"
-            )
 
-        self._db_queue.put(None)  # Signal database thread to exit
-        self.logger.warning("⚠️ Exiting tick processing thread")
 
-    def _process_db_operations(self):
-        """
-        Dedicated database thread that processes batches from the queue.
 
-        This thread:
-        - Processes batches immediately as they arrive
-        - Uses the full _process_tick_batch method for comprehensive processing
-        - Includes robust error handling with fallback mechanisms
-        - Ensures no batch loss during processing
-        """
-        self.logger.debug("Database processing thread started")
 
-        while not self._shutdown_event.is_set():
-            try:
-                # Get batch with reasonable timeout
-                batch = self._db_queue.get(timeout=2)
 
-                if batch is None:  # Shutdown signal
-                    self.logger.debug("Received shutdown signal in DB thread")
-                    break
-
-                # Process batch immediately using full processing method
-                try:
-                    self._process_tick_batch(batch)
-                except Exception as e:
-                    self.logger.error(f"🛑 🛑 🛑 🛑 Full processing failed, using fallback: {e}")
-                    # Fallback to simple processing if full processing fails
-                    self._process_batch_fallback(batch)
-
-            except Empty:
-                # Normal timeout, continue waiting
-                continue
-            except Exception as e:
-                self.logger.error(f"🛑 🛑 🛑 🛑 Database thread error: {e}")
-                continue
-
-        self.logger.warning("⚠️ Exiting database processing thread")
-
-    def _process_batch_fallback(self, tick_batch):
-        """
-        Fallback processing method when full processing fails.
-
-        Args:
-            tick_batch (dict): Batch to process with simplified logic
-        """
-        try:
-            processed_batch = self._prepare_batch_for_insertion(tick_batch)
-            if processed_batch:
-                db = self._get_database()
-                if db:
-                    db.insert_ticks(processed_batch)
-                    self.logger.info(f"Fallback inserted {len(processed_batch)} records")
-        except Exception as e:
-            self.logger.error(f"🛑 🛑 🛑 🛑 Fallback processing also failed: {e}")
-
-    def _prepare_batch_for_insertion(self, tick_batch):
-        """
-        Simplified batch preparation for database insertion.
-
-        Args:
-            tick_batch (dict): Dictionary of instrument tokens to ticks
 
         Returns:
             list: Processed data ready for database insertion
@@ -2385,11 +2117,9 @@ class KiteTokenWatcher:
         if self.json_writer:
             self.json_writer.stop()
 
-        # Signal database thread to exit
-        try:
-            self._db_queue.put(None, timeout=2.0)
-        except Exception:
-            pass  # Queue might be full
+        # Stop tick saver
+        if self._tick_saver:
+            self._tick_saver.stop()
 
         # Wait for threads with reasonable timeouts
         thread_timeout = THREAD_JOIN_TIMEOUT
@@ -2407,13 +2137,6 @@ class KiteTokenWatcher:
             if self._processing_thread3.is_alive():
                 self.logger.warning("⚠️ Processing thread3 did not terminate gracefully")
 
-        # if self._db_thread and self._db_thread.is_alive():
-        #     self._db_thread.join(timeout=thread_timeout)
-        #     if self._db_thread.is_alive():
-        #         self.logger.warning("⚠️ Database thread did not terminate gracefully")
-
-        # Now shut down the executor (no new tasks will be submitted)
-        self.executor.shutdown(wait=False)
         if self._client_watchdog_thread and self._client_watchdog_thread.is_alive():
             self._client_watchdog_thread.join(timeout=thread_timeout)
             if self._client_watchdog_thread.is_alive():
