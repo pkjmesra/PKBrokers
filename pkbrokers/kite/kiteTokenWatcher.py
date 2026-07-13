@@ -1783,6 +1783,12 @@ class KiteTokenWatcher:
 
 
 
+    def _prepare_batch_for_insertion(self, tick_batch):
+        """
+        Simplified batch preparation for database insertion.
+
+        Args:
+            tick_batch (dict): Dictionary of instrument tokens to ticks
 
         Returns:
             list: Processed data ready for database insertion
